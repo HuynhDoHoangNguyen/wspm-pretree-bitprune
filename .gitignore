@@ -1,0 +1,34 @@
+
+# Maven build outputs
+target/
+
+# Java compiled files
+*.class
+
+# IDE and editor-specific files
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+
+# VS Code local settings
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.log
+*.tmp
+
+# Large experimental datasets (keep small test datasets)
+data/raw/
+
+# Generated experimental outputs
+results/*
+!results/.gitkeep
