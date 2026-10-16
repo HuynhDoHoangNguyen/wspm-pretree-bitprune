@@ -28,7 +28,13 @@ Thumbs.db
 
 # Large experimental datasets (keep small test datasets)
 data/raw/
+src/main/resources/datasets/*.txt
 
 # Generated experimental outputs
 results/*
 !results/.gitkeep
+
+# Keep reproducibility notes while excluding locally acquired source documents.
+docs/*
+!docs/research/
+!docs/research/**
