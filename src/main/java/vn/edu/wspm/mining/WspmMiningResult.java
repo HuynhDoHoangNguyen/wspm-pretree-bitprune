@@ -19,7 +19,9 @@ public final class WspmMiningResult {
     private final List<Pattern> acceptedPatterns;
     private final Map<Pattern, Integer> supports;
     private final Map<Pattern, PatternEncoding> encodings;
+    private final ResultRetentionPolicy retentionPolicy;
     private final OptionalDouble globalMeanWeight;
+    private final int distinctItemCount;
     private final ResolvedMinimumSupport minimumSupport;
     private final WspmMiningStatistics statistics;
 
@@ -27,11 +29,38 @@ public final class WspmMiningResult {
             PrefixTree prefixTree,
             Map<Pattern, PatternEncoding> encodings,
             OptionalDouble globalMeanWeight,
+            int distinctItemCount,
+            ResolvedMinimumSupport minimumSupport,
+            WspmMiningStatistics statistics) {
+        this(
+                prefixTree,
+                extractSupports(encodings),
+                encodings,
+                ResultRetentionPolicy.FULL_ENCODING,
+                globalMeanWeight,
+                distinctItemCount,
+                minimumSupport,
+                statistics);
+    }
+
+    WspmMiningResult(
+            PrefixTree prefixTree,
+            Map<Pattern, Integer> supports,
+            Map<Pattern, PatternEncoding> encodings,
+            ResultRetentionPolicy retentionPolicy,
+            OptionalDouble globalMeanWeight,
+            int distinctItemCount,
             ResolvedMinimumSupport minimumSupport,
             WspmMiningStatistics statistics) {
         this.prefixTree = Objects.requireNonNull(prefixTree, "prefix tree must not be null");
-        Objects.requireNonNull(encodings, "encodings must not be null");
+        Objects.requireNonNull(supports, "supports must not be null");
+        this.retentionPolicy = Objects.requireNonNull(
+                retentionPolicy, "result retention policy must not be null");
         Objects.requireNonNull(globalMeanWeight, "global MeanW optional must not be null");
+        if (distinctItemCount < 0) {
+            throw new IllegalArgumentException("distinct item count must not be negative");
+        }
+        this.distinctItemCount = distinctItemCount;
         this.minimumSupport = Objects.requireNonNull(
                 minimumSupport, "resolved minimum support must not be null");
         this.statistics = Objects.requireNonNull(statistics, "mining statistics must not be null");
@@ -40,26 +69,49 @@ public final class WspmMiningResult {
                 .filter(pattern -> !pattern.isEmpty())
                 .toList();
         var treePatterns = new LinkedHashSet<>(acceptedPatterns);
-        if (!treePatterns.equals(encodings.keySet())) {
+        if (!treePatterns.equals(supports.keySet())) {
             throw new IllegalArgumentException(
-                    "encoding metadata must exactly match non-root Prefix Tree patterns");
+                    "support metadata must exactly match non-root Prefix Tree patterns");
         }
 
-        var encodingSnapshot = new LinkedHashMap<Pattern, PatternEncoding>();
         var supportSnapshot = new LinkedHashMap<Pattern, Integer>();
         for (var pattern : acceptedPatterns) {
-            var encoding = Objects.requireNonNull(
-                    encodings.get(pattern), "encoding metadata must not contain null");
-            if (encoding.sequenceBlock().sidCount() != minimumSupport.numberOfSequences()) {
-                throw new IllegalArgumentException(
-                        "encoding and minimum support use different SID universes for "
-                                + pattern.serialize());
+            var support = Objects.requireNonNull(
+                    supports.get(pattern), "support must not contain null");
+            if (support < 0) {
+                throw new IllegalArgumentException("support must not be negative");
             }
-            encodingSnapshot.put(pattern, encoding);
-            supportSnapshot.put(pattern, encoding.sequenceBlock().support());
+            supportSnapshot.put(pattern, support);
         }
-        this.encodings = Collections.unmodifiableMap(encodingSnapshot);
         this.supports = Collections.unmodifiableMap(supportSnapshot);
+
+        if (retentionPolicy == ResultRetentionPolicy.FULL_ENCODING) {
+            Objects.requireNonNull(encodings, "encodings must not be null in FULL_ENCODING mode");
+            if (!treePatterns.equals(encodings.keySet())) {
+                throw new IllegalArgumentException(
+                        "encoding metadata must exactly match non-root Prefix Tree patterns");
+            }
+            var encodingSnapshot = new LinkedHashMap<Pattern, PatternEncoding>();
+            for (var pattern : acceptedPatterns) {
+                var encoding = Objects.requireNonNull(
+                        encodings.get(pattern), "encoding metadata must not contain null");
+                if (encoding.sequenceBlock().sidCount() != minimumSupport.numberOfSequences()) {
+                    throw new IllegalArgumentException(
+                            "encoding and minimum support use different SID universes for "
+                                    + pattern.serialize());
+                }
+                if (encoding.sequenceBlock().support() != supportSnapshot.get(pattern)) {
+                    throw new IllegalArgumentException(
+                            "encoding support disagrees with declared support for "
+                                    + pattern.serialize());
+                }
+                encodingSnapshot.put(pattern, encoding);
+            }
+            this.encodings = Collections.unmodifiableMap(encodingSnapshot);
+        } else {
+            this.encodings = null;
+        }
+
         this.globalMeanWeight = globalMeanWeight.isPresent()
                 ? OptionalDouble.of(globalMeanWeight.getAsDouble())
                 : OptionalDouble.empty();
@@ -79,8 +131,27 @@ public final class WspmMiningResult {
         }
     }
 
+    private static Map<Pattern, Integer> extractSupports(Map<Pattern, PatternEncoding> encodings) {
+        Objects.requireNonNull(encodings, "encodings must not be null");
+        var map = new LinkedHashMap<Pattern, Integer>();
+        for (var entry : encodings.entrySet()) {
+            map.put(entry.getKey(), entry.getValue().sequenceBlock().support());
+        }
+        return map;
+    }
+
     public PrefixTree prefixTree() {
         return prefixTree;
+    }
+
+    /** Returns the result retention policy used during mining. */
+    public ResultRetentionPolicy retentionPolicy() {
+        return retentionPolicy;
+    }
+
+    /** True only if full compact Prime-block encodings are retained in this result. */
+    public boolean hasEncodings() {
+        return encodings != null;
     }
 
     /** Returns accepted patterns in the Prefix Tree's deterministic structural pre-order. */
@@ -92,7 +163,16 @@ public final class WspmMiningResult {
         return supports;
     }
 
+    /**
+     * Returns full Prime-block encodings for all accepted patterns.
+     *
+     * @throws UnsupportedOperationException if retention policy is {@link ResultRetentionPolicy#SUPPORT_ONLY}
+     */
     public Map<Pattern, PatternEncoding> encodings() {
+        if (encodings == null) {
+            throw new UnsupportedOperationException(
+                    "Pattern encodings are not retained under " + retentionPolicy + " policy");
+        }
         return encodings;
     }
 
@@ -104,7 +184,16 @@ public final class WspmMiningResult {
         return support;
     }
 
+    /**
+     * Returns the full Prime-block encoding for {@code pattern}.
+     *
+     * @throws UnsupportedOperationException if retention policy is {@link ResultRetentionPolicy#SUPPORT_ONLY}
+     */
     public PatternEncoding encoding(Pattern pattern) {
+        if (encodings == null) {
+            throw new UnsupportedOperationException(
+                    "Pattern encodings are not retained under " + retentionPolicy + " policy");
+        }
         var encoding = encodings.get(Objects.requireNonNull(pattern, "pattern must not be null"));
         if (encoding == null) {
             throw new IllegalArgumentException("pattern is not an accepted result: " + pattern);
@@ -117,6 +206,10 @@ public final class WspmMiningResult {
         return globalMeanWeight.isPresent()
                 ? OptionalDouble.of(globalMeanWeight.getAsDouble())
                 : OptionalDouble.empty();
+    }
+
+    public int distinctItemCount() {
+        return distinctItemCount;
     }
 
     public ResolvedMinimumSupport minimumSupport() {

@@ -9,8 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -22,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import vn.edu.wspm.config.MinimumSupportMode;
 import vn.edu.wspm.io.SequenceDatabaseFormat;
+import vn.edu.wspm.measurement.WspmExecutionMetrics;
 import vn.edu.wspm.model.Item;
 import vn.edu.wspm.model.Itemset;
 import vn.edu.wspm.model.Pattern;
@@ -86,39 +85,44 @@ class MainWspmPreTreeTest {
     void summaryUsesProductionStatisticsValues() throws IOException, URISyntaxException {
         var configuration = tableOneConfiguration(false, true, false, unusedOutput());
         var bytes = new ByteArrayOutputStream();
-        var result = MainWspmPreTree.run(
+        var executionRun = MainWspmPreTree.execute(
                 configuration,
                 new PrintStream(bytes, true, StandardCharsets.UTF_8));
         String output = bytes.toString(StandardCharsets.UTF_8);
+        var result = executionRun.miningResult();
         var statistics = result.statistics();
 
-        assertTrue(output.contains("Minimum support input: 0.14 (relative fraction)"));
-        assertTrue(output.contains("Configured minimum support: 14.0%"));
-        assertTrue(output.contains("Effective minimum support: 0.98000"));
-        assertTrue(output.contains("Sequence count: " + statistics.sequenceCount()));
-        assertTrue(output.contains("F1 count: " + statistics.f1Count()));
-        assertTrue(output.contains("Candidate count: " + statistics.candidateCount()));
-        assertTrue(output.contains(
-                "Accepted candidate count: " + statistics.acceptedCandidateCount()));
-        assertTrue(output.contains(
-                "Rejected candidate count: " + statistics.rejectedCandidateCount()));
-        assertTrue(output.contains("I-candidate count: " + statistics.iCandidateCount()));
-        assertTrue(output.contains("S-candidate count: " + statistics.sCandidateCount()));
-        assertTrue(output.contains("Expanded node count: " + statistics.expandedNodeCount()));
-        assertTrue(output.contains("Accepted pattern count: " + statistics.patternCount()));
-        BigDecimal elapsedNanos = BigDecimal.valueOf(statistics.elapsedNanos());
-        String expectedElapsedLine = "Miner elapsed time: "
-                + fiveDecimals(elapsedNanos.movePointLeft(9))
-                + " s ("
-                + fiveDecimals(elapsedNanos.movePointLeft(6))
-                + " ms)";
-        assertTrue(MainWspmPreTree.summaryLines(configuration, result)
-                .contains(expectedElapsedLine));
-        assertFalse(output.contains("Elapsed time (ns):"));
-    }
-
-    private static String fiveDecimals(BigDecimal value) {
-        return value.setScale(5, RoundingMode.HALF_UP).toPlainString();
+        assertTrue(output.contains("========== INPUT CONFIGURATION =========="));
+        assertTrue(output.contains("Minimum Support Input          : 0.14 (relative fraction)"));
+        assertTrue(output.contains("Effective Minimum Support      : 0.98000"));
+        assertTrue(output.contains("Number of Sequences            : " + statistics.sequenceCount()));
+        assertTrue(output.contains("Number of Distinct Items       : 8"));
+        assertTrue(output.contains("Result Retention Policy        : SUPPORT_ONLY"));
+        assertTrue(output.contains("========== MINING STATISTICS =========="));
+        assertTrue(output.contains("Generated Candidates           : "
+                + statistics.candidateCount()));
+        assertTrue(output.contains("Accepted Candidates            : "
+                + statistics.acceptedCandidateCount()));
+        assertTrue(output.contains("Rejected Candidates            : "
+                + statistics.rejectedCandidateCount()));
+        assertTrue(output.contains("Number of Weighted Patterns    : "
+                + statistics.patternCount()));
+        assertTrue(output.contains("========== MEMORY STATISTICS (MB) =========="));
+        assertTrue(output.contains("Heap Before Dataset I/O"));
+        assertTrue(output.contains("Peak Heap Algorithm"));
+        assertTrue(output.contains("Peak Heap Total Execution"));
+        assertTrue(output.contains("Heap Before Output I/O         : N/A"));
+        assertTrue(output.contains("Memory Unit                    : MB (1 MB = 1,000,000 bytes)"));
+        assertTrue(output.contains("Peak Measurement               : Observed sampled Java heap used"));
+        assertTrue(output.contains("========== TIME STATISTICS (ms) =========="));
+        assertTrue(output.contains("Dataset I/O Time"));
+        assertTrue(output.contains("Preprocessing Time"));
+        assertTrue(output.contains("DFS Mining Time"));
+        assertTrue(output.contains("Algorithm Time"));
+        assertTrue(output.contains("Output I/O Time                : 0.00000"));
+        assertTrue(output.contains("Total Scope                    : Excludes console printing"));
+        assertEquals(9, result.statistics().patternCount());
+        assertExecutionInvariants(executionRun.metrics());
     }
 
     @Test
@@ -145,9 +149,11 @@ class MainWspmPreTreeTest {
         Path output = temporaryDirectory.resolve("disabled/results.txt");
         var configuration = tableOneConfiguration(false, false, false, output);
 
-        run(configuration);
+        var executionRun = execute(configuration);
 
         assertFalse(Files.exists(output));
+        assertTrue(executionRun.metrics().outputIo().isEmpty());
+        assertEquals(0L, executionRun.metrics().outputIoNanos());
     }
 
     @Test
@@ -156,11 +162,14 @@ class MainWspmPreTreeTest {
         Path output = temporaryDirectory.resolve("nested/results.txt");
         var configuration = tableOneConfiguration(false, false, true, output);
 
-        var first = run(configuration);
+        var firstRun = execute(configuration);
+        var first = firstRun.miningResult();
         String expected = String.join("\n", MainWspmPreTree.patternLines(first)) + "\n";
         assertEquals(expected, Files.readString(output, StandardCharsets.UTF_8));
+        assertTrue(firstRun.metrics().outputIo().isPresent());
+        assertExecutionInvariants(firstRun.metrics());
 
-        var second = run(configuration);
+        var second = execute(configuration).miningResult();
         assertEquals(MainWspmPreTree.patternLines(first), MainWspmPreTree.patternLines(second));
         assertEquals(expected, Files.readString(output, StandardCharsets.UTF_8));
 
@@ -196,6 +205,30 @@ class MainWspmPreTreeTest {
         return MainWspmPreTree.run(
                 configuration,
                 new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+    }
+
+    private static WspmExecutionRun execute(
+            MainWspmPreTree.RunConfiguration configuration) throws IOException {
+        return MainWspmPreTree.execute(
+                configuration,
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+    }
+
+    private static void assertExecutionInvariants(WspmExecutionMetrics execution) {
+        var algorithm = execution.algorithm();
+        assertTrue(execution.datasetIo().elapsedNanos() >= 0L);
+        assertTrue(algorithm.preprocessing().elapsedNanos() >= 0L);
+        assertTrue(algorithm.dfsMining().elapsedNanos() >= 0L);
+        assertTrue(algorithm.algorithmNanos() >= 0L);
+        assertTrue(execution.totalExecutionNanos() >= 0L);
+        assertTrue(algorithm.observedPeakHeapAlgorithmBytes()
+                >= algorithm.preprocessing().observedPeakHeapBytes());
+        assertTrue(algorithm.observedPeakHeapAlgorithmBytes()
+                >= algorithm.dfsMining().observedPeakHeapBytes());
+        assertTrue(execution.observedPeakHeapTotalBytes()
+                >= algorithm.observedPeakHeapAlgorithmBytes());
+        assertTrue(execution.observedPeakHeapTotalBytes()
+                >= execution.datasetIo().observedPeakHeapBytes());
     }
 
     private static MainWspmPreTree.RunConfiguration tableOneConfiguration(

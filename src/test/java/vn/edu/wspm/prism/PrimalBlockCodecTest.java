@@ -258,6 +258,23 @@ class PrimalBlockCodecTest {
         }
     }
 
+    @Test
+    void exhaustive256StateMaskMatchesIndependentStrictAfterReference() {
+        for (int rank = 0; rank < PrimalBlockCodec.NUMBER_OF_STATES; rank++) {
+            int expected = 0;
+            boolean endpointSeen = false;
+            for (int offset = 0; offset < PrimalBlockCodec.BLOCK_WIDTH; offset++) {
+                if (endpointSeen) {
+                    expected |= 1 << offset;
+                } else if ((rank & (1 << offset)) != 0) {
+                    endpointSeen = true;
+                }
+            }
+            assertEquals(expected, PrimalBlockCodec.strictAfterMaskRank(rank),
+                    "MASK differs at rank=" + rank);
+        }
+    }
+
     // -----------------------------------------------------------------------
     // 8. Invalid rank rejection
     // -----------------------------------------------------------------------
@@ -395,6 +412,24 @@ class PrimalBlockCodecTest {
         int[] c1 = PrimalBlockCodec.cardTable();
         int[] c2 = PrimalBlockCodec.cardTable();
         assertNotSame(c1, c2);
+    }
+
+
+    @Test
+    void maskTableReturnsCopy() {
+        int[] first = PrimalBlockCodec.maskTable();
+        int[] second = PrimalBlockCodec.maskTable();
+        assertNotSame(first, second);
+        first[1] = -1;
+        assertEquals(254, PrimalBlockCodec.strictAfterMaskRank(1));
+    }
+
+    @Test
+    void strictAfterMaskRejectsInvalidRanks() {
+        assertThrows(IllegalArgumentException.class,
+                () -> PrimalBlockCodec.strictAfterMaskRank(-1));
+        assertThrows(IllegalArgumentException.class,
+                () -> PrimalBlockCodec.strictAfterMaskRank(256));
     }
 
     // -----------------------------------------------------------------------

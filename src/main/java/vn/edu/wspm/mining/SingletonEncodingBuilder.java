@@ -2,6 +2,7 @@ package vn.edu.wspm.mining;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -10,7 +11,7 @@ import java.util.Objects;
 import java.util.TreeMap;
 import vn.edu.wspm.model.SequenceDatabase;
 import vn.edu.wspm.prism.PatternEncoding;
-import vn.edu.wspm.prism.PositionBlock;
+import vn.edu.wspm.prism.PositionCoordinateSystem;
 import vn.edu.wspm.prism.SequenceBlock;
 
 /** Builds the full Prime-block encodings used to seed the DFS miner from F1. */
@@ -40,11 +41,10 @@ public final class SingletonEncodingBuilder {
             return Map.of();
         }
 
-        var positionsByItem = new TreeMap<Integer, List<PositionBlock>>();
-        var supportingSidsByItem = new TreeMap<Integer, List<Integer>>();
+        int[] sequenceSizes = new int[database.size()];
+        var compactByItem = new TreeMap<Integer, CompactAccumulator>();
         for (int itemId : orderedF1.keySet()) {
-            positionsByItem.put(itemId, new ArrayList<>(database.size()));
-            supportingSidsByItem.put(itemId, new ArrayList<>());
+            compactByItem.put(itemId, new CompactAccumulator());
         }
 
         for (int recordIndex = 0; recordIndex < database.records().size(); recordIndex++) {
@@ -70,27 +70,26 @@ public final class SingletonEncodingBuilder {
             }
 
             int sequenceSize = record.sequence().size();
-            for (int itemId : orderedF1.keySet()) {
-                var positions = positionsInSequence.getOrDefault(itemId, List.of());
-                positionsByItem.get(itemId).add(PositionBlock.of(
-                        record.sid(),
-                        sequenceSize,
-                        positions.stream().mapToInt(Integer::intValue).toArray()));
-                if (!positions.isEmpty()) {
-                    supportingSidsByItem.get(itemId).add(record.sid());
-                }
+            sequenceSizes[recordIndex] = sequenceSize;
+            for (var positionsEntry : positionsInSequence.entrySet()) {
+                compactByItem.get(positionsEntry.getKey()).add(
+                        record.sid(), positionsEntry.getValue());
             }
         }
 
+        var coordinates = PositionCoordinateSystem.of(sequenceSizes);
         var result = new LinkedHashMap<Integer, PatternEncoding>();
         for (var entry : orderedF1.entrySet()) {
             int itemId = entry.getKey();
-            int[] supportingSids = supportingSidsByItem.get(itemId).stream()
-                    .mapToInt(Integer::intValue)
-                    .toArray();
-            var encoding = new PatternEncoding(
+            var compact = compactByItem.get(itemId);
+            int[] supportingSids = compact.sids.toArray();
+            var encoding = PatternEncoding.fromCompact(
                     SequenceBlock.of(database.size(), supportingSids),
-                    positionsByItem.get(itemId));
+                    coordinates,
+                    supportingSids,
+                    compact.offsets.toArray(),
+                    compact.blockIndexes.toArray(),
+                    compact.ranks.toArray());
             if (encoding.support() != entry.getValue().support()) {
                 throw new IllegalArgumentException(
                         "singleton encoding support disagrees with F1 for item " + itemId);
@@ -98,5 +97,60 @@ public final class SingletonEncodingBuilder {
             result.put(itemId, encoding);
         }
         return Collections.unmodifiableMap(result);
+    }
+
+    private static final class CompactAccumulator {
+        private final IntArrayBuilder sids = new IntArrayBuilder();
+        private final IntArrayBuilder offsets = new IntArrayBuilder();
+        private final IntArrayBuilder blockIndexes = new IntArrayBuilder();
+        private final IntArrayBuilder ranks = new IntArrayBuilder();
+
+        private CompactAccumulator() {
+            offsets.add(0);
+        }
+
+        private void add(int sid, List<Integer> positions) {
+            if (positions.isEmpty()) return;
+            sids.add(sid);
+            int currentBlock = -1;
+            int currentRank = 0;
+            for (int position : positions) {
+                int bitIndex = position - 1;
+                int block = bitIndex / vn.edu.wspm.prism.PrimalBlockCodec.BLOCK_WIDTH;
+                if (block != currentBlock) {
+                    if (currentBlock >= 0) {
+                        blockIndexes.add(currentBlock);
+                        ranks.add(currentRank);
+                    }
+                    currentBlock = block;
+                    currentRank = 0;
+                }
+                currentRank |= 1 << (bitIndex % vn.edu.wspm.prism.PrimalBlockCodec.BLOCK_WIDTH);
+            }
+            blockIndexes.add(currentBlock);
+            ranks.add(currentRank);
+            offsets.add(ranks.size());
+        }
+    }
+
+    private static final class IntArrayBuilder {
+        private int[] values = new int[8];
+        private int size;
+
+        private void add(int value) {
+            if (size == values.length) {
+                int capacity = Math.addExact(values.length, values.length >>> 1);
+                values = Arrays.copyOf(values, Math.max(capacity, Math.addExact(size, 1)));
+            }
+            values[size++] = value;
+        }
+
+        private int size() {
+            return size;
+        }
+
+        private int[] toArray() {
+            return Arrays.copyOf(values, size);
+        }
     }
 }

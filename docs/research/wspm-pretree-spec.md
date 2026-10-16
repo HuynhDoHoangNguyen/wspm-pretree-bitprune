@@ -1228,3 +1228,46 @@ All later Phase B tasks must comply with the following rules:
 ## 16. B1 completion statement
 
 This document records the current source-confirmed contract and exposes unresolved points rather than filling them with plausible implementation choices. It is a specification input for later tasks, not evidence that WSPM_PreTree has been implemented or validated.
+
+## 17. B21.2 Resource-Measurement Policy
+
+The WSPM_PreTree 2023 paper reports `Memory usage (MB)` but does not state its Java API or
+profiler, formula, peak/snapshot/delta/RSS meaning, measurement boundaries, garbage-collection
+policy, JVM options, or byte-to-MB conversion. Consequently, every rule in this section is an
+`IMPLEMENTATION POLICY`; it is not source-confirmed and its values must not be adjusted to match
+Table 4 of the paper.
+
+One `ExecutionMemorySampler` runs for a complete standalone execution. It observes
+`MemoryMXBean.getHeapMemoryUsage().getUsed()` on a daemon platform thread every 5 ms and records
+synchronous checkpoints at both boundaries of every phase. Phase, algorithm, and total peaks are
+the maximum observations in their respective time ranges on this single timeline. Peaks are never
+added. Every reported peak is therefore an **Observed/Sampled Peak Java Heap Used**, not a
+guaranteed absolute peak: an allocation and reclamation entirely between samples can be missed.
+Sampler activity also has small thread, timing, and heap overhead. No `System.gc()` call is made.
+
+Memory remains a non-negative `long` byte count in immutable metric records. Display conversion is
+decimal MB:
+
+```text
+MB = bytes / 1,000,000.0
+```
+
+Java heap used is not process RSS, native memory, committed heap, maximum heap, or physical RAM.
+
+The measured scopes are:
+
+| Scope | Start | End | Notes |
+|---|---|---|---|
+| Dataset I/O | Immediately before parser invocation | Parser has returned `SequenceDatabase` | Includes file read and parsing only. |
+| Preprocessing | Before item/sequence statistics | F1, singleton encodings, seeded Prefix Tree, and maximum sequence length are ready | Includes item weights, MeanW, effective minimum-support resolution, F1, and DFS preparation. |
+| DFS Mining | Immediately before the F1 DFS loop | All F1 roots have completed DFS | Includes candidate generation, Prime-block joins, support, acceptance, counters, and tree expansion. |
+| Algorithm | Before preprocessing | Immutable `WspmMiningResult` is fully constructed | Includes preprocessing, DFS, `tree.freeze()`, final counters, and result snapshots; excludes dataset and output file I/O. |
+| Output I/O | Immediately before file write | File write has completed | Pattern strings are prepared before this phase. Disabled export has `0` time by contract and `N/A` memory metrics. |
+| Total Execution | Before Dataset I/O | Output handling has completed | Includes orchestration but excludes subsequent console printing. |
+
+`WspmMiningStatistics.elapsedNanos()` retains its B20 compatibility boundary: after public input
+validation and before preprocessing through final tree freeze/counter completion, ending before
+`WspmMiningResult` construction. It therefore differs intentionally from the new `Algorithm Time`,
+which continues through immutable result construction. Future WSPM_BitPrune comparison must use
+the same phases, sampler, 5 ms interval, decimal MB unit, output configuration, JVM, GC, warm-up,
+and repetition policy.

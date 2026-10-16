@@ -266,9 +266,9 @@ this task did not define warm-up, repetitions, or a fair cross-algorithm benchma
 
 | Command | Result |
 |---|---|
-| `mvn clean test` | BUILD SUCCESS; 338 tests, 0 failures, 0 errors, 0 skipped |
-| `mvn test` | BUILD SUCCESS; 338 tests, 0 failures, 0 errors, 0 skipped |
-| `mvn clean verify` | BUILD SUCCESS; 338 tests, 0 failures, 0 errors, 0 skipped; JAR built |
+| `mvn clean test` | BUILD SUCCESS; 342 tests, 0 failures, 0 errors, 0 skipped after B21.2 |
+| `mvn test` | BUILD SUCCESS; 342 tests, 0 failures, 0 errors, 0 skipped after B21.2 |
+| `mvn clean verify` | BUILD SUCCESS; 342 tests, 0 failures, 0 errors, 0 skipped after B21.2; JAR built |
 | standalone Main command | Exit 0; exact nine patterns/counters; no default export |
 | `git diff --check` | Exit 0 for tracked changes |
 
@@ -324,7 +324,7 @@ locally available but ignored; their hashes above identify the exact audited cop
 | B21-F05 | MEDIUM | Dataset-semantics ambiguity | FIMI parser, R7 | Transaction lines contain no temporal order; author preprocessing unknown | Paper benchmark reproduction on transaction datasets is unverified | Obtain and document original preprocessing before benchmark claims | OPEN |
 | B21-F06 | MEDIUM | Robustness/performance limitation | Recursive DFS miner | Search depth uses Java call stack | Extreme accepted chains may overflow stack | Retain as baseline limitation; consider iterative DFS only in a separately scoped task | OPEN |
 | B21-F07 | LOW | Usability/documentation | `vn.edu.wspm.Main` | Pre-existing entry point still prints `Hello World` | A user may run the wrong class | Document/run `vn.edu.wspm.experiments.MainWspmPreTree`; clean up only in a separate task | OPEN |
-| B21-F08 | INFO | Correctness evidence | Baseline/test suite | Table 1 exact map, 146 differential comparisons, 338 tests, three Maven lifecycles pass | Strong evidence within the declared scope | Preserve fixtures, seed, and exact-map assertions | RESOLVED |
+| B21-F08 | INFO | Correctness evidence | Baseline/test suite | Table 1 exact map, 146 differential comparisons, 342 tests after B21.2, and required Maven lifecycles pass | Strong evidence within the declared scope | Preserve fixtures, seed, exact-map assertions, and measurement tests | RESOLVED |
 
 No CRITICAL or HIGH correctness blocker was found. B21-F01 is HIGH because it prevents commit-level
 reproduction, not because the reviewed in-worktree algorithm produced an incorrect result.
@@ -342,3 +342,23 @@ transaction-dataset benchmark claim, or performance claim.
 Before starting Phase C, the Research Reviewer should verify and commit the audited untracked
 artifacts so that the accepted Phase B state is recoverable from Git. B21 itself stops here and does
 not begin WSPM_BitPrune.
+
+## 17. B21.2 Measurement Addendum
+
+B21.2 adds measurement instrumentation only; it does not change Pattern identity, support,
+Prime-block operations, candidate acceptance, counter definitions, or DFS traversal. The 2023
+paper's memory protocol remains `UNSPECIFIED`. The project uses a documented implementation policy:
+a single 5 ms sampler of simultaneous Java heap used, plus synchronous boundary checkpoints.
+
+- Dataset I/O ends when parsing returns.
+- Preprocessing ends after F1, singleton encodings, tree seeding, and maximum-length preparation.
+- DFS ends after all F1 roots have been expanded.
+- Result finalization is outside DFS but inside Algorithm Time/Peak.
+- Output I/O measures the file write only; disabled export reports zero time and `N/A` memory.
+- Total execution ends before console printing.
+- Decimal MB is `bytes / 1,000,000.0`.
+
+The values are observations for one run, not benchmark evidence. Sampled peak can miss a peak that
+exists wholly between observations, and Java heap used is not total process RSS. The sampler adds
+measurement overhead. R1 and R6-R7 remain OPEN; R2 is RESOLVED FOR IMPLEMENTATION and R3-R5 remain
+RESOLVED. B21.2 does not change those research classifications.

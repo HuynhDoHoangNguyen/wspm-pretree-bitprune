@@ -154,6 +154,24 @@ class PrimeBlockJoinsTest {
     }
 
     @Test
+    void strictAfterSkipsInteriorEmptyBlocksAndStartsAfterFirstEndpoint() {
+        PositionBlock positions = PositionBlock.of(1, 25, 17, 24);
+
+        PositionBlock mask = PrimeBlockJoins.strictAfter(positions);
+
+        assertEquals(0, mask.blockRank(0));
+        assertEquals(0, mask.blockRank(1));
+        assertEquals(0b1111_1110, mask.blockRank(2));
+        assertEquals(0b0000_0001, mask.blockRank(3));
+        for (int position = 1; position <= 17; position++) {
+            assertFalse(mask.isSetAt(position));
+        }
+        for (int position = 18; position <= 25; position++) {
+            assertTrue(mask.isSetAt(position));
+        }
+    }
+
+    @Test
     void emptyRightPositionBlockCannotKeepSidInEitherJoin() {
         PatternEncoding left = encoding(PositionBlock.of(1, 5, 2));
         PatternEncoding right = encoding(PositionBlock.empty(1, 5));

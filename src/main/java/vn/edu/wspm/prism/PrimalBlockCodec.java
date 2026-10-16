@@ -83,17 +83,16 @@ public final class PrimalBlockCodec {
     private static final int[] PRODUCT;
 
     /**
-     * RANK[product] is not indexed by product value directly (max 9,699,690 entries would be
-     * wasteful). Instead rank is looked up by iterating PRODUCT or via inverse map.
-     * We use a simple scan here; a HashMap could be used but 256 entries make it negligible.
-     */
-    private static final int[] RANK_BY_PRODUCT_INDEX; // parallel to PRODUCT
-
-    /**
      * CARD[rank] = factor cardinality = population count of rank bits.
      * SOURCE-CONFIRMED: PRISM Sec. 3.4 declares a CARD table of 256 entries.
      */
     private static final int[] CARD;
+
+    /**
+     * MASK[rank] = positions strictly after the first set position in the same block.
+     * SOURCE-CONFIRMED: PRISM Sec. 3.4 describes this 256-entry lookup.
+     */
+    private static final int[] MASK;
 
     /**
      * GCD_TABLE[rankA][rankB] = rank of gcd(productA, productB).
@@ -106,6 +105,7 @@ public final class PrimalBlockCodec {
     static {
         PRODUCT = new int[NUMBER_OF_STATES];
         CARD = new int[NUMBER_OF_STATES];
+        MASK = new int[NUMBER_OF_STATES];
 
         for (int rank = 0; rank < NUMBER_OF_STATES; rank++) {
             int product = 1;
@@ -118,10 +118,11 @@ public final class PrimalBlockCodec {
             }
             PRODUCT[rank] = product;
             CARD[rank] = card;
+            if (rank != 0) {
+                int firstBit = Integer.numberOfTrailingZeros(rank);
+                MASK[rank] = 0xFF & ~((1 << (firstBit + 1)) - 1);
+            }
         }
-
-        // Build inverse: product -> rank. 256 entries, O(256) scan is fine.
-        RANK_BY_PRODUCT_INDEX = Arrays.copyOf(PRODUCT, PRODUCT.length); // not used as index
 
         GCD_TABLE = new int[NUMBER_OF_STATES][NUMBER_OF_STATES];
         for (int a = 0; a < NUMBER_OF_STATES; a++) {
@@ -232,6 +233,12 @@ public final class PrimalBlockCodec {
     public static int factorCardinality(int rank) {
         validateRank(rank);
         return CARD[rank];
+    }
+
+    /** Returns PRISM's within-block strict-after MASK rank. */
+    public static int strictAfterMaskRank(int rank) {
+        validateRank(rank);
+        return MASK[rank];
     }
 
     /**
@@ -386,5 +393,10 @@ public final class PrimalBlockCodec {
     /** Returns an unmodifiable snapshot of the full CARD lookup table (256 entries). */
     public static int[] cardTable() {
         return Arrays.copyOf(CARD, CARD.length);
+    }
+
+    /** Returns a defensive snapshot of the full MASK lookup table. */
+    public static int[] maskTable() {
+        return Arrays.copyOf(MASK, MASK.length);
     }
 }

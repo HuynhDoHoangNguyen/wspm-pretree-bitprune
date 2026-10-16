@@ -5,6 +5,9 @@ import java.util.Map;
 import java.util.Objects;
 import vn.edu.wspm.config.MinimumSupport;
 import vn.edu.wspm.config.MinimumSupportResolver;
+import vn.edu.wspm.measurement.ExecutionMemorySampler;
+import vn.edu.wspm.measurement.PhaseExecutionMetrics;
+import vn.edu.wspm.measurement.WspmAlgorithmMetrics;
 import vn.edu.wspm.model.Item;
 import vn.edu.wspm.model.Pattern;
 import vn.edu.wspm.model.SequenceDatabase;
@@ -25,14 +28,46 @@ public final class WspmPreTreeMiner {
             new SingletonEncodingBuilder();
     private final CandidateEngine candidateEngine = new CandidateEngine();
 
-    /** Mines all weighted sequential patterns accepted by the existing baseline components. */
+    /** Mines all weighted sequential patterns retaining full Prime-block encodings. */
     public WspmMiningResult mine(
             SequenceDatabase database, MinimumSupport minimumSupportConfiguration) {
+        return mine(database, minimumSupportConfiguration, ResultRetentionPolicy.FULL_ENCODING);
+    }
+
+    /** Mines all weighted sequential patterns using the specified result retention policy. */
+    public WspmMiningResult mine(
+            SequenceDatabase database,
+            MinimumSupport minimumSupportConfiguration,
+            ResultRetentionPolicy retentionPolicy) {
+        try (var sampler = new ExecutionMemorySampler()) {
+            return mineMeasured(database, minimumSupportConfiguration, sampler, retentionPolicy).result();
+        }
+    }
+
+    /** Mines while contributing phase observations to a caller-owned execution sampler. */
+    public MeasuredMiningRun mineMeasured(
+            SequenceDatabase database,
+            MinimumSupport minimumSupportConfiguration,
+            ExecutionMemorySampler sampler) {
+        return mineMeasured(
+                database, minimumSupportConfiguration, sampler, ResultRetentionPolicy.FULL_ENCODING);
+    }
+
+    /** Mines with measurement using the specified result retention policy. */
+    public MeasuredMiningRun mineMeasured(
+            SequenceDatabase database,
+            MinimumSupport minimumSupportConfiguration,
+            ExecutionMemorySampler sampler,
+            ResultRetentionPolicy retentionPolicy) {
         Objects.requireNonNull(database, "sequence database must not be null");
         Objects.requireNonNull(
                 minimumSupportConfiguration, "minimum support configuration must not be null");
+        Objects.requireNonNull(sampler, "execution memory sampler must not be null");
+        Objects.requireNonNull(retentionPolicy, "result retention policy must not be null");
+        var algorithmStart = sampler.checkpoint();
         long startedAt = System.nanoTime();
 
+        var preprocessingStart = sampler.checkpoint();
         var statistics = statisticsCalculator.calculate(database);
         var weights = weightCalculator.calculate(statistics);
         var minimumSupport = minimumSupportResolver.resolve(
@@ -42,23 +77,34 @@ public final class WspmPreTreeMiner {
         var miningStatistics = new MiningStatisticsAccumulator(database.size(), f1.size());
 
         var tree = new PrefixTree();
-        var encodings = new LinkedHashMap<Pattern, PatternEncoding>();
+        var supports = new LinkedHashMap<Pattern, Integer>();
+        var encodings = (retentionPolicy == ResultRetentionPolicy.FULL_ENCODING)
+                ? new LinkedHashMap<Pattern, PatternEncoding>()
+                : null;
         for (var onePattern : f1) {
             var pattern = Pattern.singleton(new Item(onePattern.itemId()));
             tree.insert(Pattern.empty(), pattern, ExtensionType.S_EXTENSION);
-            encodings.put(pattern, singletonEncodings.get(onePattern.itemId()));
+            supports.put(pattern, onePattern.support());
+            if (encodings != null) {
+                encodings.put(pattern, singletonEncodings.get(onePattern.itemId()));
+            }
         }
+        int maximumSupportedPatternLength = maximumSequenceLength(database);
+        var preprocessingEnd = sampler.checkpoint();
+        var preprocessingMetrics = PhaseExecutionMetrics.between(
+                sampler, preprocessingStart, preprocessingEnd);
 
+        var dfsStart = sampler.checkpoint();
         if (!f1.isEmpty()) {
             double meanWeight = weights.meanWeight().orElseThrow();
-            int maximumSupportedPatternLength = maximumSequenceLength(database);
             for (var onePattern : f1) {
                 var pattern = Pattern.singleton(new Item(onePattern.itemId()));
                 depthFirstExpand(
                         pattern,
-                        encodings.get(pattern),
+                        singletonEncodings.get(onePattern.itemId()),
                         maximumSupportedPatternLength,
                         tree,
+                        supports,
                         encodings,
                         f1,
                         singletonEncodings,
@@ -67,16 +113,30 @@ public final class WspmPreTreeMiner {
                         miningStatistics);
             }
         }
+        var dfsEnd = sampler.checkpoint();
+        var dfsMetrics = PhaseExecutionMetrics.between(sampler, dfsStart, dfsEnd);
 
+        // Finalization is outside DFS but remains inside the complete algorithm scope.
         tree.freeze();
         int patternCount = tree.nodeCount() - 1;
         long elapsedNanos = Math.max(0L, System.nanoTime() - startedAt);
-        return new WspmMiningResult(
+        var result = new WspmMiningResult(
                 tree,
+                supports,
                 encodings,
+                retentionPolicy,
                 weights.meanWeight(),
+                weights.itemWeights().size(),
                 minimumSupport,
                 miningStatistics.finish(patternCount, elapsedNanos));
+        var algorithmEnd = sampler.checkpoint();
+        var algorithmMetrics = new WspmAlgorithmMetrics(
+                preprocessingMetrics,
+                dfsMetrics,
+                Math.max(0L, algorithmEnd.nanoTime() - algorithmStart.nanoTime()),
+                algorithmEnd.heapUsedBytes(),
+                sampler.observedPeakBytes(algorithmStart, algorithmEnd));
+        return new MeasuredMiningRun(result, algorithmMetrics);
     }
 
     private void depthFirstExpand(
@@ -84,6 +144,7 @@ public final class WspmPreTreeMiner {
             PatternEncoding parentEncoding,
             int maximumSupportedPatternLength,
             PrefixTree tree,
+            Map<Pattern, Integer> supports,
             Map<Pattern, PatternEncoding> encodings,
             java.util.List<WeightedOnePattern> f1,
             Map<Integer, PatternEncoding> singletonEncodings,
@@ -110,18 +171,22 @@ public final class WspmPreTreeMiner {
             if (!candidate.accepted()) {
                 continue;
             }
-            if (encodings.containsKey(candidate.pattern())) {
+            if (supports.containsKey(candidate.pattern())) {
                 throw new IllegalStateException(
                         "duplicate pattern reached by DFS: " + candidate.pattern().serialize());
             }
 
             tree.insert(parent, candidate.pattern(), candidate.extensionType());
-            encodings.put(candidate.pattern(), candidate.encoding());
+            supports.put(candidate.pattern(), candidate.support());
+            if (encodings != null) {
+                encodings.put(candidate.pattern(), candidate.encoding());
+            }
             depthFirstExpand(
                     candidate.pattern(),
                     candidate.encoding(),
                     maximumSupportedPatternLength,
                     tree,
+                    supports,
                     encodings,
                     f1,
                     singletonEncodings,
