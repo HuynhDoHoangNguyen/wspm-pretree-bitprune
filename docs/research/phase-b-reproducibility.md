@@ -148,8 +148,10 @@ Expected Table 1 result:
 
 Expected deterministic statistics are seven sequences, three F1 patterns, 34 candidates, six
 accepted candidates, 28 rejected candidates, seven I-candidates, 27 S-candidates, nine expanded
-nodes, and nine accepted patterns. Elapsed time is environment-dependent and must not be asserted.
-No export file should be created with the default configuration.
+nodes, and nine accepted patterns. The summary shows aggregate miner elapsed time in seconds and
+milliseconds with five decimal places. It includes preprocessing inside `mine()` and DFS, but not
+dataset I/O, console printing, or export; its numeric value is environment-dependent and must not be
+asserted. No export file should be created with the default configuration.
 
 ## 7. Fresh-checkout verification after the user-approved commit
 

@@ -3,6 +3,7 @@ package vn.edu.wspm.experiments;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -109,7 +110,8 @@ public final class MainWspmPreTree {
                 + result.minimumSupport().configuredValue()
                 + (configuration.minimumSupportIsRelative() ? "%" : " absolute"));
         lines.add("Effective minimum support: "
-                + result.minimumSupport().effectiveThreshold());
+                + formatFiveDecimals(
+                        BigDecimal.valueOf(result.minimumSupport().effectiveThreshold())));
         lines.add("Sequence count: " + statistics.sequenceCount());
         lines.add("F1 count: " + statistics.f1Count());
         lines.add("Candidate count: " + statistics.candidateCount());
@@ -119,8 +121,17 @@ public final class MainWspmPreTree {
         lines.add("S-candidate count: " + statistics.sCandidateCount());
         lines.add("Expanded node count: " + statistics.expandedNodeCount());
         lines.add("Accepted pattern count: " + statistics.patternCount());
-        lines.add("Elapsed time (ns): " + statistics.elapsedNanos());
+        BigDecimal elapsedNanos = BigDecimal.valueOf(statistics.elapsedNanos());
+        lines.add("Miner elapsed time: "
+                + formatFiveDecimals(elapsedNanos.movePointLeft(9))
+                + " s ("
+                + formatFiveDecimals(elapsedNanos.movePointLeft(6))
+                + " ms)");
         return List.copyOf(lines);
+    }
+
+    private static String formatFiveDecimals(BigDecimal value) {
+        return value.setScale(5, RoundingMode.HALF_UP).toPlainString();
     }
 
     static List<String> patternLines(WspmMiningResult result) {

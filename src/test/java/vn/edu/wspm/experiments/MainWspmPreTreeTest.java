@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -92,7 +94,7 @@ class MainWspmPreTreeTest {
 
         assertTrue(output.contains("Minimum support input: 0.14 (relative fraction)"));
         assertTrue(output.contains("Configured minimum support: 14.0%"));
-        assertTrue(output.contains("Effective minimum support: 0.98"));
+        assertTrue(output.contains("Effective minimum support: 0.98000"));
         assertTrue(output.contains("Sequence count: " + statistics.sequenceCount()));
         assertTrue(output.contains("F1 count: " + statistics.f1Count()));
         assertTrue(output.contains("Candidate count: " + statistics.candidateCount()));
@@ -104,7 +106,19 @@ class MainWspmPreTreeTest {
         assertTrue(output.contains("S-candidate count: " + statistics.sCandidateCount()));
         assertTrue(output.contains("Expanded node count: " + statistics.expandedNodeCount()));
         assertTrue(output.contains("Accepted pattern count: " + statistics.patternCount()));
-        assertTrue(output.contains("Elapsed time (ns): " + statistics.elapsedNanos()));
+        BigDecimal elapsedNanos = BigDecimal.valueOf(statistics.elapsedNanos());
+        String expectedElapsedLine = "Miner elapsed time: "
+                + fiveDecimals(elapsedNanos.movePointLeft(9))
+                + " s ("
+                + fiveDecimals(elapsedNanos.movePointLeft(6))
+                + " ms)";
+        assertTrue(MainWspmPreTree.summaryLines(configuration, result)
+                .contains(expectedElapsedLine));
+        assertFalse(output.contains("Elapsed time (ns):"));
+    }
+
+    private static String fiveDecimals(BigDecimal value) {
+        return value.setScale(5, RoundingMode.HALF_UP).toPlainString();
     }
 
     @Test

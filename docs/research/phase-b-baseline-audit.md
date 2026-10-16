@@ -137,9 +137,12 @@ for an extreme chain.
 ### Statistics
 
 `WspmMiningStatistics` is an immutable per-run snapshot. Its mutable accumulator is local to one
-`mine` call; no static/global counter participates in results. `elapsedNanos` covers mining work and
-is observational, not benchmark evidence. Checked additions fail on counter overflow. Tests and
-Table 1 execution establish:
+`mine` call; no static/global counter participates in results. Internal `elapsedNanos` starts after
+the miner's argument validation and covers statistics/weight/minsup preprocessing, F1 and singleton
+encoding construction, DFS, and tree finalization. It ends before result construction and excludes
+dataset I/O, console printing, and export. The standalone summary displays this aggregate miner time
+in seconds and milliseconds with five decimal places. It is observational, not benchmark evidence.
+Checked additions fail on counter overflow. Tests and Table 1 execution establish:
 
 ```text
 candidateCount = iCandidateCount + sCandidateCount
