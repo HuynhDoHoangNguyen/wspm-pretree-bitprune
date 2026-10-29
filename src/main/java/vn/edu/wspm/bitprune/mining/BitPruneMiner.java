@@ -1,0 +1,416 @@
+package vn.edu.wspm.bitprune.mining;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import vn.edu.wspm.bitprune.bitmap.SidBitmap;
+import vn.edu.wspm.bitprune.bitmap.SidMapping;
+import vn.edu.wspm.bitprune.cmap.CmapBuilder;
+import vn.edu.wspm.bitprune.cmap.CmapI;
+import vn.edu.wspm.bitprune.cmap.CmapS;
+import vn.edu.wspm.bitprune.index.PatternEndpoints;
+import vn.edu.wspm.bitprune.index.VerticalOccurrenceIndex;
+import vn.edu.wspm.bitprune.verification.VerificationResult;
+import vn.edu.wspm.config.MinimumSupport;
+import vn.edu.wspm.config.MinimumSupportResolver;
+import vn.edu.wspm.config.ResolvedMinimumSupport;
+import vn.edu.wspm.mining.F1Builder;
+import vn.edu.wspm.mining.WeightedOnePattern;
+import vn.edu.wspm.model.Item;
+import vn.edu.wspm.model.Pattern;
+import vn.edu.wspm.model.SequenceDatabase;
+import vn.edu.wspm.model.SequenceRecord;
+import vn.edu.wspm.statistics.ItemStatisticsCalculator;
+import vn.edu.wspm.statistics.ItemWeightCalculator;
+import vn.edu.wspm.statistics.ItemWeightResult;
+import vn.edu.wspm.statistics.SequenceDatabaseStatistics;
+import vn.edu.wspm.tree.PrefixTree;
+
+/**
+ * Positive-threshold DFS orchestration and accepted PrefixTree construction
+ * for WSPM_BitPrune (C10.3).
+ *
+ * <p>
+ * Operates on already-prepared mining inputs:
+ * <ol>
+ * <li>Validates all input contracts and consistency before mutating the
+ * tree;</li>
+ * <li>Initializes accepted F1 singletons directly beneath the PrefixTree
+ * root;</li>
+ * <li>Traverses the sequential pattern search space in deterministic ascending
+ * DFS order;</li>
+ * <li>Generates candidates strictly using {@link BitPruneCandidateEngine};</li>
+ * <li>Evaluates candidates strictly using
+ * {@link BitPruneCandidateEvaluator};</li>
+ * <li>Inserts only accepted candidates via
+ * {@link BitPrunePrefixTreeIntegrator};</li>
+ * <li>Recurses only into accepted candidates using child bitmap and
+ * verification state;</li>
+ * <li>Freezes the PrefixTree upon successful completion;</li>
+ * <li>Returns an immutable map of accepted patterns to exact integer
+ * support.</li>
+ * </ol>
+ * </p>
+ *
+ * <p>
+ * <strong>R6 BOUNDARY:</strong> Effective threshold equal to 0.0 is rejected
+ * before tree
+ * mutation because Decision R6 remains OPEN.
+ * </p>
+ */
+public final class BitPruneMiner {
+
+    private final BitPruneCandidateEngine candidateEngine = new BitPruneCandidateEngine();
+    private final BitPruneCandidateEvaluator candidateEvaluator = new BitPruneCandidateEvaluator();
+    private final BitPrunePrefixTreeIntegrator integrator = new BitPrunePrefixTreeIntegrator();
+    private final ItemStatisticsCalculator itemStatisticsCalculator = new ItemStatisticsCalculator();
+    private final ItemWeightCalculator itemWeightCalculator = new ItemWeightCalculator();
+    private final F1Builder f1Builder = new F1Builder();
+    private final MinimumSupportResolver minimumSupportResolver = new MinimumSupportResolver();
+    private final CmapBuilder cmapBuilder = new CmapBuilder();
+
+    public BitPruneMiner() {
+    }
+
+    /**
+     * Mines all weighted sequential patterns from the given sequence database into
+     * the caller-supplied PrefixTree under the specified minimum support.
+     *
+     * <p>
+     * Orchestrates end-to-end preprocessing:
+     * <ol>
+     * <li>Validates input contracts and tree state before performing any mutation;</li>
+     * <li>Handles empty database boundary conditions;</li>
+     * <li>Computes sequence database statistics and item weights;</li>
+     * <li>Resolves effective minimum support without rounding;</li>
+     * <li>Constructs F1 frequent weighted singletons;</li>
+     * <li>Constructs vertical occurrence index and shared SID mapping;</li>
+     * <li>Constructs exact singleton bitmaps and singleton verification results;</li>
+     * <li>Constructs CMAP-I and CMAP-S relations over the F1 universe;</li>
+     * <li>Delegates DFS mining to {@link #mineInto(PrefixTree, List, Map, Map, CmapI, CmapS, VerticalOccurrenceIndex, double, ResolvedMinimumSupport)};</li>
+     * <li>Freezes the PrefixTree upon successful completion;</li>
+     * <li>Returns an immutable map of accepted patterns to exact support.</li>
+     * </ol>
+     * </p>
+     *
+     * <p>
+     * <strong>R6 BOUNDARY:</strong> Effective threshold equal to 0.0 on a non-empty
+     * database is rejected before tree mutation because Decision R6 remains OPEN.
+     * </p>
+     *
+     * @param tree           non-null caller-owned PrefixTree containing only root Pattern.empty()
+     * @param database       non-null sequence database
+     * @param minimumSupport non-null minimum support configuration
+     * @return an immutable map of accepted patterns to exact integer support
+     * @throws NullPointerException     if any argument is null
+     * @throws IllegalStateException    if tree is frozen
+     * @throws IllegalArgumentException if tree is not root-only, or if threshold is invalid,
+     *                                  or if percentage mode is applied to an empty database
+     */
+    public Map<Pattern, Integer> mineInto(
+            PrefixTree tree,
+            SequenceDatabase database,
+            MinimumSupport minimumSupport) {
+
+        Objects.requireNonNull(tree, "tree must not be null");
+        Objects.requireNonNull(database, "database must not be null");
+        Objects.requireNonNull(minimumSupport, "minimumSupport must not be null");
+
+        if (tree.isFrozen()) {
+            throw new IllegalStateException("tree must not be frozen");
+        }
+        if (tree.nodeCount() != 1 || tree.find(Pattern.empty()).isEmpty()) {
+            throw new IllegalArgumentException("tree must initially contain only root Pattern.empty()");
+        }
+
+        if (database.size() == 0) {
+            // PERCENT mode: resolver throws IllegalArgumentException("percentage minimum support cannot be resolved for an empty database")
+            // ABSOLUTE mode: succeeds; freeze root-only tree and return empty map
+            minimumSupportResolver.resolve(minimumSupport, 0);
+            tree.freeze();
+            return Collections.emptyMap();
+        }
+
+        ResolvedMinimumSupport resolvedMinSup = minimumSupportResolver.resolve(minimumSupport, database.size());
+        if (resolvedMinSup.effectiveThreshold() == 0.0) {
+            throw new IllegalArgumentException(
+                    "effectiveThreshold == 0.0 is rejected while Decision R6 remains OPEN");
+        }
+        if (resolvedMinSup.effectiveThreshold() < 0.0) {
+            throw new IllegalArgumentException(
+                    "effectiveThreshold must not be negative; got: " + resolvedMinSup.effectiveThreshold());
+        }
+
+        SequenceDatabaseStatistics stats = itemStatisticsCalculator.calculate(database);
+        ItemWeightResult weightResult = itemWeightCalculator.calculate(stats);
+        double globalMeanWeight = weightResult.meanWeight().orElseThrow(
+                () -> new IllegalStateException("non-empty database must have global MeanW"));
+
+        List<WeightedOnePattern> f1 = f1Builder.build(stats, weightResult, resolvedMinSup);
+
+        SidMapping mapping = SidMapping.of(database);
+        VerticalOccurrenceIndex occIndex = VerticalOccurrenceIndex.build(database, mapping);
+
+        Map<Integer, SidBitmap> singletonBitmaps = new LinkedHashMap<>();
+        Map<Integer, VerificationResult> singletonVerifications = new LinkedHashMap<>();
+        List<Item> f1Items = new ArrayList<>(f1.size());
+
+        for (WeightedOnePattern p : f1) {
+            int itemId = p.itemId();
+            Item item = new Item(itemId);
+            f1Items.add(item);
+
+            SidBitmap.Builder bitmapBuilder = SidBitmap.builder(mapping);
+            List<PatternEndpoints> endpoints = new ArrayList<>();
+
+            for (SequenceRecord record : database.records()) {
+                int sid = record.sid();
+                int[] positions = occIndex.positions(item, sid);
+                if (positions.length > 0) {
+                    bitmapBuilder.setSid(sid);
+                    endpoints.add(PatternEndpoints.of(sid, positions));
+                }
+            }
+
+            singletonBitmaps.put(itemId, bitmapBuilder.build());
+            singletonVerifications.put(itemId, VerificationResult.of(endpoints));
+        }
+
+        CmapI cmapI = cmapBuilder.buildI(database, f1Items);
+        CmapS cmapS = cmapBuilder.buildS(database, f1Items);
+
+        return mineInto(
+                tree,
+                f1,
+                singletonBitmaps,
+                singletonVerifications,
+                cmapI,
+                cmapS,
+                occIndex,
+                globalMeanWeight,
+                resolvedMinSup);
+    }
+
+    /**
+     * Mines all weighted sequential patterns into the provided PrefixTree under
+     * positive threshold.
+     *
+     * @param tree                   non-null caller-owned PrefixTree containing
+     *                               only root
+     * @param f1                     non-null list of frequent weighted 1-patterns
+     * @param singletonBitmaps       non-null map of item ID to singleton bitmap
+     * @param singletonVerifications non-null map of item ID to singleton
+     *                               verification result
+     * @param cmapI                  non-null CMAP-I index
+     * @param cmapS                  non-null CMAP-S index
+     * @param occurrenceIndex        non-null vertical occurrence index
+     * @param globalMeanWeight       finite, non-negative MeanW
+     * @param minimumSupport         resolved minimum support with strictly positive
+     *                               effective threshold
+     * @return an immutable map of accepted patterns to exact support
+     * @throws NullPointerException     if any argument or required element is null
+     * @throws IllegalStateException    if tree is frozen or child evaluation state
+     *                                  is corrupt
+     * @throws IllegalArgumentException if inputs violate structural, threshold, or
+     *                                  universe invariants
+     */
+    public Map<Pattern, Integer> mineInto(
+            PrefixTree tree,
+            List<WeightedOnePattern> f1,
+            Map<Integer, SidBitmap> singletonBitmaps,
+            Map<Integer, VerificationResult> singletonVerifications,
+            CmapI cmapI,
+            CmapS cmapS,
+            VerticalOccurrenceIndex occurrenceIndex,
+            double globalMeanWeight,
+            ResolvedMinimumSupport minimumSupport) {
+
+        // --- 1. Global Input Validation Before Tree Mutation ---
+        Objects.requireNonNull(tree, "tree must not be null");
+        Objects.requireNonNull(f1, "f1 must not be null");
+        Objects.requireNonNull(singletonBitmaps, "singletonBitmaps must not be null");
+        Objects.requireNonNull(singletonVerifications, "singletonVerifications must not be null");
+        Objects.requireNonNull(cmapI, "cmapI must not be null");
+        Objects.requireNonNull(cmapS, "cmapS must not be null");
+        Objects.requireNonNull(occurrenceIndex, "occurrenceIndex must not be null");
+        Objects.requireNonNull(minimumSupport, "minimumSupport must not be null");
+
+        if (tree.isFrozen()) {
+            throw new IllegalStateException("tree must not be frozen");
+        }
+        if (tree.nodeCount() != 1 || tree.find(Pattern.empty()).isEmpty()) {
+            throw new IllegalArgumentException("tree must initially contain only root Pattern.empty()");
+        }
+
+        if (!Double.isFinite(globalMeanWeight) || globalMeanWeight < 0.0) {
+            throw new IllegalArgumentException(
+                    "globalMeanWeight must be finite and non-negative; got: " + globalMeanWeight);
+        }
+        if (minimumSupport.effectiveThreshold() == 0.0) {
+            throw new IllegalArgumentException(
+                    "effectiveThreshold == 0.0 is rejected while Decision R6 remains OPEN");
+        }
+        if (minimumSupport.effectiveThreshold() < 0.0) {
+            throw new IllegalArgumentException(
+                    "effectiveThreshold must not be negative; got: " + minimumSupport.effectiveThreshold());
+        }
+
+        Set<Integer> f1ItemIds = new HashSet<>(f1.size());
+        for (WeightedOnePattern p : f1) {
+            Objects.requireNonNull(p, "f1 element must not be null");
+            if (!f1ItemIds.add(p.itemId())) {
+                throw new IllegalArgumentException("duplicate item id in F1: " + p.itemId());
+            }
+        }
+
+        if (!singletonBitmaps.keySet().equals(f1ItemIds)) {
+            throw new IllegalArgumentException("singletonBitmaps keys must equal F1 item IDs exactly");
+        }
+        if (!singletonVerifications.keySet().equals(f1ItemIds)) {
+            throw new IllegalArgumentException("singletonVerifications keys must equal F1 item IDs exactly");
+        }
+        for (var entry : singletonBitmaps.entrySet()) {
+            Objects.requireNonNull(entry.getValue(),
+                    "singleton bitmap for item " + entry.getKey() + " must not be null");
+        }
+        for (var entry : singletonVerifications.entrySet()) {
+            Objects.requireNonNull(entry.getValue(),
+                    "singleton verification result for item " + entry.getKey() + " must not be null");
+        }
+
+        SidMapping commonMapping = null;
+        for (SidBitmap bm : singletonBitmaps.values()) {
+            if (commonMapping == null) {
+                commonMapping = bm.mapping();
+            } else if (!bm.mapping().equals(commonMapping)) {
+                throw new IllegalArgumentException("all singleton bitmaps must use the same SidMapping");
+            }
+        }
+        if (commonMapping != null && commonMapping.size() != minimumSupport.numberOfSequences()) {
+            throw new IllegalArgumentException("bitmap universe size (" + commonMapping.size()
+                    + ") must equal minimumSupport.numberOfSequences() ("
+                    + minimumSupport.numberOfSequences() + ")");
+        }
+
+        for (WeightedOnePattern p : f1) {
+            int itemId = p.itemId();
+            Item item = new Item(itemId);
+            VerificationResult vr = singletonVerifications.get(itemId);
+            SidBitmap bm = singletonBitmaps.get(itemId);
+
+            if (vr.exactSupport() != p.support()) {
+                throw new IllegalArgumentException("singleton VerificationResult exactSupport ("
+                        + vr.exactSupport() + ") must equal WeightedOnePattern support ("
+                        + p.support() + ") for item " + itemId);
+            }
+
+            Set<Integer> bmSids = new HashSet<>();
+            for (int sid : bm.toSupportingSids()) {
+                bmSids.add(sid);
+            }
+            Set<Integer> vrSids = new HashSet<>();
+            for (int sid : vr.supportingSids()) {
+                vrSids.add(sid);
+            }
+            if (!bmSids.equals(vrSids)) {
+                throw new IllegalArgumentException(
+                        "singleton verification SIDs must equal singleton bitmap SIDs for item " + itemId);
+            }
+
+            for (PatternEndpoints ep : vr.endpointStates()) {
+                int sid = ep.actualSid();
+                int[] expectedPos = occurrenceIndex.positions(item, sid);
+                if (!Arrays.equals(ep.endpoints(), expectedPos)) {
+                    throw new IllegalArgumentException("singleton endpoint array for item " + itemId
+                            + " and SID " + sid + " must equal occurrenceIndex.positions");
+                }
+            }
+
+            if (Double.compare(p.support() * globalMeanWeight, minimumSupport.effectiveThreshold()) < 0) {
+                throw new IllegalArgumentException("F1 item " + itemId + " does not meet minimum support threshold");
+            }
+        }
+
+        // --- 2. Empty F1 Handling ---
+        if (f1.isEmpty()) {
+            tree.freeze();
+            return Collections.emptyMap();
+        }
+
+        // --- 3. Deterministic Ascending F1 Initialization ---
+        List<WeightedOnePattern> sortedF1 = new ArrayList<>(f1);
+        sortedF1.sort(Comparator.comparingInt(WeightedOnePattern::itemId));
+
+        integrator.initializeF1Roots(tree, sortedF1);
+
+        Map<Pattern, Integer> supportMap = new LinkedHashMap<>();
+        for (WeightedOnePattern one : sortedF1) {
+            Pattern singleton = Pattern.singleton(new Item(one.itemId()));
+            supportMap.put(singleton, one.support());
+        }
+
+        // --- 4. Positive-Threshold DFS Traversal ---
+        for (WeightedOnePattern rootOne : sortedF1) {
+            int rootId = rootOne.itemId();
+            Pattern rootPattern = Pattern.singleton(new Item(rootId));
+            SidBitmap rootBitmap = singletonBitmaps.get(rootId);
+            VerificationResult rootVerif = singletonVerifications.get(rootId);
+
+            dfs(rootPattern, rootBitmap, rootVerif, sortedF1, singletonBitmaps,
+                    tree, supportMap, cmapI, cmapS, occurrenceIndex,
+                    globalMeanWeight, minimumSupport);
+        }
+
+        tree.freeze();
+        return Collections.unmodifiableMap(supportMap);
+    }
+
+    private void dfs(
+            Pattern parentPattern,
+            SidBitmap parentBitmap,
+            VerificationResult parentVerif,
+            List<WeightedOnePattern> sortedF1,
+            Map<Integer, SidBitmap> singletonBitmaps,
+            PrefixTree tree,
+            Map<Pattern, Integer> supportMap,
+            CmapI cmapI,
+            CmapS cmapS,
+            VerticalOccurrenceIndex occurrenceIndex,
+            double globalMeanWeight,
+            ResolvedMinimumSupport minimumSupport) {
+
+        List<BitPruneCandidateResult> candidates = candidateEngine.generateCandidates(parentPattern, sortedF1);
+        for (BitPruneCandidateResult candidate : candidates) {
+            Item extItem = candidate.extensionItem();
+            SidBitmap extBitmap = singletonBitmaps.get(extItem.id());
+
+            BitPruneCandidateEvaluation eval = candidateEvaluator.evaluate(
+                    parentPattern, candidate, parentBitmap, extBitmap, parentVerif,
+                    cmapI, cmapS, occurrenceIndex, globalMeanWeight, minimumSupport);
+
+            if (eval.outcome() == BitPruneCandidateEvaluation.Outcome.ACCEPTED) {
+                SidBitmap childBitmap = eval.candidateBitmap().orElseThrow(
+                        () -> new IllegalStateException("Accepted evaluation missing candidate bitmap"));
+                VerificationResult childVerif = eval.verificationResult().orElseThrow(
+                        () -> new IllegalStateException("Accepted evaluation missing verification result"));
+
+                integrator.insertAcceptedChild(tree, parentPattern, candidate);
+                supportMap.put(candidate.pattern(), childVerif.exactSupport());
+
+                dfs(candidate.pattern(), childBitmap, childVerif, sortedF1, singletonBitmaps,
+                        tree, supportMap, cmapI, cmapS, occurrenceIndex,
+                        globalMeanWeight, minimumSupport);
+            }
+            // If CMAP_REJECTED, BITMAP_REJECTED, or EXACT_REJECTED: do not insert, do not
+            // record support, do not recurse.
+            // Loop continues with siblings.
+        }
+    }
+}
