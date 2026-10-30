@@ -6,7 +6,7 @@
 **Language:** Java 21  
 **Build:** Apache Maven  
 **Testing:** JUnit 5  
-**Status:** IN PROGRESS — C00 ACCEPTED, C01 ACCEPTED, C02 ACCEPTED, C03 ACCEPTED, C04 ACCEPTED, C05 ACCEPTED (C05.1–C05.3 ACCEPTED), C06 ACCEPTED (C06.1–C06.2 ACCEPTED), C07 ACCEPTED (C07.1–C07.2 ACCEPTED), C08 ACCEPTED (C08.1–C08.2 ACCEPTED), C09 ACCEPTED (C09.1–C09.3 ACCEPTED), C10 ACCEPTED (C10.1–C10.4 ACCEPTED), C11–C16 NOT STARTED
+**Status:** IN PROGRESS — C00 ACCEPTED, C01 ACCEPTED, C02 ACCEPTED, C03 ACCEPTED, C04 ACCEPTED, C05 ACCEPTED (C05.1–C05.3 ACCEPTED), C06 ACCEPTED (C06.1–C06.2 ACCEPTED), C07 ACCEPTED (C07.1–C07.2 ACCEPTED), C08 ACCEPTED (C08.1–C08.2 ACCEPTED), C09 ACCEPTED (C09.1–C09.3 ACCEPTED), C10 ACCEPTED (C10.1–C10.4 ACCEPTED), C11 ACCEPTED (C11.1–C11.4 ACCEPTED — positive-effective-threshold operational scope; R6 zero-threshold semantics deferred), C12 ACCEPTED (C12.1–C12.4-R2 ACCEPTED), C13–C16 NOT STARTED
 
 ---
 
@@ -715,53 +715,60 @@ Checklist:
 
 ### C11 — Full Differential Correctness & Regression
 
-**Status:** NOT STARTED
+**Status:** ACCEPTED — positive-effective-threshold operational scope; R6 zero-threshold semantics deferred
 
 Checklist:
 
-- [ ] Verify the complete Table 1 nine-pattern oracle.
-- [ ] Compare exact pattern identities.
-- [ ] Compare exact integer supports.
-- [ ] Test I-extension and S-extension patterns.
-- [ ] Test repeated items.
-- [ ] Test multiple embeddings.
-- [ ] Test sparse and dense databases.
-- [ ] Test threshold equality.
+- [x] Verify the complete Table 1 nine-pattern oracle.
+- [x] Compare exact pattern identities.
+- [x] Compare exact integer supports.
+- [x] Test I-extension and S-extension patterns.
+- [x] Test repeated items.
+- [x] Test multiple embeddings.
+- [x] Test sparse and dense databases.
+- [x] Test threshold equality.
 - [ ] Test zero-threshold policy where resolved.
-- [ ] Test CMAP false pruning.
-- [ ] Test Bitmap false pruning.
-- [ ] Compare against frozen WSPM_PreTree.
-- [ ] Compare against independent brute-force oracle.
-- [ ] Investigate and document every mismatch.
+      DEFERRED / NOT APPLICABLE UNTIL R6 IS RESOLVED.
+- [x] Test CMAP false pruning.
+- [x] Test Bitmap false pruning.
+- [x] Compare against frozen WSPM_PreTree.
+- [x] Compare against independent brute-force oracle.
+- [x] Investigate and document every mismatch.
 
-**Deliverable:** Differential Correctness Report.
+**Deliverable:** [docs/research/wspm-bitprune-c11-differential-report.md](docs/research/wspm-bitprune-c11-differential-report.md).
 
 **Acceptance:** Identical `Map<Pattern, Integer>` outputs for all specified correctness configurations.
 
-**STOP:** Do not advance to performance benchmarking while any unexplained mismatch exists.
+**Reviewed Result:** Independent Research Reviewer: `PASS` across all units (C11.1 Table 1 oracle, C11.2 controlled boundary matrix, C11.3 bounded exhaustive catalogue, C11.4-R1 fixed-seed randomized differential suite). Repository Owner formally accepted C11.1–C11.4 and closed parent C11 for the positive-effective-threshold operational scope. Combined C11 test suite passed with 38/38 tests; full regression passed with 845/845 tests across 61 reports with zero failures, zero errors, and zero mismatches. R6 zero-minimum-support semantics remains OPEN and deferred. Exact-real floating-point safety remains unresolved.
+
+**STOP:** C11 is closed. Do not begin C12, statistics instrumentation or performance work automatically. C12 requires a separate readiness review and Repository Owner authorization.
 
 ## GATE 3 — INSTRUMENTATION, OUTPUT AND ACCEPTANCE
 
 ### C12 — Mining Statistics & Accounting Invariants
 
-**Status:** NOT STARTED
+**Status:** ACCEPTED
 
 Checklist:
 
-- [ ] Define generated candidate counter.
-- [ ] Define CMAP-pruned counter.
-- [ ] Define Bitmap-bound-pruned counter.
-- [ ] Define exact-support-rejected counter.
-- [ ] Define accepted-extension counter.
-- [ ] Define F1 pattern count.
-- [ ] Define total weighted pattern count.
-- [ ] Prevent counter overlap.
-- [ ] Test counter accounting invariants.
-- [ ] Match reported counts to verified events.
+- [x] Define generated candidate counter.
+- [x] Define CMAP-pruned counter.
+- [x] Define Bitmap-bound-pruned counter.
+- [x] Define exact-support-rejected counter.
+- [x] Define accepted-extension counter.
+- [x] Define F1 pattern count.
+- [x] Define total weighted pattern count.
+- [x] Prevent counter overlap.
+- [x] Test counter accounting invariants.
+- [x] Match reported counts to verified events.
 
-**Deliverable:** Mining statistics with counter tests.
+**Deliverable:** [docs/research/wspm-bitprune-c12-statistics-accounting-report.md](docs/research/wspm-bitprune-c12-statistics-accounting-report.md).
 
 **Acceptance:** Every candidate has exactly one final accounting outcome.
+
+**Reviewed Result:** Independent Research Reviewer: `PASS` after C12.1 immutable statistics model review, C12.2/C12.2-R1 accumulator ownership and first-failure routing review, C12.3/C12.3-R1 miner integration and exact controlled-oracle review, and C12.4/C12.4-R1/C12.4-R2 evidence-fidelity remediation. Repository Owner formally accepted parent C12. The accepted evidence covers 12 primary `long` counters, derived `rejectedExtensions`, checked overflow behavior, mutually exclusive terminal outcomes, exact mixed-outcome accounting, immutable completed-run statistics, and source-compatible legacy mining APIs. Statistics-focused tests passed 110/110, miner regression passed 82/82, C11 differential tests passed 38/38 with zero mismatches, and full regression passed 955/955 across 65 reports. R6 zero-threshold semantics remains OPEN; Java `double` exact-real safety remains unresolved; C13 measurement is NOT STARTED.
+
+**STOP:** C12 is closed. Preserve the accepted statistics implementation, tests and research report. Do not begin C13 automatically; C13 requires a separate readiness audit and Repository Owner authorization.
 
 ### C13 — Time/Memory Instrumentation Parity
 
@@ -1028,8 +1035,8 @@ Update this table only after review.
 | C08 | ACCEPTED | Independent Research Reviewer: PASS for C08.1 and C08.2; Repository Owner: ACCEPTED parent C08 | C08.1 exact S-extension verifier core: 26 focused / 48 combined I-/S-extension / 630 full-regression PASS. C08.2 differential evidence: 4,096 endpoint-mask comparisons, 2,800 exhaustive sequences, 183 S-extension pairs, 1,200 fixed-seed trials (`20261031L`), 0 mismatches, 19 focused / 45 combined C08 / 649 full-regression PASS; final artifact SHA-256 `67ED3F059C8A9E485BDABC955C58E417F2FD8B866A51430356CFAE1A0664C5AF` |
 | C09 | ACCEPTED | Independent Research Reviewer: PASS for C09.1, C09.2 and C09.3; Repository Owner: ACCEPTED parent C09 | Deterministic structural generation and accepted-child Prefix Tree integration; 9,540 bounded exhaustive comparisons, 1,500 fixed-seed trials (`20261102L`), 67 focused / 708 full-regression PASS; final C09.3 SHA-256 `416B016B3618B9A1B96AA2B5C70681ECD9393534223DB0662E66A62F931369F1` |
 | C10 | ACCEPTED | Independent Research Reviewer: PASS for C10.1, C10.2, C10.3 and C10.4; Repository Owner: ACCEPTED parent C10 | Three-tier evaluator, deterministic positive-threshold DFS and end-to-end preprocessing accepted; 1,836 bounded exhaustive evaluator comparisons, 1,500 fixed-seed trials (`20261103L`), controlled full-map evidence of 64/64 patterns for prepared DFS and 73/73 patterns for the public preprocessing boundary, all with zero mismatches; 99 focused C10 / 807 full-regression PASS; final miner SHA-256 `9F33F5D85C8FCAC95743A3BF34BB9AC2A5A5C992A8A1ECC9A961F02A1B751CC3`; final end-to-end test SHA-256 `A5D4543E17B9DA9D13100C2045496DB5CCE517DC930F8D1ACD9A4353C9752388`; R6 remains OPEN |
-| C11 | NOT STARTED | — | Differential correctness |
-| C12 | NOT STARTED | — | Statistics |
+| C11 | ACCEPTED | Independent Research Reviewer: PASS for C11.1–C11.4; Repository Owner: ACCEPTED parent C11 | Positive-threshold complete-map equality against Table 1, baseline and brute-force oracles; 38 focused C11 / 845 full-regression PASS; deliverable: `docs/research/wspm-bitprune-c11-differential-report.md`; R6 deferred |
+| C12 | ACCEPTED | Independent Research Reviewer: PASS through C12.4-R2; Repository Owner: ACCEPTED parent C12 | 12 primary long counters; derived `rejectedExtensions`; first-failure routing; exact controlled oracles (23/23 integration tests); 110 statistics-focused / 82 miner / 38 C11 differential / 955 full-regression PASS; deliverable: [docs/research/wspm-bitprune-c12-statistics-accounting-report.md](docs/research/wspm-bitprune-c12-statistics-accounting-report.md); R6 and exact-real comparator safety remain unresolved |
 | C13 | NOT STARTED | — | Measurement |
 | C14 | NOT STARTED | — | Retention/output |
 | C15 | NOT STARTED | — | Standalone Main |
@@ -1096,7 +1103,7 @@ Do not silently work around correctness failures.
 
 Current authorized execution state:
 
-**C00 — ACCEPTED | C01 — ACCEPTED | C01.1 — ACCEPTED | C01.2 — ACCEPTED | C02 — ACCEPTED | C03 — ACCEPTED (C03.1 AND C03.2 ACCEPTED) | C04 — ACCEPTED (C04.1 AND C04.2 ACCEPTED) | C05 — ACCEPTED (C05.1, C05.2 AND C05.3 ACCEPTED) | C06 — ACCEPTED (C06.1 AND C06.2 ACCEPTED) | C07 — ACCEPTED (C07.1 AND C07.2 ACCEPTED) | C08 — ACCEPTED (C08.1 AND C08.2 ACCEPTED) | C09 — ACCEPTED (C09.1, C09.2 AND C09.3 ACCEPTED) | C10 — ACCEPTED (C10.1, C10.2, C10.3 AND C10.4 ACCEPTED) | C11–C16 — NOT STARTED**
+**C00 — ACCEPTED | C01 — ACCEPTED | C01.1 — ACCEPTED | C01.2 — ACCEPTED | C02 — ACCEPTED | C03 — ACCEPTED (C03.1 AND C03.2 ACCEPTED) | C04 — ACCEPTED (C04.1 AND C04.2 ACCEPTED) | C05 — ACCEPTED (C05.1, C05.2 AND C05.3 ACCEPTED) | C06 — ACCEPTED (C06.1 AND C06.2 ACCEPTED) | C07 — ACCEPTED (C07.1 AND C07.2 ACCEPTED) | C08 — ACCEPTED (C08.1 AND C08.2 ACCEPTED) | C09 — ACCEPTED (C09.1, C09.2 AND C09.3 ACCEPTED) | C10 — ACCEPTED (C10.1, C10.2, C10.3 AND C10.4 ACCEPTED) | C11 — ACCEPTED (C11.1, C11.2, C11.3 AND C11.4 ACCEPTED) | C12 — ACCEPTED (C12.1 THROUGH C12.4-R2 ACCEPTED) | C13–C16 — NOT STARTED**
 
 Codex must:
 
@@ -1114,5 +1121,7 @@ Codex must:
 12. C08.1 and C08.2 are accepted by the Repository Owner after their respective Independent Research Review `PASS` results; parent C08 is fully `ACCEPTED`. Preserve the accepted exact S-extension implementation and bounded differential evidence unless a new correctness defect is demonstrated.
 13. C09.1, C09.2 and C09.3 are accepted by the Repository Owner after their respective Independent Research Review `PASS` results and evidence-integrity remediations; parent C09 is fully `ACCEPTED`. Preserve the accepted candidate-generation and Prefix Tree integration artifacts unless a new correctness defect is demonstrated.
 14. C10.1, C10.2, C10.3 and C10.4 are accepted by the Repository Owner after their respective Independent Research Review `PASS` results and evidence-integrity remediations; parent C10 is fully `ACCEPTED`. Preserve the accepted evaluator, DFS miner, preprocessing boundary and tests unless a new correctness defect is demonstrated. Keep C11 through C16 in `NOT STARTED`; C11 requires a separate readiness audit and implementation contract explicitly authorized by the Repository Owner. R6 remains `OPEN`, so C10 acceptance is limited to the accepted positive-threshold operational scope.
+15. C11.1, C11.2, C11.3 and C11.4-R1 are accepted by the Repository Owner after their respective Independent Research Review `PASS` results; parent C11 is fully `ACCEPTED` for the positive-effective-threshold operational scope. Complete-map equivalence is verified against the Table 1 oracle, the frozen WSPM_PreTree baseline, and the independent BruteForceWeightedPatternOracle across controlled, bounded exhaustive, and fixed-seed randomized catalogues with zero mismatches. R6 remains `OPEN`, and exact-real comparator safety remains unresolved.
+16. C12.1 through C12.4-R2 are accepted by the Repository Owner after Independent Research Review and evidence-fidelity remediation; parent C12 is fully `ACCEPTED`. Complete accounting evidence and exact controlled oracles are compiled in `docs/research/wspm-bitprune-c12-statistics-accounting-report.md`. Preserve the accepted statistics model, package-private accumulator, miner integration, immutable result boundary, exact counter-oracle tests and report unless a new defect is demonstrated. R6 remains `OPEN`, and Java `double` exact-real comparator safety remains unresolved. Do not begin C13 automatically; keep C13 through C16 in `NOT STARTED` until separately audited and authorized.
 
 **Core principle: Scientific correctness first. Optimization second. Reproducibility always.**

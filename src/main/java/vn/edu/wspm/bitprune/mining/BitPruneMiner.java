@@ -17,6 +17,8 @@ import vn.edu.wspm.bitprune.cmap.CmapI;
 import vn.edu.wspm.bitprune.cmap.CmapS;
 import vn.edu.wspm.bitprune.index.PatternEndpoints;
 import vn.edu.wspm.bitprune.index.VerticalOccurrenceIndex;
+import vn.edu.wspm.bitprune.result.BitPruneMiningResult;
+import vn.edu.wspm.bitprune.statistics.BitPruneStatistics;
 import vn.edu.wspm.bitprune.verification.VerificationResult;
 import vn.edu.wspm.config.MinimumSupport;
 import vn.edu.wspm.config.MinimumSupportResolver;
@@ -35,7 +37,7 @@ import vn.edu.wspm.tree.PrefixTree;
 
 /**
  * Positive-threshold DFS orchestration and accepted PrefixTree construction
- * for WSPM_BitPrune (C10.3).
+ * for WSPM_BitPrune (C10.3, C12.3).
  *
  * <p>
  * Operates on already-prepared mining inputs:
@@ -55,7 +57,7 @@ import vn.edu.wspm.tree.PrefixTree;
  * verification state;</li>
  * <li>Freezes the PrefixTree upon successful completion;</li>
  * <li>Returns an immutable map of accepted patterns to exact integer
- * support.</li>
+ * support, or an immutable {@link BitPruneMiningResult}.</li>
  * </ol>
  * </p>
  *
@@ -81,40 +83,37 @@ public final class BitPruneMiner {
 
     /**
      * Mines all weighted sequential patterns from the given sequence database into
-     * the caller-supplied PrefixTree under the specified minimum support.
+     * a newly constructed PrefixTree and returns an immutable completed-run result
+     * carrier.
      *
-     * <p>
-     * Orchestrates end-to-end preprocessing:
-     * <ol>
-     * <li>Validates input contracts and tree state before performing any mutation;</li>
-     * <li>Handles empty database boundary conditions;</li>
-     * <li>Computes sequence database statistics and item weights;</li>
-     * <li>Resolves effective minimum support without rounding;</li>
-     * <li>Constructs F1 frequent weighted singletons;</li>
-     * <li>Constructs vertical occurrence index and shared SID mapping;</li>
-     * <li>Constructs exact singleton bitmaps and singleton verification results;</li>
-     * <li>Constructs CMAP-I and CMAP-S relations over the F1 universe;</li>
-     * <li>Delegates DFS mining to {@link #mineInto(PrefixTree, List, Map, Map, CmapI, CmapS, VerticalOccurrenceIndex, double, ResolvedMinimumSupport)};</li>
-     * <li>Freezes the PrefixTree upon successful completion;</li>
-     * <li>Returns an immutable map of accepted patterns to exact support.</li>
-     * </ol>
-     * </p>
-     *
-     * <p>
-     * <strong>R6 BOUNDARY:</strong> Effective threshold equal to 0.0 on a non-empty
-     * database is rejected before tree mutation because Decision R6 remains OPEN.
-     * </p>
+     * @param database       non-null sequence database
+     * @param minimumSupport non-null minimum support configuration
+     * @return completed immutable result carrier
+     * @throws NullPointerException     if any argument is null
+     * @throws IllegalArgumentException if threshold is invalid, or if percentage mode is applied to an empty database
+     */
+    public BitPruneMiningResult mine(
+            SequenceDatabase database,
+            MinimumSupport minimumSupport) {
+        PrefixTree tree = new PrefixTree();
+        return mineIntoResult(tree, database, minimumSupport);
+    }
+
+    /**
+     * Mines all weighted sequential patterns from the given sequence database into
+     * the caller-supplied PrefixTree and returns an immutable completed-run result
+     * carrier.
      *
      * @param tree           non-null caller-owned PrefixTree containing only root Pattern.empty()
      * @param database       non-null sequence database
      * @param minimumSupport non-null minimum support configuration
-     * @return an immutable map of accepted patterns to exact integer support
+     * @return completed immutable result carrier
      * @throws NullPointerException     if any argument is null
      * @throws IllegalStateException    if tree is frozen
      * @throws IllegalArgumentException if tree is not root-only, or if threshold is invalid,
      *                                  or if percentage mode is applied to an empty database
      */
-    public Map<Pattern, Integer> mineInto(
+    public BitPruneMiningResult mineIntoResult(
             PrefixTree tree,
             SequenceDatabase database,
             MinimumSupport minimumSupport) {
@@ -135,7 +134,9 @@ public final class BitPruneMiner {
             // ABSOLUTE mode: succeeds; freeze root-only tree and return empty map
             minimumSupportResolver.resolve(minimumSupport, 0);
             tree.freeze();
-            return Collections.emptyMap();
+            BitPruneStatisticsAccumulator accumulator = new BitPruneStatisticsAccumulator(0L, 0L);
+            BitPruneStatistics stats = accumulator.finish(0L);
+            return new BitPruneMiningResult(tree, Collections.emptyMap(), stats);
         }
 
         ResolvedMinimumSupport resolvedMinSup = minimumSupportResolver.resolve(minimumSupport, database.size());
@@ -186,7 +187,7 @@ public final class BitPruneMiner {
         CmapI cmapI = cmapBuilder.buildI(database, f1Items);
         CmapS cmapS = cmapBuilder.buildS(database, f1Items);
 
-        return mineInto(
+        return minePreparedIntoResult(
                 tree,
                 f1,
                 singletonBitmaps,
@@ -199,29 +200,52 @@ public final class BitPruneMiner {
     }
 
     /**
-     * Mines all weighted sequential patterns into the provided PrefixTree under
-     * positive threshold.
+     * Mines all weighted sequential patterns from the given sequence database into
+     * the caller-supplied PrefixTree under the specified minimum support.
      *
-     * @param tree                   non-null caller-owned PrefixTree containing
-     *                               only root
-     * @param f1                     non-null list of frequent weighted 1-patterns
-     * @param singletonBitmaps       non-null map of item ID to singleton bitmap
-     * @param singletonVerifications non-null map of item ID to singleton
-     *                               verification result
-     * @param cmapI                  non-null CMAP-I index
-     * @param cmapS                  non-null CMAP-S index
-     * @param occurrenceIndex        non-null vertical occurrence index
-     * @param globalMeanWeight       finite, non-negative MeanW
-     * @param minimumSupport         resolved minimum support with strictly positive
-     *                               effective threshold
-     * @return an immutable map of accepted patterns to exact support
-     * @throws NullPointerException     if any argument or required element is null
-     * @throws IllegalStateException    if tree is frozen or child evaluation state
-     *                                  is corrupt
-     * @throws IllegalArgumentException if inputs violate structural, threshold, or
-     *                                  universe invariants
+     * <p>
+     * Orchestrates end-to-end preprocessing:
+     * <ol>
+     * <li>Validates input contracts and tree state before performing any mutation;</li>
+     * <li>Handles empty database boundary conditions;</li>
+     * <li>Computes sequence database statistics and item weights;</li>
+     * <li>Resolves effective minimum support without rounding;</li>
+     * <li>Constructs F1 frequent weighted singletons;</li>
+     * <li>Constructs vertical occurrence index and shared SID mapping;</li>
+     * <li>Constructs exact singleton bitmaps and singleton verification results;</li>
+     * <li>Constructs CMAP-I and CMAP-S relations over the F1 universe;</li>
+     * <li>Delegates DFS mining to {@link #mineInto(PrefixTree, List, Map, Map, CmapI, CmapS, VerticalOccurrenceIndex, double, ResolvedMinimumSupport)};</li>
+     * <li>Freezes the PrefixTree upon successful completion;</li>
+     * <li>Returns an immutable map of accepted patterns to exact support.</li>
+     * </ol>
+     * </p>
+     *
+     * <p>
+     * <strong>R6 BOUNDARY:</strong> Effective threshold equal to 0.0 on a non-empty
+     * database is rejected before tree mutation because Decision R6 remains OPEN.
+     * </p>
+     *
+     * @param tree           non-null caller-owned PrefixTree containing only root Pattern.empty()
+     * @param database       non-null sequence database
+     * @param minimumSupport non-null minimum support configuration
+     * @return an immutable map of accepted patterns to exact integer support
+     * @throws NullPointerException     if any argument is null
+     * @throws IllegalStateException    if tree is frozen
+     * @throws IllegalArgumentException if tree is not root-only, or if threshold is invalid,
+     *                                  or if percentage mode is applied to an empty database
      */
     public Map<Pattern, Integer> mineInto(
+            PrefixTree tree,
+            SequenceDatabase database,
+            MinimumSupport minimumSupport) {
+
+        return mineIntoResult(tree, database, minimumSupport).supports();
+    }
+
+    /**
+     * Result-producing DFS mining over prepared input structures.
+     */
+    BitPruneMiningResult minePreparedIntoResult(
             PrefixTree tree,
             List<WeightedOnePattern> f1,
             Map<Integer, SidBitmap> singletonBitmaps,
@@ -338,10 +362,14 @@ public final class BitPruneMiner {
             }
         }
 
+        BitPruneStatisticsAccumulator accumulator = new BitPruneStatisticsAccumulator(
+                minimumSupport.numberOfSequences(), f1.size());
+
         // --- 2. Empty F1 Handling ---
         if (f1.isEmpty()) {
             tree.freeze();
-            return Collections.emptyMap();
+            BitPruneStatistics statistics = accumulator.finish(0L);
+            return new BitPruneMiningResult(tree, Collections.emptyMap(), statistics);
         }
 
         // --- 3. Deterministic Ascending F1 Initialization ---
@@ -365,11 +393,58 @@ public final class BitPruneMiner {
 
             dfs(rootPattern, rootBitmap, rootVerif, sortedF1, singletonBitmaps,
                     tree, supportMap, cmapI, cmapS, occurrenceIndex,
-                    globalMeanWeight, minimumSupport);
+                    globalMeanWeight, minimumSupport, accumulator);
         }
 
         tree.freeze();
-        return Collections.unmodifiableMap(supportMap);
+        BitPruneStatistics statistics = accumulator.finish((long) supportMap.size());
+        return new BitPruneMiningResult(tree, supportMap, statistics);
+    }
+
+    /**
+     * Mines all weighted sequential patterns into the provided PrefixTree under
+     * positive threshold.
+     *
+     * @param tree                   non-null caller-owned PrefixTree containing
+     *                               only root
+     * @param f1                     non-null list of frequent weighted 1-patterns
+     * @param singletonBitmaps       non-null map of item ID to singleton bitmap
+     * @param singletonVerifications non-null map of item ID to singleton
+     *                               verification result
+     * @param cmapI                  non-null CMAP-I index
+     * @param cmapS                  non-null CMAP-S index
+     * @param occurrenceIndex        non-null vertical occurrence index
+     * @param globalMeanWeight       finite, non-negative MeanW
+     * @param minimumSupport         resolved minimum support with strictly positive
+     *                               effective threshold
+     * @return an immutable map of accepted patterns to exact support
+     * @throws NullPointerException     if any argument or required element is null
+     * @throws IllegalStateException    if tree is frozen or child evaluation state
+     *                                  is corrupt
+     * @throws IllegalArgumentException if inputs violate structural, threshold, or
+     *                                  universe invariants
+     */
+    public Map<Pattern, Integer> mineInto(
+            PrefixTree tree,
+            List<WeightedOnePattern> f1,
+            Map<Integer, SidBitmap> singletonBitmaps,
+            Map<Integer, VerificationResult> singletonVerifications,
+            CmapI cmapI,
+            CmapS cmapS,
+            VerticalOccurrenceIndex occurrenceIndex,
+            double globalMeanWeight,
+            ResolvedMinimumSupport minimumSupport) {
+
+        return minePreparedIntoResult(
+                tree,
+                f1,
+                singletonBitmaps,
+                singletonVerifications,
+                cmapI,
+                cmapS,
+                occurrenceIndex,
+                globalMeanWeight,
+                minimumSupport).supports();
     }
 
     private void dfs(
@@ -384,33 +459,44 @@ public final class BitPruneMiner {
             CmapS cmapS,
             VerticalOccurrenceIndex occurrenceIndex,
             double globalMeanWeight,
-            ResolvedMinimumSupport minimumSupport) {
+            ResolvedMinimumSupport minimumSupport,
+            BitPruneStatisticsAccumulator accumulator) {
+
+        accumulator.recordExpandedNode();
 
         List<BitPruneCandidateResult> candidates = candidateEngine.generateCandidates(parentPattern, sortedF1);
         for (BitPruneCandidateResult candidate : candidates) {
             Item extItem = candidate.extensionItem();
             SidBitmap extBitmap = singletonBitmaps.get(extItem.id());
 
+            switch (candidate.extensionType()) {
+                case I_EXTENSION -> accumulator.recordGeneratedIExtension();
+                case S_EXTENSION -> accumulator.recordGeneratedSExtension();
+            }
+
             BitPruneCandidateEvaluation eval = candidateEvaluator.evaluate(
                     parentPattern, candidate, parentBitmap, extBitmap, parentVerif,
                     cmapI, cmapS, occurrenceIndex, globalMeanWeight, minimumSupport);
 
-            if (eval.outcome() == BitPruneCandidateEvaluation.Outcome.ACCEPTED) {
-                SidBitmap childBitmap = eval.candidateBitmap().orElseThrow(
-                        () -> new IllegalStateException("Accepted evaluation missing candidate bitmap"));
-                VerificationResult childVerif = eval.verificationResult().orElseThrow(
-                        () -> new IllegalStateException("Accepted evaluation missing verification result"));
+            switch (eval.outcome()) {
+                case CMAP_REJECTED -> accumulator.recordCmapRejected();
+                case BITMAP_REJECTED -> accumulator.recordBitmapRejected();
+                case EXACT_REJECTED -> accumulator.recordExactRejected();
+                case ACCEPTED -> {
+                    accumulator.recordAcceptedExtension();
+                    SidBitmap childBitmap = eval.candidateBitmap().orElseThrow(
+                            () -> new IllegalStateException("Accepted evaluation missing candidate bitmap"));
+                    VerificationResult childVerif = eval.verificationResult().orElseThrow(
+                            () -> new IllegalStateException("Accepted evaluation missing verification result"));
 
-                integrator.insertAcceptedChild(tree, parentPattern, candidate);
-                supportMap.put(candidate.pattern(), childVerif.exactSupport());
+                    integrator.insertAcceptedChild(tree, parentPattern, candidate);
+                    supportMap.put(candidate.pattern(), childVerif.exactSupport());
 
-                dfs(candidate.pattern(), childBitmap, childVerif, sortedF1, singletonBitmaps,
-                        tree, supportMap, cmapI, cmapS, occurrenceIndex,
-                        globalMeanWeight, minimumSupport);
+                    dfs(candidate.pattern(), childBitmap, childVerif, sortedF1, singletonBitmaps,
+                            tree, supportMap, cmapI, cmapS, occurrenceIndex,
+                            globalMeanWeight, minimumSupport, accumulator);
+                }
             }
-            // If CMAP_REJECTED, BITMAP_REJECTED, or EXACT_REJECTED: do not insert, do not
-            // record support, do not recurse.
-            // Loop continues with siblings.
         }
     }
 }
