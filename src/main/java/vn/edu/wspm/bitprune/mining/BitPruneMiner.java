@@ -17,12 +17,15 @@ import vn.edu.wspm.bitprune.cmap.CmapI;
 import vn.edu.wspm.bitprune.cmap.CmapS;
 import vn.edu.wspm.bitprune.index.PatternEndpoints;
 import vn.edu.wspm.bitprune.index.VerticalOccurrenceIndex;
+import vn.edu.wspm.bitprune.measurement.BitPruneAlgorithmMetrics;
 import vn.edu.wspm.bitprune.result.BitPruneMiningResult;
 import vn.edu.wspm.bitprune.statistics.BitPruneStatistics;
 import vn.edu.wspm.bitprune.verification.VerificationResult;
 import vn.edu.wspm.config.MinimumSupport;
 import vn.edu.wspm.config.MinimumSupportResolver;
 import vn.edu.wspm.config.ResolvedMinimumSupport;
+import vn.edu.wspm.measurement.ExecutionMemorySampler;
+import vn.edu.wspm.measurement.PhaseExecutionMetrics;
 import vn.edu.wspm.mining.F1Builder;
 import vn.edu.wspm.mining.WeightedOnePattern;
 import vn.edu.wspm.model.Item;
@@ -37,34 +40,33 @@ import vn.edu.wspm.tree.PrefixTree;
 
 /**
  * Positive-threshold DFS orchestration and accepted PrefixTree construction
- * for WSPM_BitPrune (C10.3, C12.3).
+ * for WSPM_BitPrune (C10.3, C12.3, C13.2).
  *
  * <p>
- * Operates on already-prepared mining inputs:
+ * Decouples the Preprocessing boundary (Scope 2) from DFS Mining (Scope 3)
+ * via the immutable package-private carrier {@link BitPrunePreparedInput}:
  * <ol>
- * <li>Validates all input contracts and consistency before mutating the
- * tree;</li>
- * <li>Initializes accepted F1 singletons directly beneath the PrefixTree
- * root;</li>
+ * <li>{@link #prepare(SequenceDatabase, MinimumSupport)} computes all database
+ * statistics, item weights, MeanW, F1 singletons, SidMapping, VerticalOccurrenceIndex,
+ * singleton bitmaps, singleton verification results, and CMAP structures without
+ * mutating any PrefixTree;</li>
+ * <li>{@link #minePreparedIntoResult(PrefixTree, BitPrunePreparedInput)} performs
+ * F1 root initialization, sets up the per-run accumulator, executes DFS traversal
+ * via {@link #executeDfs(PrefixTree, BitPrunePreparedInput, Map, BitPruneStatisticsAccumulator)},
+ * freezes the PrefixTree, and constructs the completed {@link BitPruneMiningResult};</li>
  * <li>Traverses the sequential pattern search space in deterministic ascending
  * DFS order;</li>
  * <li>Generates candidates strictly using {@link BitPruneCandidateEngine};</li>
- * <li>Evaluates candidates strictly using
- * {@link BitPruneCandidateEvaluator};</li>
- * <li>Inserts only accepted candidates via
- * {@link BitPrunePrefixTreeIntegrator};</li>
- * <li>Recurses only into accepted candidates using child bitmap and
- * verification state;</li>
- * <li>Freezes the PrefixTree upon successful completion;</li>
- * <li>Returns an immutable map of accepted patterns to exact integer
- * support, or an immutable {@link BitPruneMiningResult}.</li>
+ * <li>Evaluates candidates strictly using {@link BitPruneCandidateEvaluator};</li>
+ * <li>Inserts only accepted candidates via {@link BitPrunePrefixTreeIntegrator};</li>
+ * <li>Recurses only into accepted candidates using child bitmap and verification state;</li>
+ * <li>Returns an immutable map of accepted patterns to exact integer support, or an immutable {@link BitPruneMiningResult}.</li>
  * </ol>
  * </p>
  *
  * <p>
  * <strong>R6 BOUNDARY:</strong> Effective threshold equal to 0.0 is rejected
- * before tree
- * mutation because Decision R6 remains OPEN.
+ * during preprocessing before any tree mutation because Decision R6 remains OPEN.
  * </p>
  */
 public final class BitPruneMiner {
@@ -100,6 +102,76 @@ public final class BitPruneMiner {
     }
 
     /**
+     * Mines all weighted sequential patterns from the given sequence database while
+     * measuring preprocessing, DFS mining, and complete algorithm execution using a
+     * caller-owned execution memory sampler.
+     *
+     * <p>
+     * Timing boundaries:
+     * <ul>
+     * <li>Complete Algorithm: starts immediately after argument validation before preprocessing,
+     * and ends after PrefixTree freeze, statistics finish, and mining result construction,
+     * immediately before metrics construction;</li>
+     * <li>Preprocessing: starts immediately before database preprocessing, encompasses database
+     * statistics, item weights, MeanW, F1 filtering, SidMapping, occurrence indexing, singleton
+     * bitmaps and verifications, CMAP construction, PrefixTree root creation, and per-run accumulator
+     * initialization, and ends immediately before DFS checkpoint;</li>
+     * <li>DFS Mining: starts immediately before DFS candidate exploration and ends immediately
+     * after recursive DFS completes;</li>
+     * <li>Finalization: tree freeze, accumulator finish, and result construction occur outside
+     * DFS mining but inside complete algorithm scope.</li>
+     * </ul>
+     * </p>
+     *
+     * @param database       non-null sequence database
+     * @param minimumSupport non-null minimum support configuration
+     * @param sampler        non-null caller-owned execution memory sampler
+     * @return immutable measured run carrier holding the mining result and algorithm metrics
+     * @throws NullPointerException     if any argument is null
+     * @throws IllegalArgumentException if threshold is invalid, or if percentage mode is applied to an empty database
+     */
+    public MeasuredBitPruneRun mineMeasured(
+            SequenceDatabase database,
+            MinimumSupport minimumSupport,
+            ExecutionMemorySampler sampler) {
+
+        Objects.requireNonNull(database, "database must not be null");
+        Objects.requireNonNull(minimumSupport, "minimumSupport must not be null");
+        Objects.requireNonNull(sampler, "sampler must not be null");
+
+        var algorithmStart = sampler.checkpoint();
+        var preprocessingStart = sampler.checkpoint();
+
+        BitPrunePreparedInput prepared = prepare(database, minimumSupport);
+        PrefixTree tree = new PrefixTree();
+        RunState runState = initializeRunState(tree, prepared);
+
+        var preprocessingEnd = sampler.checkpoint();
+        var preprocessingMetrics = PhaseExecutionMetrics.between(sampler, preprocessingStart, preprocessingEnd);
+
+        var dfsStart = sampler.checkpoint();
+        executeDfs(tree, prepared, runState.supportMap(), runState.accumulator());
+        var dfsEnd = sampler.checkpoint();
+        var dfsMetrics = PhaseExecutionMetrics.between(sampler, dfsStart, dfsEnd);
+
+        BitPruneMiningResult result = finalizeResult(tree, runState);
+
+        var algorithmEnd = sampler.checkpoint();
+        long completeAlgorithmNanos = Math.max(0L, algorithmEnd.nanoTime() - algorithmStart.nanoTime());
+        long heapAfterMiningBytes = algorithmEnd.heapUsedBytes();
+        long observedPeakHeapAlgorithmBytes = sampler.observedPeakBytes(algorithmStart, algorithmEnd);
+
+        var algorithmMetrics = new BitPruneAlgorithmMetrics(
+                preprocessingMetrics,
+                dfsMetrics,
+                completeAlgorithmNanos,
+                heapAfterMiningBytes,
+                observedPeakHeapAlgorithmBytes);
+
+        return new MeasuredBitPruneRun(result, algorithmMetrics);
+    }
+
+    /**
      * Mines all weighted sequential patterns from the given sequence database into
      * the caller-supplied PrefixTree and returns an immutable completed-run result
      * carrier.
@@ -118,85 +190,9 @@ public final class BitPruneMiner {
             SequenceDatabase database,
             MinimumSupport minimumSupport) {
 
-        Objects.requireNonNull(tree, "tree must not be null");
-        Objects.requireNonNull(database, "database must not be null");
-        Objects.requireNonNull(minimumSupport, "minimumSupport must not be null");
-
-        if (tree.isFrozen()) {
-            throw new IllegalStateException("tree must not be frozen");
-        }
-        if (tree.nodeCount() != 1 || tree.find(Pattern.empty()).isEmpty()) {
-            throw new IllegalArgumentException("tree must initially contain only root Pattern.empty()");
-        }
-
-        if (database.size() == 0) {
-            // PERCENT mode: resolver throws IllegalArgumentException("percentage minimum support cannot be resolved for an empty database")
-            // ABSOLUTE mode: succeeds; freeze root-only tree and return empty map
-            minimumSupportResolver.resolve(minimumSupport, 0);
-            tree.freeze();
-            BitPruneStatisticsAccumulator accumulator = new BitPruneStatisticsAccumulator(0L, 0L);
-            BitPruneStatistics stats = accumulator.finish(0L);
-            return new BitPruneMiningResult(tree, Collections.emptyMap(), stats);
-        }
-
-        ResolvedMinimumSupport resolvedMinSup = minimumSupportResolver.resolve(minimumSupport, database.size());
-        if (resolvedMinSup.effectiveThreshold() == 0.0) {
-            throw new IllegalArgumentException(
-                    "effectiveThreshold == 0.0 is rejected while Decision R6 remains OPEN");
-        }
-        if (resolvedMinSup.effectiveThreshold() < 0.0) {
-            throw new IllegalArgumentException(
-                    "effectiveThreshold must not be negative; got: " + resolvedMinSup.effectiveThreshold());
-        }
-
-        SequenceDatabaseStatistics stats = itemStatisticsCalculator.calculate(database);
-        ItemWeightResult weightResult = itemWeightCalculator.calculate(stats);
-        double globalMeanWeight = weightResult.meanWeight().orElseThrow(
-                () -> new IllegalStateException("non-empty database must have global MeanW"));
-
-        List<WeightedOnePattern> f1 = f1Builder.build(stats, weightResult, resolvedMinSup);
-
-        SidMapping mapping = SidMapping.of(database);
-        VerticalOccurrenceIndex occIndex = VerticalOccurrenceIndex.build(database, mapping);
-
-        Map<Integer, SidBitmap> singletonBitmaps = new LinkedHashMap<>();
-        Map<Integer, VerificationResult> singletonVerifications = new LinkedHashMap<>();
-        List<Item> f1Items = new ArrayList<>(f1.size());
-
-        for (WeightedOnePattern p : f1) {
-            int itemId = p.itemId();
-            Item item = new Item(itemId);
-            f1Items.add(item);
-
-            SidBitmap.Builder bitmapBuilder = SidBitmap.builder(mapping);
-            List<PatternEndpoints> endpoints = new ArrayList<>();
-
-            for (SequenceRecord record : database.records()) {
-                int sid = record.sid();
-                int[] positions = occIndex.positions(item, sid);
-                if (positions.length > 0) {
-                    bitmapBuilder.setSid(sid);
-                    endpoints.add(PatternEndpoints.of(sid, positions));
-                }
-            }
-
-            singletonBitmaps.put(itemId, bitmapBuilder.build());
-            singletonVerifications.put(itemId, VerificationResult.of(endpoints));
-        }
-
-        CmapI cmapI = cmapBuilder.buildI(database, f1Items);
-        CmapS cmapS = cmapBuilder.buildS(database, f1Items);
-
-        return minePreparedIntoResult(
-                tree,
-                f1,
-                singletonBitmaps,
-                singletonVerifications,
-                cmapI,
-                cmapS,
-                occIndex,
-                globalMeanWeight,
-                resolvedMinSup);
+        validateTree(tree);
+        BitPrunePreparedInput prepared = prepare(database, minimumSupport);
+        return minePreparedIntoResult(tree, prepared);
     }
 
     /**
@@ -204,18 +200,11 @@ public final class BitPruneMiner {
      * the caller-supplied PrefixTree under the specified minimum support.
      *
      * <p>
-     * Orchestrates end-to-end preprocessing:
+     * Orchestrates end-to-end preprocessing and DFS mining:
      * <ol>
      * <li>Validates input contracts and tree state before performing any mutation;</li>
-     * <li>Handles empty database boundary conditions;</li>
-     * <li>Computes sequence database statistics and item weights;</li>
-     * <li>Resolves effective minimum support without rounding;</li>
-     * <li>Constructs F1 frequent weighted singletons;</li>
-     * <li>Constructs vertical occurrence index and shared SID mapping;</li>
-     * <li>Constructs exact singleton bitmaps and singleton verification results;</li>
-     * <li>Constructs CMAP-I and CMAP-S relations over the F1 universe;</li>
-     * <li>Delegates DFS mining to {@link #mineInto(PrefixTree, List, Map, Map, CmapI, CmapS, VerticalOccurrenceIndex, double, ResolvedMinimumSupport)};</li>
-     * <li>Freezes the PrefixTree upon successful completion;</li>
+     * <li>Executes preprocessing via {@link #prepare(SequenceDatabase, MinimumSupport)};</li>
+     * <li>Delegates DFS mining and result construction to {@link #minePreparedIntoResult(PrefixTree, BitPrunePreparedInput)};</li>
      * <li>Returns an immutable map of accepted patterns to exact support.</li>
      * </ol>
      * </p>
@@ -243,7 +232,148 @@ public final class BitPruneMiner {
     }
 
     /**
-     * Result-producing DFS mining over prepared input structures.
+     * Executes the Preprocessing phase (Scope 2) for WSPM_BitPrune without mutating
+     * the caller's PrefixTree or running DFS candidate exploration.
+     *
+     * @param database       non-null sequence database
+     * @param minimumSupport non-null minimum support configuration
+     * @return immutable prepared input carrier holding preprocessed structures
+     * @throws NullPointerException     if any argument is null
+     * @throws IllegalArgumentException if threshold is invalid, or if percentage mode is applied to an empty database
+     */
+    BitPrunePreparedInput prepare(
+            SequenceDatabase database,
+            MinimumSupport minimumSupport) {
+
+        Objects.requireNonNull(database, "database must not be null");
+        Objects.requireNonNull(minimumSupport, "minimumSupport must not be null");
+
+        if (database.size() == 0) {
+            // PERCENT mode: resolver throws IllegalArgumentException("percentage minimum support cannot be resolved for an empty database")
+            // ABSOLUTE mode: succeeds; returns empty prepared input
+            ResolvedMinimumSupport resolvedMinSup = minimumSupportResolver.resolve(minimumSupport, 0);
+            SidMapping mapping = SidMapping.of(database);
+            VerticalOccurrenceIndex occIndex = VerticalOccurrenceIndex.build(database, mapping);
+            CmapI cmapI = cmapBuilder.buildI(database, Collections.emptyList());
+            CmapS cmapS = cmapBuilder.buildS(database, Collections.emptyList());
+            return new BitPrunePreparedInput(
+                    resolvedMinSup,
+                    0.0,
+                    Collections.emptyList(),
+                    Collections.emptyMap(),
+                    Collections.emptyMap(),
+                    cmapI,
+                    cmapS,
+                    occIndex);
+        }
+
+        ResolvedMinimumSupport resolvedMinSup = minimumSupportResolver.resolve(minimumSupport, database.size());
+        if (resolvedMinSup.effectiveThreshold() == 0.0) {
+            throw new IllegalArgumentException(
+                    "effectiveThreshold == 0.0 is rejected while Decision R6 remains OPEN");
+        }
+        if (resolvedMinSup.effectiveThreshold() < 0.0) {
+            throw new IllegalArgumentException(
+                    "effectiveThreshold must not be negative; got: " + resolvedMinSup.effectiveThreshold());
+        }
+
+        SequenceDatabaseStatistics stats = itemStatisticsCalculator.calculate(database);
+        ItemWeightResult weightResult = itemWeightCalculator.calculate(stats);
+        double globalMeanWeight = weightResult.meanWeight().orElseThrow(
+                () -> new IllegalStateException("non-empty database must have global MeanW"));
+
+        List<WeightedOnePattern> f1 = f1Builder.build(stats, weightResult, resolvedMinSup);
+        List<WeightedOnePattern> sortedF1 = new ArrayList<>(f1);
+        sortedF1.sort(Comparator.comparingInt(WeightedOnePattern::itemId));
+
+        SidMapping mapping = SidMapping.of(database);
+        VerticalOccurrenceIndex occIndex = VerticalOccurrenceIndex.build(database, mapping);
+
+        Map<Integer, SidBitmap> singletonBitmaps = new LinkedHashMap<>();
+        Map<Integer, VerificationResult> singletonVerifications = new LinkedHashMap<>();
+        List<Item> f1Items = new ArrayList<>(sortedF1.size());
+
+        for (WeightedOnePattern p : sortedF1) {
+            int itemId = p.itemId();
+            Item item = new Item(itemId);
+            f1Items.add(item);
+
+            SidBitmap.Builder bitmapBuilder = SidBitmap.builder(mapping);
+            List<PatternEndpoints> endpoints = new ArrayList<>();
+
+            for (SequenceRecord record : database.records()) {
+                int sid = record.sid();
+                int[] positions = occIndex.positions(item, sid);
+                if (positions.length > 0) {
+                    bitmapBuilder.setSid(sid);
+                    endpoints.add(PatternEndpoints.of(sid, positions));
+                }
+            }
+
+            singletonBitmaps.put(itemId, bitmapBuilder.build());
+            singletonVerifications.put(itemId, VerificationResult.of(endpoints));
+        }
+
+        CmapI cmapI = cmapBuilder.buildI(database, f1Items);
+        CmapS cmapS = cmapBuilder.buildS(database, f1Items);
+
+        return new BitPrunePreparedInput(
+                resolvedMinSup,
+                globalMeanWeight,
+                sortedF1,
+                singletonBitmaps,
+                singletonVerifications,
+                cmapI,
+                cmapS,
+                occIndex);
+    }
+
+    /**
+     * Executes DFS mining and result finalization over preprocessed input structures.
+     *
+     * @param tree          non-null caller-owned PrefixTree containing only root Pattern.empty()
+     * @param preparedInput non-null preprocessed input carrier
+     * @return completed immutable result carrier
+     * @throws NullPointerException     if any argument is null
+     * @throws IllegalStateException    if tree is frozen
+     * @throws IllegalArgumentException if tree is not root-only
+     */
+    BitPruneMiningResult minePreparedIntoResult(
+            PrefixTree tree,
+            BitPrunePreparedInput preparedInput) {
+
+        validateTree(tree);
+        Objects.requireNonNull(preparedInput, "preparedInput must not be null");
+
+        RunState runState = initializeRunState(tree, preparedInput);
+        executeDfs(tree, preparedInput, runState.supportMap(), runState.accumulator());
+        return finalizeResult(tree, runState);
+    }
+
+    /**
+     * Executes the DFS recursive traversal starting from each F1 root.
+     */
+    void executeDfs(
+            PrefixTree tree,
+            BitPrunePreparedInput prepared,
+            Map<Pattern, Integer> supportMap,
+            BitPruneStatisticsAccumulator accumulator) {
+
+        for (WeightedOnePattern rootOne : prepared.sortedF1()) {
+            int rootId = rootOne.itemId();
+            Pattern rootPattern = Pattern.singleton(new Item(rootId));
+            SidBitmap rootBitmap = prepared.singletonBitmaps().get(rootId);
+            VerificationResult rootVerif = prepared.singletonVerifications().get(rootId);
+
+            dfs(rootPattern, rootBitmap, rootVerif, prepared.sortedF1(), prepared.singletonBitmaps(),
+                    tree, supportMap, prepared.cmapI(), prepared.cmapS(), prepared.occurrenceIndex(),
+                    prepared.globalMeanWeight(), prepared.resolvedMinimumSupport(), accumulator);
+        }
+    }
+
+    /**
+     * Result-producing DFS mining over prepared input structures with defensive validation.
+     * Preserved for backward compatibility with C10/C12 integration test suites.
      */
     BitPruneMiningResult minePreparedIntoResult(
             PrefixTree tree,
@@ -257,7 +387,7 @@ public final class BitPruneMiner {
             ResolvedMinimumSupport minimumSupport) {
 
         // --- 1. Global Input Validation Before Tree Mutation ---
-        Objects.requireNonNull(tree, "tree must not be null");
+        validateTree(tree);
         Objects.requireNonNull(f1, "f1 must not be null");
         Objects.requireNonNull(singletonBitmaps, "singletonBitmaps must not be null");
         Objects.requireNonNull(singletonVerifications, "singletonVerifications must not be null");
@@ -265,13 +395,6 @@ public final class BitPruneMiner {
         Objects.requireNonNull(cmapS, "cmapS must not be null");
         Objects.requireNonNull(occurrenceIndex, "occurrenceIndex must not be null");
         Objects.requireNonNull(minimumSupport, "minimumSupport must not be null");
-
-        if (tree.isFrozen()) {
-            throw new IllegalStateException("tree must not be frozen");
-        }
-        if (tree.nodeCount() != 1 || tree.find(Pattern.empty()).isEmpty()) {
-            throw new IllegalArgumentException("tree must initially contain only root Pattern.empty()");
-        }
 
         if (!Double.isFinite(globalMeanWeight) || globalMeanWeight < 0.0) {
             throw new IllegalArgumentException(
@@ -353,7 +476,7 @@ public final class BitPruneMiner {
                 int[] expectedPos = occurrenceIndex.positions(item, sid);
                 if (!Arrays.equals(ep.endpoints(), expectedPos)) {
                     throw new IllegalArgumentException("singleton endpoint array for item " + itemId
-                            + " and SID " + sid + " must equal occurrenceIndex.positions");
+                    + " and SID " + sid + " must equal occurrenceIndex.positions");
                 }
             }
 
@@ -376,6 +499,16 @@ public final class BitPruneMiner {
         List<WeightedOnePattern> sortedF1 = new ArrayList<>(f1);
         sortedF1.sort(Comparator.comparingInt(WeightedOnePattern::itemId));
 
+        BitPrunePreparedInput prepared = new BitPrunePreparedInput(
+                minimumSupport,
+                globalMeanWeight,
+                sortedF1,
+                singletonBitmaps,
+                singletonVerifications,
+                cmapI,
+                cmapS,
+                occurrenceIndex);
+
         integrator.initializeF1Roots(tree, sortedF1);
 
         Map<Pattern, Integer> supportMap = new LinkedHashMap<>();
@@ -385,16 +518,7 @@ public final class BitPruneMiner {
         }
 
         // --- 4. Positive-Threshold DFS Traversal ---
-        for (WeightedOnePattern rootOne : sortedF1) {
-            int rootId = rootOne.itemId();
-            Pattern rootPattern = Pattern.singleton(new Item(rootId));
-            SidBitmap rootBitmap = singletonBitmaps.get(rootId);
-            VerificationResult rootVerif = singletonVerifications.get(rootId);
-
-            dfs(rootPattern, rootBitmap, rootVerif, sortedF1, singletonBitmaps,
-                    tree, supportMap, cmapI, cmapS, occurrenceIndex,
-                    globalMeanWeight, minimumSupport, accumulator);
-        }
+        executeDfs(tree, prepared, supportMap, accumulator);
 
         tree.freeze();
         BitPruneStatistics statistics = accumulator.finish((long) supportMap.size());
@@ -405,24 +529,19 @@ public final class BitPruneMiner {
      * Mines all weighted sequential patterns into the provided PrefixTree under
      * positive threshold.
      *
-     * @param tree                   non-null caller-owned PrefixTree containing
-     *                               only root
+     * @param tree                   non-null caller-owned PrefixTree containing only root
      * @param f1                     non-null list of frequent weighted 1-patterns
      * @param singletonBitmaps       non-null map of item ID to singleton bitmap
-     * @param singletonVerifications non-null map of item ID to singleton
-     *                               verification result
+     * @param singletonVerifications non-null map of item ID to singleton verification result
      * @param cmapI                  non-null CMAP-I index
      * @param cmapS                  non-null CMAP-S index
      * @param occurrenceIndex        non-null vertical occurrence index
      * @param globalMeanWeight       finite, non-negative MeanW
-     * @param minimumSupport         resolved minimum support with strictly positive
-     *                               effective threshold
+     * @param minimumSupport         resolved minimum support with strictly positive effective threshold
      * @return an immutable map of accepted patterns to exact support
      * @throws NullPointerException     if any argument or required element is null
-     * @throws IllegalStateException    if tree is frozen or child evaluation state
-     *                                  is corrupt
-     * @throws IllegalArgumentException if inputs violate structural, threshold, or
-     *                                  universe invariants
+     * @throws IllegalStateException    if tree is frozen or child evaluation state is corrupt
+     * @throws IllegalArgumentException if inputs violate structural, threshold, or universe invariants
      */
     public Map<Pattern, Integer> mineInto(
             PrefixTree tree,
@@ -445,6 +564,16 @@ public final class BitPruneMiner {
                 occurrenceIndex,
                 globalMeanWeight,
                 minimumSupport).supports();
+    }
+
+    private static void validateTree(PrefixTree tree) {
+        Objects.requireNonNull(tree, "tree must not be null");
+        if (tree.isFrozen()) {
+            throw new IllegalStateException("tree must not be frozen");
+        }
+        if (tree.nodeCount() != 1 || tree.find(Pattern.empty()).isEmpty()) {
+            throw new IllegalArgumentException("tree must initially contain only root Pattern.empty()");
+        }
     }
 
     private void dfs(
@@ -498,5 +627,32 @@ public final class BitPruneMiner {
                 }
             }
         }
+    }
+
+    private RunState initializeRunState(PrefixTree tree, BitPrunePreparedInput prepared) {
+        List<WeightedOnePattern> sortedF1 = prepared.sortedF1();
+        BitPruneStatisticsAccumulator accumulator = new BitPruneStatisticsAccumulator(
+                prepared.resolvedMinimumSupport().numberOfSequences(), sortedF1.size());
+
+        Map<Pattern, Integer> supportMap = new LinkedHashMap<>();
+        if (!sortedF1.isEmpty()) {
+            integrator.initializeF1Roots(tree, sortedF1);
+            for (WeightedOnePattern one : sortedF1) {
+                Pattern singleton = Pattern.singleton(new Item(one.itemId()));
+                supportMap.put(singleton, one.support());
+            }
+        }
+        return new RunState(supportMap, accumulator);
+    }
+
+    private BitPruneMiningResult finalizeResult(PrefixTree tree, RunState runState) {
+        tree.freeze();
+        BitPruneStatistics statistics = runState.accumulator().finish((long) runState.supportMap().size());
+        return new BitPruneMiningResult(tree, runState.supportMap(), statistics);
+    }
+
+    private record RunState(
+            Map<Pattern, Integer> supportMap,
+            BitPruneStatisticsAccumulator accumulator) {
     }
 }
