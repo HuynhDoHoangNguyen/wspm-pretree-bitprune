@@ -6,7 +6,7 @@
 **Language:** Java 21  
 **Build:** Apache Maven  
 **Testing:** JUnit 5  
-**Status:** IN PROGRESS — C00 ACCEPTED, C01 ACCEPTED, C02 ACCEPTED, C03 ACCEPTED, C04 ACCEPTED, C05 ACCEPTED (C05.1–C05.3 ACCEPTED), C06 ACCEPTED (C06.1–C06.2 ACCEPTED), C07 ACCEPTED (C07.1–C07.2 ACCEPTED), C08 ACCEPTED (C08.1–C08.2 ACCEPTED), C09 ACCEPTED (C09.1–C09.3 ACCEPTED), C10 ACCEPTED (C10.1–C10.4 ACCEPTED), C11 ACCEPTED (C11.1–C11.4 ACCEPTED — positive-effective-threshold operational scope; R6 zero-threshold semantics deferred), C12 ACCEPTED (C12.1–C12.4-R2 ACCEPTED), C13 PARTIAL (C13.1–C13.4 ALGORITHM SCOPE ACCEPTED; EXECUTION SCOPES 1/5/6 PENDING C15), C14 ACCEPTED (C14.1, C14.1-R1, C14.2 AND C14.2-R1 ACCEPTED), C15–C16 NOT STARTED
+**Status:** IN PROGRESS — C00 ACCEPTED, C01 ACCEPTED, C02 ACCEPTED, C03 ACCEPTED, C04 ACCEPTED, C05 ACCEPTED (C05.1–C05.3 ACCEPTED), C06 ACCEPTED (C06.1–C06.2 ACCEPTED), C07 ACCEPTED (C07.1–C07.2 ACCEPTED), C08 ACCEPTED (C08.1–C08.2 ACCEPTED), C09 ACCEPTED (C09.1–C09.3 ACCEPTED), C10 ACCEPTED (C10.1–C10.4 ACCEPTED), C11 ACCEPTED (C11.1–C11.4 ACCEPTED — positive-effective-threshold operational scope; R6 zero-threshold semantics deferred), C12 ACCEPTED (C12.1–C12.4-R2 ACCEPTED), C13 ACCEPTED, C14 ACCEPTED (C14.1, C14.1-R1, C14.2 AND C14.2-R1 ACCEPTED), C15 ACCEPTED (C15.0–C15.4 ACCEPTED), C16 NOT STARTED
 
 ---
 
@@ -772,33 +772,33 @@ Checklist:
 
 ### C13 — Time/Memory Instrumentation Parity
 
-**Status:** PARTIAL — C13.1–C13.4 ALGORITHM SCOPE ACCEPTED; EXECUTION SCOPES 1/5/6 PENDING C15
+**Status:** ACCEPTED
 
 Checklist:
 
 - [x] Reuse the established Phase B measurement protocol.
-- [ ] Measure Dataset I/O Time.
+- [x] Measure Dataset I/O Time.
 - [x] Measure Preprocessing Time.
 - [x] Measure DFS Mining Time.
 - [x] Measure Algorithm Time.
-- [ ] Measure Output I/O Time.
-- [ ] Measure Total Execution Time.
-- [ ] Report time in milliseconds.
-- [ ] Report memory in MB (`bytes / 1_000_000.0`).
+- [x] Measure Output I/O Time.
+- [x] Measure Total Execution Time.
+- [x] Report time in milliseconds.
+- [x] Report memory in MB (`bytes / 1_000_000.0`).
 - [x] Sample heap using Java MemoryMXBean.
-- [ ] Report sampling interval.
+- [x] Report sampling interval.
 - [x] Distinguish sampled peak from absolute peak.
 - [x] Prevent phase-scope overlap or mislabeling.
 - [x] Test measurement lifecycle cleanup.
 - [x] Document GC and sampler limitations.
 
-**Deliverable:** Comparable algorithm-scope measurement instrumentation is accepted. Execution-scope measurement remains incomplete until Dataset I/O, Output I/O and Total Execution orchestration are integrated through C15.
+**Deliverable:** Full six-scope measurement instrumentation integrated and accepted across C13 algorithm scopes (Scopes 2–4) and C15 execution scopes (Scopes 1, 5, 6). Deliverables: `BitPruneAlgorithmMetrics`, `BitPruneExecutionMetrics`, `ExecutionMemorySampler`, `PhaseExecutionMetrics`, and comprehensive report [docs/research/wspm-bitprune-c15-standalone-runner-report.md](docs/research/wspm-bitprune-c15-standalone-runner-report.md).
 
-**Acceptance:** Algorithm scopes 2–4 and sampler lifecycle are accepted. Parent C13 remains `PARTIAL`; full six-scope acceptance requires runtime evidence for scopes 1, 5 and 6.
+**Acceptance:** All six measurement scopes (Dataset I/O, Preprocessing, DFS Mining, Complete Algorithm, Output I/O, Total Execution) are verified with runtime evidence. Parent C13 is fully `ACCEPTED`.
 
-**Reviewed Result:** C13.1 immutable measurement models, C13.2 preprocessing/DFS boundaries, C13.3 measured mining integration and C13.4 sampler lifecycle evidence passed independent review. Measured and unmeasured mining preserve exact pattern/support results and C12 accounting. Focused C13 verification passed, and the latest full regression passed 1,030/1,030 tests across 71 Surefire reports. The C13.5-R1 evidence-fidelity remediation confirmed `MemoryMXBean.getHeapMemoryUsage().getUsed()`, the 5 ms default interval, decimal MB conversion (`bytes / 1_000_000.0`), sampled-heap limitations and correct C13/C14/C15 ownership boundaries.
+**Reviewed Result:** Algorithm scopes 2–4 were established in C13.1–C13.4. Runtime orchestration for Scope 1 (Dataset I/O), Scope 5 (Output I/O), and Scope 6 (Total Execution) was completed in C15.2 and verified through C15.4 end-to-end integration tests. Containment invariants ($\text{Total} \ge \text{Dataset I/O} + \text{Algorithm} + \text{Output I/O}$ and $\text{Algorithm} \ge \text{Preprocessing} + \text{DFS}$) hold across all runs. Full regression passes 1,179/1,179 tests across 98 Surefire reports. Observed memory is strictly documented as periodic sampled JVM heap from `MemoryMXBean.getHeapMemoryUsage().getUsed()` (not RSS or absolute hardware peak). Console formatting and printing are strictly excluded from Total Execution time. R6 zero-threshold semantics remain OPEN and exact-real comparator safety remains UNRESOLVED (not part of measurement acceptance).
 
-**HANDOFF:** Algorithm scopes 2–4 of C13 are accepted; execution scopes Dataset I/O (scope 1), Output I/O (scope 5) and Total Execution (scope 6) remain pending runtime orchestration in C15. C14 retention semantics and stable output writer are completed and accepted. C15 owns standalone Main orchestration, I/O measurement checkpoints, Total Execution timing, execution-level sampler ownership and console exclusion. Do not mark parent C13 `ACCEPTED` until all six runtime scopes are verified.
+**CLOSURE:** C13 is fully closed and accepted. All six standardized measurement scopes are operational.
 
 ### C14 — Result Retention & Stable Output
 
@@ -834,35 +834,41 @@ Checklist:
 
 **Acceptance:** Result retention model and stable output writer preserve mining correctness, provide deterministic pre-order projection, and maintain 100% regression compatibility across all 1,073 tests.
 
-**Reviewed Result:** Independent Research Reviewer: `PASS` across C14.1, C14.1-R1, C14.2, C14.2-R1; Repository Owner: `ACCEPTED` parent C14 and approved normative retention model. All 17 protected hashes match. C13 remains `PARTIAL` (scopes 1, 5, 6 pending C15 runner orchestration); C15 and C16 remain `NOT STARTED`.
+**Reviewed Result:** Independent Research Reviewer: `PASS` across C14.1, C14.1-R1, C14.2, C14.2-R1; Repository Owner: `ACCEPTED` parent C14 and approved normative retention model. All 17 protected hashes match. (At C14 closure time, C13 remained `PARTIAL` with scopes 1, 5, 6 pending C15 runner orchestration, and C15/C16 remained `NOT STARTED`. Subsequent C15 closure accepted C13 and C15; C16 remains `NOT STARTED`.)
 
 **STOP:** C14 is closed. Do not begin C15 automatically. C15 requires a separate readiness audit and implementation contract authorized by the Repository Owner.
 
 ### C15 — Standalone Java Main & Configuration
 
-**Status:** NOT STARTED
+**Status:** ACCEPTED
+
+**Owner Acceptance:** Repository Owner accepted C15.0 (Metadata Exposure), C15.1/C15.1-R1 (Immutable Run Configuration Model), C15.2 (Standalone Runner & Six-Scope Orchestration), C15.3/C15.3-R1 (Console Formatting & Flag Matrix), C15.4 (Executable Main, Table 1 Oracle & Lifecycle Evidence), and formally closed parent C15.
 
 Checklist:
 
-- [ ] Create or integrate standalone BitPrune Main.
-- [ ] Support dataset path configuration.
-- [ ] Support dataset format configuration.
-- [ ] Support clear minimum-support semantics.
-- [ ] Support `PRINT_PATTERNS`.
-- [ ] Support `EXPORT_PATTERNS`.
-- [ ] Support `PRINT_STATISTICS`.
-- [ ] Support result retention configuration where applicable.
-- [ ] Print INPUT CONFIGURATION.
-- [ ] Print MINING STATISTICS.
-- [ ] Print MEMORY STATISTICS (MB).
-- [ ] Print TIME STATISTICS (ms).
-- [ ] Run directly in VS Code.
-- [ ] Do not use Scanner.
-- [ ] Do not require interactive terminal input.
+- [x] Create or integrate standalone BitPrune Main.
+- [x] Support dataset path configuration.
+- [x] Support dataset format configuration.
+- [x] Support clear minimum-support semantics.
+- [x] Support `PRINT_PATTERNS`.
+- [x] Support `EXPORT_PATTERNS`.
+- [x] Support `PRINT_STATISTICS`.
+- [x] Support result retention configuration where applicable. (NOT APPLICABLE AS A SWITCH — single normative FINAL_SCIENTIFIC_RESULT model)
+- [x] Print INPUT CONFIGURATION.
+- [x] Print MINING STATISTICS.
+- [x] Print MEMORY STATISTICS (MB).
+- [x] Print TIME STATISTICS (ms).
+- [x] Run directly in VS Code.
+- [x] Do not use Scanner.
+- [x] Do not require interactive terminal input.
 
-**Deliverable:** Standalone executable BitPrune experiment entry point.
+**Deliverable:** Standalone executable BitPrune entry point in [`MainWspmBitPrune`](src/main/java/vn/edu/wspm/bitprune/experiments/MainWspmBitPrune.java) and research report [docs/research/wspm-bitprune-c15-standalone-runner-report.md](docs/research/wspm-bitprune-c15-standalone-runner-report.md).
 
-**Acceptance:** Reproducible noninteractive mining run.
+**Acceptance:** Reproducible noninteractive mining run across all six scopes; complete Table 1 nine-pattern oracle match; baseline complete-map differential equality; full eight-combination flag matrix; exception lifecycle cleanup matrix.
+
+**Reviewed Result:** Independent Research Reviewer: `PASS` across C15.0–C15.4; Repository Owner: `ACCEPTED` parent C15. 8 editable source-configured constants; `public static void main(String[] args)` delegating to C15.3 console overload; exact Table 1 oracle reproduction (7 sequences, 8 distinct items, MeanW 12/66, effective threshold 0.98, exactly 9 weighted sequential patterns with identical support mapping to frozen baseline `WspmPreTreeMiner`); full six-scope containment verified; complete 8-combination flag matrix tested against independent reference executions; exception lifecycle cleanup verified on malformed parser input, R6 zero-threshold rejection, and writer I/O failure (0 leaked sampler threads); direct Java process execution (`java -cp target/classes vn.edu.wspm.bitprune.experiments.MainWspmBitPrune`) exits with code 0 without prompts; 1,179/1,179 full regression PASS across 98 Surefire reports.
+
+**STOP:** C15 is closed. Do not begin C16 automatically. C16 requires a separate authorization and final Phase C acceptance contract authorized by the Repository Owner.
 
 ### C16 — Final Regression & Phase C Acceptance
 
@@ -1061,9 +1067,9 @@ Update this table only after review.
 | C10 | ACCEPTED | Independent Research Reviewer: PASS for C10.1, C10.2, C10.3 and C10.4; Repository Owner: ACCEPTED parent C10 | Three-tier evaluator, deterministic positive-threshold DFS and end-to-end preprocessing accepted; 1,836 bounded exhaustive evaluator comparisons, 1,500 fixed-seed trials (`20261103L`), controlled full-map evidence of 64/64 patterns for prepared DFS and 73/73 patterns for the public preprocessing boundary, all with zero mismatches; 99 focused C10 / 807 full-regression PASS; final miner SHA-256 `9F33F5D85C8FCAC95743A3BF34BB9AC2A5A5C992A8A1ECC9A961F02A1B751CC3`; final end-to-end test SHA-256 `A5D4543E17B9DA9D13100C2045496DB5CCE517DC930F8D1ACD9A4353C9752388`; R6 remains OPEN |
 | C11 | ACCEPTED | Independent Research Reviewer: PASS for C11.1–C11.4; Repository Owner: ACCEPTED parent C11 | Positive-threshold complete-map equality against Table 1, baseline and brute-force oracles; 38 focused C11 / 845 full-regression PASS; deliverable: `docs/research/wspm-bitprune-c11-differential-report.md`; R6 deferred |
 | C12 | ACCEPTED | Independent Research Reviewer: PASS through C12.4-R2; Repository Owner: ACCEPTED parent C12 | 12 primary long counters; derived `rejectedExtensions`; first-failure routing; exact controlled oracles (23/23 integration tests); 110 statistics-focused / 82 miner / 38 C11 differential / 955 full-regression PASS; deliverable: [docs/research/wspm-bitprune-c12-statistics-accounting-report.md](docs/research/wspm-bitprune-c12-statistics-accounting-report.md); R6 and exact-real comparator safety remain unresolved |
-| C13 | PARTIAL | Independent Research Reviewer: PASS for C13.1–C13.4 algorithm scope; Repository Owner: ACCEPTED algorithm-scope result | Immutable algorithm/execution metric models; preprocessing/DFS/complete-algorithm runtime instrumentation; caller-owned `MemoryMXBean` sampler lifecycle and cleanup; measured/unmeasured result and C12-statistics equivalence; 1,030/1,030 full-regression PASS across 71 reports. Dataset I/O, Output I/O and Total Execution runtime evidence remain pending C15 runtime orchestration. |
+| C13 | ACCEPTED | Independent Research Reviewer: PASS; Repository Owner: ACCEPTED parent C13 | All six measurement scopes reconciled via C15 standalone runner runtime evidence; Scopes 1, 5, 6 verified; 1,179/1,179 full-regression PASS across 98 Surefire reports; deliverable: [docs/research/wspm-bitprune-c15-standalone-runner-report.md](docs/research/wspm-bitprune-c15-standalone-runner-report.md) |
 | C14 | ACCEPTED | Independent Research Reviewer: PASS for C14.1, C14.1-R1, C14.2 and C14.2-R1; Repository Owner: ACCEPTED parent C14 | Owner-approved single FINAL_SCIENTIFIC_RESULT model; immutable BitPruneMiningResult (frozen PrefixTree, deterministic tree pre-order acceptedPatterns, exact Map<Pattern, Integer>, BitPruneStatistics); transient bitwise/occurrence structures unreferenced by final carrier; C14.1 projection (23 tests), C14.2 writer (20 tests); 69 closure-compatibility / 1,073 full-regression PASS across 73 reports; deliverable: [docs/research/wspm-bitprune-c14-retention-output-report.md](docs/research/wspm-bitprune-c14-retention-output-report.md) |
-| C15 | NOT STARTED | — | Standalone Main |
+| C15 | ACCEPTED | Independent Research Reviewer: PASS for C15.0–C15.4; Repository Owner: ACCEPTED parent C15 | 8 source constants, executable main, 6-scope runner orchestration, 4-section console, 8-combination flag matrix, Table 1 oracle reproduction, baseline differential equality, exception lifecycle matrix, direct process exit code 0; 53 combined C15 tests; 56 Table 1 compatibility tests; 1,179 full tests across 98 reports; deliverable: [docs/research/wspm-bitprune-c15-standalone-runner-report.md](docs/research/wspm-bitprune-c15-standalone-runner-report.md) |
 | C16 | NOT STARTED | — | Final acceptance |
 
 Allowed statuses:
@@ -1127,7 +1133,7 @@ Do not silently work around correctness failures.
 
 Current authorized execution state:
 
-**C00 — ACCEPTED | C01 — ACCEPTED | C01.1 — ACCEPTED | C01.2 — ACCEPTED | C02 — ACCEPTED | C03 — ACCEPTED (C03.1 AND C03.2 ACCEPTED) | C04 — ACCEPTED (C04.1 AND C04.2 ACCEPTED) | C05 — ACCEPTED (C05.1, C05.2 AND C05.3 ACCEPTED) | C06 — ACCEPTED (C06.1 AND C06.2 ACCEPTED) | C07 — ACCEPTED (C07.1 AND C07.2 ACCEPTED) | C08 — ACCEPTED (C08.1 AND C08.2 ACCEPTED) | C09 — ACCEPTED (C09.1, C09.2 AND C09.3 ACCEPTED) | C10 — ACCEPTED (C10.1, C10.2, C10.3 AND C10.4 ACCEPTED) | C11 — ACCEPTED (C11.1, C11.2, C11.3 AND C11.4 ACCEPTED) | C12 — ACCEPTED (C12.1 THROUGH C12.4-R2 ACCEPTED) | C13 — PARTIAL (C13.1 THROUGH C13.4 ALGORITHM SCOPE ACCEPTED; EXECUTION SCOPES 1/5/6 PENDING C15) | C14 — ACCEPTED (C14.1, C14.1-R1, C14.2 AND C14.2-R1 ACCEPTED) | C15–C16 — NOT STARTED**
+**C00 — ACCEPTED | C01 — ACCEPTED | C01.1 — ACCEPTED | C01.2 — ACCEPTED | C02 — ACCEPTED | C03 — ACCEPTED (C03.1 AND C03.2 ACCEPTED) | C04 — ACCEPTED (C04.1 AND C04.2 ACCEPTED) | C05 — ACCEPTED (C05.1, C05.2 AND C05.3 ACCEPTED) | C06 — ACCEPTED (C06.1 AND C06.2 ACCEPTED) | C07 — ACCEPTED (C07.1 AND C07.2 ACCEPTED) | C08 — ACCEPTED (C08.1 AND C08.2 ACCEPTED) | C09 — ACCEPTED (C09.1, C09.2 AND C09.3 ACCEPTED) | C10 — ACCEPTED (C10.1, C10.2, C10.3 AND C10.4 ACCEPTED) | C11 — ACCEPTED (C11.1, C11.2, C11.3 AND C11.4 ACCEPTED) | C12 — ACCEPTED (C12.1 THROUGH C12.4-R2 ACCEPTED) | C13 — ACCEPTED | C14 — ACCEPTED (C14.1, C14.1-R1, C14.2 AND C14.2-R1 ACCEPTED) | C15 — ACCEPTED (C15.0 THROUGH C15.4 ACCEPTED) | C16 — NOT STARTED**
 
 Codex must:
 
@@ -1147,7 +1153,8 @@ Codex must:
 14. C10.1, C10.2, C10.3 and C10.4 are accepted by the Repository Owner after their respective Independent Research Review `PASS` results and evidence-integrity remediations; parent C10 is fully `ACCEPTED`. Preserve the accepted evaluator, DFS miner, preprocessing boundary and tests unless a new correctness defect is demonstrated. R6 remains `OPEN`, so C10 acceptance is limited to the accepted positive-threshold operational scope. Later directive items govern the current state of C11–C16.
 15. C11.1, C11.2, C11.3 and C11.4-R1 are accepted by the Repository Owner after their respective Independent Research Review `PASS` results; parent C11 is fully `ACCEPTED` for the positive-effective-threshold operational scope. Complete-map equivalence is verified against the Table 1 oracle, the frozen WSPM_PreTree baseline, and the independent BruteForceWeightedPatternOracle across controlled, bounded exhaustive, and fixed-seed randomized catalogues with zero mismatches. R6 remains `OPEN`, and exact-real comparator safety remains unresolved.
 16. C12.1 through C12.4-R2 are accepted by the Repository Owner after Independent Research Review and evidence-fidelity remediation; parent C12 is fully `ACCEPTED`. Complete accounting evidence and exact controlled oracles are compiled in `docs/research/wspm-bitprune-c12-statistics-accounting-report.md`. Preserve the accepted statistics model, package-private accumulator, miner integration, immutable result boundary, exact counter-oracle tests and report unless a new defect is demonstrated. R6 remains `OPEN`, and Java `double` exact-real comparator safety remains unresolved.
-17. C13.1 through C13.4 passed Independent Research Review and are accepted by the Repository Owner for the algorithm scope. Preserve the accepted immutable measurement models, prepared preprocessing boundary, measured mining API, exact phase containment, caller-owned sampler lifecycle, cleanup evidence and measured/unmeasured correctness equivalence unless a new defect is demonstrated. Parent C13 remains `PARTIAL`: Dataset I/O (scope 1), Output I/O (scope 5) and Total Execution (scope 6) have models but no runtime orchestration evidence. C15 owns execution orchestration and the remaining measurement scopes. Do not mark parent C13 `ACCEPTED` until all six runtime scopes are verified.
-18. C14 (including C14.1, C14.1-R1, C14.2, C14.2-R1) and the C14 Retention Decision have been reviewed and accepted by the Repository Owner; parent C14 is fully `ACCEPTED`. WSPM_BitPrune operates under the Owner-approved normative single `FINAL_SCIENTIFIC_RESULT` retention model: `BitPruneMiningResult` preserves frozen `PrefixTree`, immutable `acceptedPatterns` in deterministic tree pre-order, exact `Map<Pattern, Integer>` supports, and immutable `BitPruneStatistics`. No synthetic retention enum or redundant policy API is created; transient SID bitmaps, pattern endpoints, verifier results, vertical indices, and CMAP tables are not referenced by the result carrier and become eligible for GC once external execution references are dropped. C14.1 `BitPruneOutputProjection` and C14.2 `BitPruneOutputWriter` provide deterministic projection and stable disk writing with explicit UTF-8, LF line delimiters, create/truncate semantics, parent directory creation, zero-byte empty output, and raw `IOException` propagation. Handoff to C15: C15 owns standalone Main runner, configuration parsing, Dataset I/O and Output I/O measurement orchestration, and Total Execution time. C15 and C16 remain `NOT STARTED`.
+17. C13 (Time/Memory Instrumentation Parity) is fully accepted by the Repository Owner. Algorithm scopes 2–4 (preprocessing, DFS mining, complete algorithm) were established in C13.1–C13.4, and execution scopes 1, 5, 6 (Dataset I/O, Output I/O, Total Execution) were orchestrated and verified via C15 standalone runner evidence. All six standardized measurement scopes are operational. Memory metrics remain documented strictly as sampled Java heap from `MemoryMXBean` (not RSS or absolute hardware peak); console formatting is strictly excluded from Total Execution time.
+18. C14 (including C14.1, C14.1-R1, C14.2, C14.2-R1) and the C14 Retention Decision have been reviewed and accepted by the Repository Owner; parent C14 is fully `ACCEPTED`. WSPM_BitPrune operates under the Owner-approved normative single `FINAL_SCIENTIFIC_RESULT` retention model: `BitPruneMiningResult` preserves frozen `PrefixTree`, immutable `acceptedPatterns` in deterministic tree pre-order, exact `Map<Pattern, Integer>` supports, and immutable `BitPruneStatistics`. No synthetic retention enum or redundant policy API is created; transient SID bitmaps, pattern endpoints, verifier results, vertical indices, and CMAP tables are not referenced by the result carrier and become eligible for GC once external execution references are dropped. C14.1 `BitPruneOutputProjection` and C14.2 `BitPruneOutputWriter` provide deterministic projection and stable disk writing with explicit UTF-8, LF line delimiters, create/truncate semantics, parent directory creation, zero-byte empty output, and raw `IOException` propagation. (At C14 closure time, C15 and C16 were `NOT STARTED`. C15 is now `ACCEPTED`; C16 remains `NOT STARTED`.)
+19. C15 (including C15.0, C15.1, C15.1-R1, C15.2, C15.3, C15.3-R1, and C15.4) has been reviewed and accepted by the Repository Owner; parent C15 is fully `ACCEPTED`. `MainWspmBitPrune` provides source-configured noninteractive execution, executable `main(String[] args)`, six-scope measurement orchestration, deterministic four-section console reporting, 8-combination flag matrix verification, complete Table 1 oracle reproduction, differential equality against Phase B baseline `WspmPreTreeMiner`, and exception lifecycle cleanup across malformed parser input, R6 zero-threshold rejection, and writer I/O failure. Preserve the accepted C15.0–C15.4 implementation, tests, and research report `docs/research/wspm-bitprune-c15-standalone-runner-report.md`. C16 remains `NOT STARTED`; do not begin C16 automatically.
 
 **Core principle: Scientific correctness first. Optimization second. Reproducibility always.**

@@ -154,6 +154,13 @@ class BitPruneMeasurementIntegrationTest {
             assertTrue(metrics.completeAlgorithmNanos() >= metrics.preprocessing().elapsedNanos() + metrics.dfsMining().elapsedNanos());
             assertTrue(metrics.observedPeakHeapAlgorithmBytes() >= metrics.heapAfterMiningBytes());
 
+            BitPruneRunMetadata metadata = run.metadata();
+            assertNotNull(metadata);
+            assertEquals(0, metadata.distinctItemCount());
+            assertTrue(metadata.globalMeanWeight().isEmpty());
+            assertEquals(0, metadata.minimumSupport().numberOfSequences());
+            assertEquals(1.0, metadata.minimumSupport().effectiveThreshold(), 1e-9);
+
             assertNotNull(sampler.checkpoint());
         }
     }
@@ -285,6 +292,15 @@ class BitPruneMeasurementIntegrationTest {
             assertEquals(9L, stats.patternCount());
             assertEquals(34L, stats.exactVerifications());
             assertEquals(28L, stats.rejectedExtensions());
+
+            BitPruneRunMetadata metadata = run.metadata();
+            assertNotNull(metadata);
+            assertEquals(8, metadata.distinctItemCount());
+            assertTrue(metadata.globalMeanWeight().isPresent());
+            assertEquals(12.0 / 66.0, metadata.globalMeanWeight().getAsDouble(), 1e-9);
+            assertEquals(7, metadata.minimumSupport().numberOfSequences());
+            assertEquals(14.0, metadata.minimumSupport().configuredValue(), 1e-9);
+            assertEquals(0.98, metadata.minimumSupport().effectiveThreshold(), 1e-9);
         }
     }
 

@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalDouble;
 import java.util.Set;
 import vn.edu.wspm.bitprune.bitmap.SidBitmap;
 import vn.edu.wspm.bitprune.bitmap.SidMapping;
@@ -142,7 +143,8 @@ public final class BitPruneMiner {
         var algorithmStart = sampler.checkpoint();
         var preprocessingStart = sampler.checkpoint();
 
-        BitPrunePreparedInput prepared = prepare(database, minimumSupport);
+        PreparedRun preparedRun = prepareRun(database, minimumSupport);
+        BitPrunePreparedInput prepared = preparedRun.preparedInput();
         PrefixTree tree = new PrefixTree();
         RunState runState = initializeRunState(tree, prepared);
 
@@ -168,7 +170,7 @@ public final class BitPruneMiner {
                 heapAfterMiningBytes,
                 observedPeakHeapAlgorithmBytes);
 
-        return new MeasuredBitPruneRun(result, algorithmMetrics);
+        return new MeasuredBitPruneRun(result, algorithmMetrics, preparedRun.metadata());
     }
 
     /**
@@ -244,6 +246,12 @@ public final class BitPruneMiner {
     BitPrunePreparedInput prepare(
             SequenceDatabase database,
             MinimumSupport minimumSupport) {
+        return prepareRun(database, minimumSupport).preparedInput();
+    }
+
+    private PreparedRun prepareRun(
+            SequenceDatabase database,
+            MinimumSupport minimumSupport) {
 
         Objects.requireNonNull(database, "database must not be null");
         Objects.requireNonNull(minimumSupport, "minimumSupport must not be null");
@@ -256,7 +264,7 @@ public final class BitPruneMiner {
             VerticalOccurrenceIndex occIndex = VerticalOccurrenceIndex.build(database, mapping);
             CmapI cmapI = cmapBuilder.buildI(database, Collections.emptyList());
             CmapS cmapS = cmapBuilder.buildS(database, Collections.emptyList());
-            return new BitPrunePreparedInput(
+            BitPrunePreparedInput prepared = new BitPrunePreparedInput(
                     resolvedMinSup,
                     0.0,
                     Collections.emptyList(),
@@ -265,6 +273,11 @@ public final class BitPruneMiner {
                     cmapI,
                     cmapS,
                     occIndex);
+            BitPruneRunMetadata metadata = new BitPruneRunMetadata(
+                    0,
+                    OptionalDouble.empty(),
+                    resolvedMinSup);
+            return new PreparedRun(prepared, metadata);
         }
 
         ResolvedMinimumSupport resolvedMinSup = minimumSupportResolver.resolve(minimumSupport, database.size());
@@ -317,7 +330,7 @@ public final class BitPruneMiner {
         CmapI cmapI = cmapBuilder.buildI(database, f1Items);
         CmapS cmapS = cmapBuilder.buildS(database, f1Items);
 
-        return new BitPrunePreparedInput(
+        BitPrunePreparedInput prepared = new BitPrunePreparedInput(
                 resolvedMinSup,
                 globalMeanWeight,
                 sortedF1,
@@ -326,6 +339,11 @@ public final class BitPruneMiner {
                 cmapI,
                 cmapS,
                 occIndex);
+        BitPruneRunMetadata metadata = new BitPruneRunMetadata(
+                stats.numberOfDistinctItems(),
+                OptionalDouble.of(globalMeanWeight),
+                resolvedMinSup);
+        return new PreparedRun(prepared, metadata);
     }
 
     /**
@@ -654,5 +672,10 @@ public final class BitPruneMiner {
     private record RunState(
             Map<Pattern, Integer> supportMap,
             BitPruneStatisticsAccumulator accumulator) {
+    }
+
+    private record PreparedRun(
+            BitPrunePreparedInput preparedInput,
+            BitPruneRunMetadata metadata) {
     }
 }
