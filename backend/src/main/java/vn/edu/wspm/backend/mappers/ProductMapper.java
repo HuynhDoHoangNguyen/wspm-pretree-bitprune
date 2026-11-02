@@ -2,7 +2,7 @@ package vn.edu.wspm.backend.mappers;
 
 import org.springframework.stereotype.Component;
 
-import vn.edu.wspm.backend.dto.catalog.ProductResponse;
+import vn.edu.wspm.backend.dto.product.ProductResponse;
 import vn.edu.wspm.backend.entities.ProductEntity;
 
 @Component

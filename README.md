@@ -1,228 +1,211 @@
 # WSPM_PreTree & WSPM_BitPrune
 
-**Research on Improving the WSPM_PreTree Algorithm and Developing a Product Combo Recommendation System**
+Repository cho khóa luận **“Nghiên cứu cải tiến thuật toán WSPM_PreTree và xây
+dựng hệ thống gợi ý combo sản phẩm.”** Dự án gồm lõi khai phá mẫu tuần tự có
+trọng số, REST API và frontend phục vụ giai đoạn tích hợp hệ thống.
 
-Nghiên cứu cải tiến thuật toán WSPM_PreTree và xây dựng hệ thống gợi ý combo sản phẩm.
+## Trạng thái hiện tại
 
-## 1. Project Overview
+- WSPM_PreTree baseline: Phase B đã hoàn thành và được nghiệm thu.
+- WSPM_BitPrune: Phase C đã hoàn thành và được nghiệm thu trên phạm vi ngưỡng
+  hiệu dụng dương đã được tài liệu hóa.
+- Backend, MySQL và frontend: đang trong giai đoạn bootstrap/tích hợp.
+- Vấn đề nghiên cứu còn mở: ngữ nghĩa ngưỡng support hiệu dụng bằng 0 (R6) và
+  tính tương đương exact-real của comparator dùng `double`.
 
-Dự án tập trung nghiên cứu lĩnh vực **Weighted Sequential Pattern Mining (WSPM)** — khai phá mẫu tuần tự có trọng số từ cơ sở dữ liệu chuỗi.
+Xem [ARCHITECTURE.md](ARCHITECTURE.md) để biết dependency và cấu trúc module;
+xem [docs/README.md](docs/README.md) để chọn đúng tài liệu nghiên cứu cần đọc.
 
-Mục tiêu của nghiên cứu là tìm hiểu, tái hiện và cải tiến thuật toán **WSPM_PreTree** thông qua phương pháp **WSPM_BitPrune**, kết hợp các cấu trúc dữ liệu và cơ chế cắt tỉa nhằm tối ưu hóa quá trình khai phá mẫu tuần tự có trọng số.
+## Công nghệ
 
-Nghiên cứu hướng đến việc nâng cao hiệu quả khai phá trên các tập dữ liệu có quy mô và đặc điểm khác nhau, đồng thời ứng dụng các mẫu tuần tự được phát hiện vào bài toán **gợi ý combo sản phẩm**, hỗ trợ phân tích hành vi mua sắm và đề xuất các nhóm sản phẩm có mối liên hệ trong lịch sử giao dịch.
-
-## 2. Research Objectives
-
-Các mục tiêu chính của dự án:
-
-1. **Nghiên cứu WSPM_PreTree:** Phân tích cơ sở lý thuyết, cách biểu diễn dữ liệu, phương pháp tính trọng số, cấu trúc Prefix Tree, Prime-block Encoding và cơ chế khai phá mẫu tuần tự.
-2. **Tái hiện thuật toán gốc:** Xây dựng phiên bản WSPM_PreTree bằng Java, kiểm chứng kết quả với các ví dụ và dữ liệu thực nghiệm trong công trình nghiên cứu.
-3. **Nghiên cứu WSPM_BitPrune:** Xây dựng phương pháp cải tiến sử dụng Bitmap, CMAP, Vertical ID-list và Multi-tier Lazy Pruning.
-4. **Kiểm chứng tính đúng đắn:** Đối chiếu toàn bộ tập mẫu và support của từng mẫu giữa hai thuật toán trên cùng dữ liệu và ngưỡng khai phá.
-5. **Đánh giá hiệu năng:** Thực nghiệm về thời gian thực thi, bộ nhớ, số lượng ứng viên, khả năng cắt tỉa và khả năng mở rộng.
-6. **Ứng dụng gợi ý combo:** Khai thác các mẫu tuần tự có trọng số để hỗ trợ đề xuất các nhóm sản phẩm phù hợp dựa trên lịch sử mua sắm.
-
-## 3. Algorithms
-
-### 3.1. WSPM_PreTree — Baseline Algorithm
-
-WSPM_PreTree là thuật toán khai phá mẫu tuần tự có trọng số dựa trên cấu trúc cây tiền tố (Prefix Tree) và phương pháp mã hóa PRISM.
-
-Các thành phần nghiên cứu bao gồm:
-
-- Sequence Database Representation.
-- Item Weight Calculation.
-- MaxW, MinW and MeanW.
-- Frequent Pattern Initialization (F1).
-- Prefix Tree Construction.
-- I-Extension and S-Extension.
-- Depth-First Search (DFS).
-- PRISM Prime-block Encoding.
-- Sequential Pattern Support.
-- Weighted Sequential Pattern Evaluation.
-- Pattern Pruning.
-
-WSPM_PreTree được sử dụng làm thuật toán đối chứng để kiểm tra tính đúng đắn và đánh giá phương pháp cải tiến.
-
-### 3.2. WSPM_BitPrune — Proposed Improvement
-
-WSPM_BitPrune là hướng cải tiến được nghiên cứu nhằm tối ưu quá trình sinh ứng viên, kiểm tra điều kiện cắt tỉa và xác định support của mẫu tuần tự.
-
-Các thành phần thiết kế chính:
-
-**Bitmap Representation**
-
-Sử dụng cấu trúc bitmap để biểu diễn thông tin xuất hiện của item hoặc pattern, hỗ trợ các phép toán bit nhằm kiểm tra điều kiện cần trước khi tính support chính xác.
-
-**CMAP — Co-occurrence Map**
-
-Lưu trữ thông tin đồng xuất hiện của các item, hỗ trợ loại bỏ sớm những phép mở rộng không thỏa mãn điều kiện cần về support.
-
-**Vertical ID-list**
-
-Tổ chức thông tin vị trí xuất hiện của item trong các sequence nhằm hỗ trợ phép nối tuần tự và xác định support chính xác.
-
-**Multi-tier Lazy Pruning**
-
-Tổ chức quá trình cắt tỉa theo nhiều lớp:
-
-1. CMAP-based Pruning.
-2. Bitmap Upper-Bound Pruning.
-3. Exact Support Verification.
-
-Các lớp cắt tỉa được thiết kế nhằm hạn chế các phép nối tốn kém trong khi bảo toàn các mẫu hợp lệ theo định nghĩa khai phá.
-
-## 4. Technology Stack
-
-| Technology | Purpose |
+| Khu vực | Công nghệ chính |
 |---|---|
-| Java JDK 21 | Algorithm implementation |
-| Apache Maven | Build and dependency management |
-| JUnit 5 | Unit testing and correctness verification |
-| Visual Studio Code | Development environment |
-| Git & GitHub | Version control and source management |
-| Java Core | Algorithm execution and data processing |
+| Build chung | Java 21, Maven multi-module |
+| Mining | Java Core, JUnit Jupiter 5.12.2 |
+| Backend | Spring Boot 4.1.2, Spring Web MVC, Data JPA, JDBC, Actuator |
+| Database | MySQL 8.4, Docker Compose |
+| Frontend | React 17, TypeScript 4.6, Create React App 5 |
+| UI/state/data | Mantine 4, React Query 3, Zustand, React Router 6 |
+| Kiểm chứng | JUnit 5, paper oracle, brute-force và differential tests |
 
-## 5. System Architecture
+## Yêu cầu môi trường
 
-Hệ thống nghiên cứu thuật toán được tổ chức theo các thành phần chức năng:
+- JDK 21.
+- Maven 3.9+.
+- Docker và Docker Compose để chạy MySQL.
+- Node.js và npm tương thích với `frontend/package-lock.json`.
 
-```text
-Sequence Database
-        |
-        v
-  Data Loading
-        |
-        v
-  Preprocessing
-        |
-        +------------------------+
-        |                        |
-        v                        v
-  WSPM_PreTree              WSPM_BitPrune
-  - Prefix Tree             - Bitmap
-  - PRISM Encoding          - CMAP
-  - I/S Extension           - Vertical ID-list
-  - DFS Mining              - Lazy Pruning
-        |                        |
-        v                        v
-  Weighted Sequential Pattern Results
-        |
-        v
-  Correctness Verification
-        |
-        v
-  Experimental Evaluation
-        |
-        v
-  Product Combo Recommendation
+Các phiên bản đã dùng khi cập nhật tài liệu này: Java 21, Maven 3.9.16,
+Node.js 22.23.4, npm 10.9.9 và Docker 29.7.2. Đây là môi trường đã quan sát,
+không phải tuyên bố rằng mọi phiên bản thành phần đều bắt buộc đúng tuyệt đối.
+
+## Chuẩn bị cấu hình local
+
+Từ thư mục root:
+
+```powershell
+Copy-Item .env.example .env
 ```
 
-Hai thuật toán sử dụng cùng mô hình dữ liệu và các quy tắc đánh giá mẫu để phục vụ việc so sánh kết quả và hiệu năng.
+Cập nhật mật khẩu local trong `.env`. Không commit `.env`.
 
-## 6. Project Structure
+## Build và test
 
-```text
-wspm-pretree-bitprune/
-├── data/                 # Research datasets
-├── docs/                 # Research documentation
-├── results/              # Experimental results
-├── src/
-│   ├── main/
-│   │   ├── java/vn/edu/wspm/
-│   │   │   ├── config/     # Experiment configuration
-│   │   │   ├── data/       # Sequence database processing
-│   │   │   ├── model/      # Pattern and sequence models
-│   │   │   ├── baseline/   # WSPM_PreTree
-│   │   │   ├── improved/   # WSPM_BitPrune
-│   │   │   ├── metrics/    # Performance measurement
-│   │   │   └── output/     # Result export
-│   │   └── resources/
-│   └── test/
-│       └── java/          # Unit and correctness tests
-├── .gitignore
-├── LICENSE
-├── pom.xml
-└── README.md
+Chạy toàn bộ Maven reactor:
+
+```powershell
+mvn clean test
 ```
 
-## 7. Dataset
+Chỉ kiểm thử mining-core:
 
-Dự án sử dụng cơ sở dữ liệu chuỗi (Sequence Database) phục vụ nghiên cứu và đánh giá thuật toán.
+```powershell
+mvn -pl mining-core test
+```
 
-Các bộ dữ liệu thực nghiệm dự kiến bao gồm:
+Chỉ kiểm thử backend và tự build dependency mining-core:
 
-- Snake
-- Sign
-- Pumsb
-- T40I10D100k
-- Synthetic Sequence Datasets
-- Sample Dataset from the WSPM_PreTree paper (2023)
+```powershell
+mvn -pl backend -am test
+```
 
-Nguồn, phiên bản, đặc điểm và định dạng dữ liệu được kiểm tra trước khi sử dụng. Đặc biệt, dữ liệu giao dịch thông thường không được mặc nhiên xem là dữ liệu chuỗi có thứ tự thời gian.
+Đóng gói toàn bộ Java modules:
 
-Định dạng đầu vào cho dữ liệu chuỗi được chuẩn hóa theo quy ước SPMF:
+```powershell
+mvn clean package
+```
 
-- `-1`: Kết thúc một itemset.
-- `-2`: Kết thúc một sequence.
+## Chạy thuật toán mining
 
-## 8. Experimental Evaluation
+Hai runner dùng cấu hình bất biến trong source, không yêu cầu nhập tham số bằng
+terminal. Trước khi chạy dataset khác, chỉnh các hằng cấu hình trong runner và
+ghi nhận thay đổi để thí nghiệm có thể tái lập.
 
-Quá trình thực nghiệm được xây dựng dựa trên cùng điều kiện đầu vào và môi trường thực thi nhằm đảm bảo tính công bằng và khả năng tái lập.
+### WSPM_PreTree
 
-### 8.1. Correctness Verification
+```powershell
+Set-Location mining-core
+mvn test-compile
+java -cp target/classes vn.edu.wspm.experiments.MainWspmPreTree
+```
 
-- Kiểm thử dữ liệu mẫu từ bài báo gốc.
-- Kiểm tra phép tính trọng số và support.
-- Đối chiếu kết quả với phương pháp brute-force trên dữ liệu nhỏ.
-- So sánh toàn bộ tập pattern và support giữa WSPM_PreTree và WSPM_BitPrune.
-- Kiểm tra tính an toàn của các điều kiện cắt tỉa.
+### WSPM_BitPrune
 
-### 8.2. Performance Metrics
+```powershell
+Set-Location mining-core
+mvn test-compile
+java -cp target/classes vn.edu.wspm.bitprune.experiments.MainWspmBitPrune
+```
 
-| Metric | Description |
-|---|---|
-| Dataset I/O Time | Thời gian đọc dữ liệu |
-| Preprocessing Time | Thời gian tiền xử lý |
-| Mining Time | Thời gian khai phá mẫu |
-| Output I/O Time | Thời gian xuất kết quả |
-| Total Execution Time | Tổng thời gian thực thi |
-| Memory Usage | Dung lượng bộ nhớ sử dụng |
-| Generated Candidates | Số lượng ứng viên được sinh |
-| Pruned Candidates | Số lượng ứng viên bị cắt tỉa |
-| Weighted Sequential Patterns | Số lượng mẫu tuần tự có trọng số tìm được |
+Các runner mặc định dùng fixture Table 1 tại
+`mining-core/src/test/resources/datasets/wspm/table1.spmf` và đường dẫn được
+resolve tương đối từ thư mục `mining-core`.
 
-Các kết quả thực nghiệm được phân tích dựa trên dữ liệu đo thực tế, không mặc định thuật toán cải tiến có hiệu năng tốt hơn trong mọi trường hợp.
+## Chạy MySQL
 
-## 9. Product Combo Recommendation
+Sau khi tạo `.env`:
 
-Các mẫu tuần tự có trọng số được sử dụng làm cơ sở nghiên cứu xây dựng hệ thống gợi ý combo sản phẩm.
+```powershell
+docker compose up -d mysql
+docker compose ps
+```
 
-Hướng ứng dụng tập trung vào:
+Dừng container:
 
-- Phân tích lịch sử mua sắm của khách hàng.
-- Phát hiện các nhóm sản phẩm thường xuất hiện theo những chuỗi hành vi mua sắm.
-- Xây dựng các ứng viên combo dựa trên những mẫu tuần tự có trọng số.
-- Thiết kế cơ chế đánh giá và xếp hạng combo phù hợp.
-- Hỗ trợ đề xuất sản phẩm cho hoạt động thương mại điện tử.
+```powershell
+docker compose down
+```
 
-Việc chuyển đổi từ mẫu tuần tự sang combo sản phẩm cần có quy tắc đề xuất và đánh giá riêng để bảo đảm tính phù hợp với bài toán ứng dụng.
+Dữ liệu MySQL nằm trong named volume `wspm_mysql_data`; `docker compose down`
+không xóa volume. Không dùng tùy chọn `-v` nếu chưa chủ động muốn xóa dữ liệu.
 
-## 10. Research References
+> Lưu ý: Compose chỉ khởi tạo MySQL/database. Backend hiện dùng
+> `spring.jpa.hibernate.ddl-auto=validate` và không tự tạo bảng. File
+> `docs/database/schema_v3_draft_review.sql` vẫn là bản draft để review, không
+> phải migration đã được phê duyệt.
 
-**WSPM_PreTree (2023)**
+## Chạy backend
 
-Pham et al., *Mining Weighted Sequential Patterns Based on Prefix-Tree and Prism Encoding*, Vietnam Journal of Computer Science, 2023.
+Khi MySQL đã chạy và schema phù hợp đã được áp dụng:
 
-**WSPM_BitPrune (2026)**
+```powershell
+mvn -pl backend -am package -DskipTests
+java -jar backend/target/backend-1.0-SNAPSHOT.jar
+```
 
-*Tối ưu hóa thuật toán khai phá mẫu tuần tự có trọng số bằng cấu trúc Bitmap và cơ chế cắt tỉa trễ đa tầng* — Bản thảo nghiên cứu.
+Backend mặc định chạy tại `http://localhost:8080`. Các endpoint hiện có gồm:
 
-Các công trình liên quan đến PRISM, Sequential Pattern Mining và cấu trúc Bitmap sẽ được bổ sung trong tài liệu nghiên cứu.
+```text
+GET /api/health
+GET /actuator/health
+GET /api/v1/categories
+GET /api/v1/products
+```
 
-## 11. License
+## Chạy frontend
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+```powershell
+Set-Location frontend
+npm ci
+npm start
+```
 
-Third-party research publications, datasets, and external code remain subject to their respective licenses and usage conditions.
+Frontend development server mặc định ở `http://localhost:3000` và proxy API
+trong `package.json` tới `http://127.0.0.1:8080`.
+
+Build production:
+
+```powershell
+npm run build
+```
+
+Chạy test một lần, không bật watch mode:
+
+```powershell
+npm test -- --watchAll=false
+```
+
+Trạng thái hiện tại: production build thành công nhưng có ESLint warnings; test
+`src/App.test.tsx` kế thừa đang fail vì render `App` ngoài Router và còn kiểm tra
+nội dung mẫu “hello world”. Đây là known frontend verification gap, không được
+báo cáo test frontend là xanh trước khi có task sửa test riêng.
+
+Frontend được kế thừa từ Electro và đang được thu hẹp theo phạm vi khóa luận;
+xem `frontend/LICENSE-ELECTRO` trước khi loại bỏ attribution hoặc tài nguyên gốc.
+
+## Dữ liệu nghiên cứu
+
+- SPMF sequence format: `-1` kết thúc itemset, `-2` kết thúc sequence.
+- Dataset lớn trong `mining-core/src/main/resources/datasets/` được ignore và
+  phải được cung cấp local theo đúng nguồn/provenance.
+- Fixture nhỏ phục vụ correctness tests được lưu trong Git.
+- Không biến transaction database thành sequence database bằng cách tự tạo thứ
+  tự nếu chưa có tài liệu hóa và phê duyệt nghiên cứu.
+
+## Nguyên tắc correctness
+
+Kết quả BitPrune chỉ được xem là đúng khi đồng nhất với baseline trên:
+
+```text
+pattern identity + exact support + total pattern count
+```
+
+Không dùng “cùng số lượng pattern” làm bằng chứng duy nhất. Không công bố nhanh
+hơn, ít bộ nhớ hơn hoặc mở rộng tốt hơn nếu chưa có benchmark tái lập và công
+bằng.
+
+## Tài liệu
+
+- [Architecture map](ARCHITECTURE.md)
+- [Documentation map](docs/README.md)
+- [Agent/research rules](AGENTS.md)
+- [WSPM_PreTree contract](docs/research/wspm-pretree-spec.md)
+- [PRISM Prime-block contract](docs/research/prism-prime-block.md)
+- [BitPrune semantic contract](docs/research/wspm-bitprune-c01-1-semantic-contract.md)
+- [BitPrune pruning-safety contract](docs/research/wspm-bitprune-c01-2-pruning-safety.md)
+- [Phase C final acceptance](docs/research/wspm-bitprune-c16-final-acceptance-report.md)
+
+## License
+
+Mã nguồn của repository sử dụng giấy phép MIT, xem [LICENSE](LICENSE). Các bài
+báo, dataset, mã tham khảo và frontend kế thừa có thể có giấy phép riêng.

@@ -36,6 +36,10 @@ results/*
 
 # Keep reproducibility notes while excluding locally acquired source documents.
 docs/*
+!docs/README.md
+!docs/archive/
+!docs/archive/roadmaps/
+!docs/archive/roadmaps/**
 !docs/research/
 !docs/research/**
 
