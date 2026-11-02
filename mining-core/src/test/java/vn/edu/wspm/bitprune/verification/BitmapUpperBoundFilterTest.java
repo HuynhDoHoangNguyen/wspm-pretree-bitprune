@@ -688,4 +688,18 @@ class BitmapUpperBoundFilterTest {
             assertUpperBoundIntervalInvariant(bitmap, meanWeight, resolved);
         }
     }
+
+    @Test
+    void cardinalityOnlyPathMatchesBitmapPath() {
+        for (int sequenceCount : List.of(1, 7, 64, 65)) {
+            for (int cardinality = 0; cardinality <= sequenceCount; cardinality++) {
+                SidBitmap bitmap = bitmapWithCardinality(sequenceCount, cardinality);
+                ResolvedMinimumSupport resolved = resolveAbsolute(2.5, sequenceCount);
+                assertEquals(
+                        FILTER.canPrune(bitmap, 0.5, resolved),
+                        FILTER.canPruneCardinality(
+                                cardinality, sequenceCount, 0.5, resolved));
+            }
+        }
+    }
 }

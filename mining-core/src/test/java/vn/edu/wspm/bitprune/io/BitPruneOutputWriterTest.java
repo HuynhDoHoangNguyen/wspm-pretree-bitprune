@@ -147,6 +147,31 @@ class BitPruneOutputWriterTest {
     }
 
     @Test
+    void streamedResultMatchesProjectionBytes() throws IOException {
+        PrefixTree tree = new PrefixTree();
+        tree.insert(Pattern.empty(), p1, ExtensionType.S_EXTENSION);
+        tree.insert(p1, p12I, ExtensionType.I_EXTENSION);
+        tree.insert(p1, p1_2S, ExtensionType.S_EXTENSION);
+        tree.insert(Pattern.empty(), p2, ExtensionType.S_EXTENSION);
+        tree.freeze();
+
+        Map<Pattern, Integer> supports = new LinkedHashMap<>();
+        supports.put(p1, 7);
+        supports.put(p12I, 7);
+        supports.put(p1_2S, 6);
+        supports.put(p2, 5);
+        BitPruneMiningResult result = new BitPruneMiningResult(
+                tree, supports, createValidStatistics(2, 1, 1));
+
+        Path output = temporaryDirectory.resolve("streamed-result.txt");
+        writer.writeResult(output, result);
+
+        assertArrayEquals(
+                BitPruneOutputProjection.from(result).content().getBytes(StandardCharsets.UTF_8),
+                Files.readAllBytes(output));
+    }
+
+    @Test
     @DisplayName("1. BitPruneOutputWriter class is final, stateless, and has expected public write method")
     void testClassContract() throws NoSuchMethodException {
         Class<BitPruneOutputWriter> clazz = BitPruneOutputWriter.class;

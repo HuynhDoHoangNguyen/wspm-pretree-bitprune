@@ -25,14 +25,11 @@ import vn.edu.wspm.model.Pattern;
  */
 public final class BitPruneOutputProjection {
 
-    private final List<BitPruneOutputEntry> entries;
-    private final List<String> lines;
-    private final String content;
+    private final BitPruneMiningResult result;
+    private volatile Snapshot snapshot;
 
-    private BitPruneOutputProjection(List<BitPruneOutputEntry> entries, List<String> lines, String content) {
-        this.entries = entries;
-        this.lines = lines;
-        this.content = content;
+    private BitPruneOutputProjection(BitPruneMiningResult result) {
+        this.result = result;
     }
 
     /**
@@ -44,38 +41,13 @@ public final class BitPruneOutputProjection {
      * @throws IllegalArgumentException if duplicate patterns are detected in accepted patterns
      */
     public static BitPruneOutputProjection from(BitPruneMiningResult result) {
-        Objects.requireNonNull(result, "result must not be null");
-
-        List<Pattern> acceptedPatterns = result.acceptedPatterns();
-        if (acceptedPatterns.isEmpty()) {
-            return new BitPruneOutputProjection(List.of(), List.of(), "");
-        }
-
-        List<BitPruneOutputEntry> entryList = new ArrayList<>(acceptedPatterns.size());
-        List<String> lineList = new ArrayList<>(acceptedPatterns.size());
-        StringBuilder contentBuilder = new StringBuilder();
-        Set<Pattern> seenPatterns = new HashSet<>(acceptedPatterns.size());
-
-        for (Pattern pattern : acceptedPatterns) {
-            Objects.requireNonNull(pattern, "pattern must not be null");
-            if (!seenPatterns.add(pattern)) {
-                throw new IllegalArgumentException(
-                        "duplicate pattern encountered in accepted patterns: " + pattern.serialize());
-            }
-
-            int support = result.support(pattern);
-            BitPruneOutputEntry entry = new BitPruneOutputEntry(pattern, support);
-            String line = entry.formatLine();
-
-            entryList.add(entry);
-            lineList.add(line);
-            contentBuilder.append(line).append('\n');
-        }
-
         return new BitPruneOutputProjection(
-                List.copyOf(entryList),
-                List.copyOf(lineList),
-                contentBuilder.toString());
+                Objects.requireNonNull(result, "result must not be null"));
+    }
+
+    /** Returns the projected pattern count without formatting or allocating output entries. */
+    public int size() {
+        return result.acceptedPatterns().size();
     }
 
     /**
@@ -84,7 +56,7 @@ public final class BitPruneOutputProjection {
      * @return immutable list of entries
      */
     public List<BitPruneOutputEntry> entries() {
-        return entries;
+        return snapshot().entries();
     }
 
     /**
@@ -93,7 +65,7 @@ public final class BitPruneOutputProjection {
      * @return immutable list of formatted lines
      */
     public List<String> lines() {
-        return lines;
+        return snapshot().lines();
     }
 
     /**
@@ -105,7 +77,51 @@ public final class BitPruneOutputProjection {
      * @return LF-joined content string
      */
     public String content() {
-        return content;
+        return snapshot().content();
+    }
+
+    private Snapshot snapshot() {
+        Snapshot current = snapshot;
+        if (current != null) {
+            return current;
+        }
+        synchronized (this) {
+            current = snapshot;
+            if (current == null) {
+                current = materialize();
+                snapshot = current;
+            }
+            return current;
+        }
+    }
+
+    private Snapshot materialize() {
+        List<Pattern> acceptedPatterns = result.acceptedPatterns();
+        if (acceptedPatterns.isEmpty()) {
+            return new Snapshot(List.of(), List.of(), "");
+        }
+        List<BitPruneOutputEntry> entryList = new ArrayList<>(acceptedPatterns.size());
+        List<String> lineList = new ArrayList<>(acceptedPatterns.size());
+        StringBuilder contentBuilder = new StringBuilder();
+        Set<Pattern> seenPatterns = new HashSet<>(acceptedPatterns.size());
+        for (Pattern pattern : acceptedPatterns) {
+            Objects.requireNonNull(pattern, "pattern must not be null");
+            if (!seenPatterns.add(pattern)) {
+                throw new IllegalArgumentException(
+                        "duplicate pattern encountered in accepted patterns: " + pattern.serialize());
+            }
+            BitPruneOutputEntry entry = new BitPruneOutputEntry(pattern, result.support(pattern));
+            String line = entry.formatLine();
+            entryList.add(entry);
+            lineList.add(line);
+            contentBuilder.append(line).append('\n');
+        }
+        return new Snapshot(
+                List.copyOf(entryList), List.copyOf(lineList), contentBuilder.toString());
+    }
+
+    private record Snapshot(
+            List<BitPruneOutputEntry> entries, List<String> lines, String content) {
     }
 
     @Override
@@ -116,16 +132,16 @@ public final class BitPruneOutputProjection {
         if (!(obj instanceof BitPruneOutputProjection other)) {
             return false;
         }
-        return entries.equals(other.entries);
+        return entries().equals(other.entries());
     }
 
     @Override
     public int hashCode() {
-        return entries.hashCode();
+        return entries().hashCode();
     }
 
     @Override
     public String toString() {
-        return "BitPruneOutputProjection[entries=" + entries.size() + "]";
+        return "BitPruneOutputProjection[entries=" + size() + "]";
     }
 }

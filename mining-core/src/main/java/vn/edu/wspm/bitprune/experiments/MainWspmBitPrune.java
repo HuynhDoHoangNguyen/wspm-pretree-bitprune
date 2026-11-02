@@ -142,9 +142,9 @@ public final class MainWspmBitPrune {
                 // Scope 5 — physical output only
                 var outputIoStart = sampler.checkpoint();
 
-                new BitPruneOutputWriter().write(
+                new BitPruneOutputWriter().writeResult(
                         configuration.outputPath(),
-                        projection);
+                        result);
 
                 var outputIoEnd = sampler.checkpoint();
 

@@ -32,9 +32,9 @@ public record BitPruneExecutionRun(
                     + ") must equal result statistics sequence count ("
                     + result.statistics().sequenceCount() + ")");
         }
-        if (projection.entries().size() != result.acceptedPatterns().size()) {
+        if (projection.size() != result.acceptedPatterns().size()) {
             throw new IllegalArgumentException(
-                    "projection entries count (" + projection.entries().size()
+                    "projection entries count (" + projection.size()
                     + ") must equal accepted patterns count ("
                     + result.acceptedPatterns().size() + ")");
         }

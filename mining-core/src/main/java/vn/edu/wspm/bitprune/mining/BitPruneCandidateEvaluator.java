@@ -222,4 +222,102 @@ public final class BitPruneCandidateEvaluator {
                 Optional.of(candidateBitmap),
                 Optional.of(verificationResult));
     }
+
+    /**
+     * Internal DFS hot path for an already prepared extension domain. It preserves the public
+     * evaluator's routing predicates while deferring both Pattern and bitmap materialization.
+     */
+    BitPruneHotEvaluation evaluatePreparedExtension(
+            Pattern parent,
+            ExtensionType extensionType,
+            Item extensionItem,
+            SidBitmap parentCandidateBitmap,
+            SidBitmap extensionItemBitmap,
+            VerificationResult parentVerification,
+            CmapI cmapI,
+            CmapS cmapS,
+            VerticalOccurrenceIndex occurrenceIndex,
+            double globalMeanWeight,
+            ResolvedMinimumSupport minimumSupport) {
+        Objects.requireNonNull(parent, "parent pattern must not be null");
+        Objects.requireNonNull(extensionType, "extension type must not be null");
+        Objects.requireNonNull(extensionItem, "extension item must not be null");
+        Objects.requireNonNull(parentCandidateBitmap, "parent candidate bitmap must not be null");
+        Objects.requireNonNull(extensionItemBitmap, "extension item bitmap must not be null");
+        Objects.requireNonNull(parentVerification, "parent verification result must not be null");
+        Objects.requireNonNull(cmapI, "cmapI must not be null");
+        Objects.requireNonNull(cmapS, "cmapS must not be null");
+        Objects.requireNonNull(occurrenceIndex, "occurrence index must not be null");
+        Objects.requireNonNull(minimumSupport, "minimum support must not be null");
+        if (parent.isEmpty()) {
+            throw new IllegalArgumentException("parent pattern must not be empty");
+        }
+        if (!Double.isFinite(globalMeanWeight) || globalMeanWeight < 0.0) {
+            throw new IllegalArgumentException(
+                    "globalMeanWeight must be finite and non-negative; got: " + globalMeanWeight);
+        }
+
+        Item parentLastItem = parent.lastItem().orElseThrow();
+        if (extensionType == ExtensionType.I_EXTENSION
+                && extensionItem.id() <= parentLastItem.id()) {
+            throw new IllegalArgumentException(
+                    "prepared I-extension item must be greater than the parent last item");
+        }
+        if (!parentCandidateBitmap.mapping().equals(extensionItemBitmap.mapping())) {
+            throw new IllegalArgumentException(
+                    "parentCandidateBitmap and extensionItemBitmap must have equal SID mappings");
+        }
+        int universeSize = parentCandidateBitmap.sequenceCount();
+        if (universeSize != minimumSupport.numberOfSequences()) {
+            throw new IllegalArgumentException(
+                    "bitmap universe size must equal minimum-support sequence count");
+        }
+
+        SidMapping mapping = parentCandidateBitmap.mapping();
+        for (PatternEndpoints ep : parentVerification.endpointStates()) {
+            int bitIndex = mapping.sidToIndex(ep.actualSid());
+            if (!parentCandidateBitmap.isSet(bitIndex)) {
+                throw new IllegalArgumentException(
+                        "parent verification SID is absent from parent candidate bitmap");
+            }
+        }
+
+        if (minimumSupport.effectiveThreshold() > 0.0) {
+            boolean cmapPass = switch (extensionType) {
+                case I_EXTENSION -> cmapI.contains(parentLastItem, extensionItem);
+                case S_EXTENSION -> cmapS.contains(parentLastItem, extensionItem);
+            };
+            if (!cmapPass) {
+                return BitPruneHotEvaluation.cmapRejected();
+            }
+        }
+
+        int intersectionCardinality =
+                parentCandidateBitmap.intersectionCardinality(extensionItemBitmap);
+        if (upperBoundFilter.canPruneCardinality(
+                intersectionCardinality, universeSize, globalMeanWeight, minimumSupport)) {
+            return BitPruneHotEvaluation.bitmapRejected();
+        }
+
+        VerificationResult verificationResult = switch (extensionType) {
+            case I_EXTENSION -> exactTemporalVerifier.verifyIExtension(
+                    parent, parentVerification.endpointStates(), extensionItem, occurrenceIndex);
+            case S_EXTENSION -> exactTemporalVerifier.verifySExtension(
+                    parent, parentVerification.endpointStates(), extensionItem, occurrenceIndex);
+        };
+        if (!minimumSupport.meetsThreshold(
+                verificationResult.exactSupport(), globalMeanWeight)) {
+            return BitPruneHotEvaluation.exactRejected();
+        }
+
+        SidBitmap candidateBitmap = parentCandidateBitmap.and(extensionItemBitmap);
+        for (PatternEndpoints ep : verificationResult.endpointStates()) {
+            int bitIndex = candidateBitmap.mapping().sidToIndex(ep.actualSid());
+            if (!candidateBitmap.isSet(bitIndex)) {
+                throw new IllegalStateException(
+                        "Upper-bound inclusion invariant broken for accepted extension");
+            }
+        }
+        return BitPruneHotEvaluation.accepted(candidateBitmap, verificationResult);
+    }
 }
