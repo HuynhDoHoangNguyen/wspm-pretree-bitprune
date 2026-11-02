@@ -1,211 +1,216 @@
 # WSPM_PreTree & WSPM_BitPrune
 
-Repository cho khóa luận **“Nghiên cứu cải tiến thuật toán WSPM_PreTree và xây
-dựng hệ thống gợi ý combo sản phẩm.”** Dự án gồm lõi khai phá mẫu tuần tự có
-trọng số, REST API và frontend phục vụ giai đoạn tích hợp hệ thống.
+Repository cho khóa luận tốt nghiệp: **“Nghiên cứu cải tiến thuật toán WSPM_PreTree và xây dựng hệ thống gợi ý combo sản phẩm.”** 
 
-## Trạng thái hiện tại
+Dự án gồm:
+- **`mining-core`**: Lõi thuật toán khai phá mẫu tuần tự có trọng số (WSPM_PreTree baseline và WSPM_BitPrune cải tiến).
+- **`backend`**: REST API viết bằng Spring Boot 4.x / Java 21, quản lý dữ liệu sản phẩm, đơn hàng, kích hoạt thuật toán và gợi ý combo.
+- **`frontend`**: Giao diện ứng dụng người dùng và quản trị viên viết bằng React 17, TypeScript và Mantine UI.
 
-- WSPM_PreTree baseline: Phase B đã hoàn thành và được nghiệm thu.
-- WSPM_BitPrune: Phase C đã hoàn thành và được nghiệm thu trên phạm vi ngưỡng
-  hiệu dụng dương đã được tài liệu hóa.
-- Backend, MySQL và frontend: đang trong giai đoạn bootstrap/tích hợp.
-- Vấn đề nghiên cứu còn mở: ngữ nghĩa ngưỡng support hiệu dụng bằng 0 (R6) và
-  tính tương đương exact-real của comparator dùng `double`.
+---
 
-Xem [ARCHITECTURE.md](ARCHITECTURE.md) để biết dependency và cấu trúc module;
-xem [docs/README.md](docs/README.md) để chọn đúng tài liệu nghiên cứu cần đọc.
+## 🚀 Hướng dẫn khởi chạy hệ thống (Dành cho thành viên mới)
 
-## Công nghệ
+> [!TIP]
+> Bạn chỉ cần làm theo **lần lượt 4 bước bên dưới** là có thể chạy được toàn bộ hệ thống từ Database, Migration, Backend tới Frontend.
 
-| Khu vực | Công nghệ chính |
-|---|---|
-| Build chung | Java 21, Maven multi-module |
-| Mining | Java Core, JUnit Jupiter 5.12.2 |
-| Backend | Spring Boot 4.1.2, Spring Web MVC, Data JPA, JDBC, Actuator |
-| Database | MySQL 8.4, Docker Compose |
-| Frontend | React 17, TypeScript 4.6, Create React App 5 |
-| UI/state/data | Mantine 4, React Query 3, Zustand, React Router 6 |
-| Kiểm chứng | JUnit 5, paper oracle, brute-force và differential tests |
+---
 
-## Yêu cầu môi trường
+### Yêu cầu phần mềm cài đặt sẵn (Prerequisites)
 
-- JDK 21.
-- Maven 3.9+.
-- Docker và Docker Compose để chạy MySQL.
-- Node.js và npm tương thích với `frontend/package-lock.json`.
+Trước khi bắt đầu, hãy đảm bảo máy tính đã cài đặt các công cụ sau:
 
-Các phiên bản đã dùng khi cập nhật tài liệu này: Java 21, Maven 3.9.16,
-Node.js 22.23.4, npm 10.9.9 và Docker 29.7.2. Đây là môi trường đã quan sát,
-không phải tuyên bố rằng mọi phiên bản thành phần đều bắt buộc đúng tuyệt đối.
+1. **Git**: Để tải và đồng bộ mã nguồn.
+2. **Java JDK 21**: Kiểm tra bằng lệnh:
+   ```powershell
+   java -version
+   ```
+3. **Apache Maven 3.9+**: Kiểm tra bằng lệnh:
+   ```powershell
+   mvn -version
+   ```
+4. **Docker Desktop**: Cần mở ứng dụng Docker Desktop lên trước khi chạy lệnh. Kiểm tra bằng lệnh:
+   ```powershell
+   docker -v
+   ```
+5. **Node.js (v18 - v22) & npm**: Kiểm tra bằng lệnh:
+   ```powershell
+   node -v
+   npm -v
+   ```
 
-## Chuẩn bị cấu hình local
+---
 
-Từ thư mục root:
+### BƯỚC 1: Chuẩn bị file cấu hình môi trường (`.env`)
+
+Mở terminal (PowerShell trên Windows hoặc Bash trên Linux/macOS) tại **thư mục gốc của dự án** (`wspm-pretree-bitprune`), chạy lệnh:
+
+- **Trên Windows (PowerShell):**
+  ```powershell
+  Copy-Item .env.example .env
+  ```
+- **Trên Linux / macOS:**
+  ```bash
+  cp .env.example .env
+  ```
+
+> [!NOTE]
+> File `.env` chứa các thông số mặc định kết nối MySQL cục bộ:
+> - Cổng: `3307`
+> - Tên Database: `wspm_combo`
+> - Tài khoản: `wspm_app` / Mật khẩu: `123456`
+> 
+> Với môi trường dev cá nhân, bạn **không cần thay đổi gì thêm** trong file `.env`.
+
+---
+
+### BƯỚC 2: Khởi động Cơ sở dữ liệu MySQL (Docker Compose)
+
+Đảm bảo phần mềm **Docker Desktop** đang chạy (icon Docker chuyển sang màu xanh), sau đó gõ lệnh tại thư mục gốc:
 
 ```powershell
-Copy-Item .env.example .env
+# 1. Bật container MySQL chạy nền
+docker compose up -d mysql
+
+# 2. Kiểm tra container đã hoạt động chưa
+docker compose ps
+```
+Nếu thấy cột `STATUS` hiển thị `Up` (ví dụ `Up 10 seconds`), MySQL đã sẵn sàng tại cổng `3307`.
+
+* **Khi muốn tạm dừng Database:**
+  ```powershell
+  docker compose down
+  ```
+  *(Dữ liệu database được lưu an toàn trong Docker volume `wspm_mysql_data`, không bị mất khi tắt).*
+
+---
+
+### BƯỚC 3: Build và Chạy Backend (Tự động chạy Migration)
+
+> [!IMPORTANT]
+> **Bạn KHÔNG CẦN phải mở MySQL Workbench để chạy script tạo bảng thủ công!**
+> 
+> Hệ thống tích hợp sẵn công cụ **Flyway Migration**. Khi Backend khởi động, Flyway sẽ tự động kết nối vào MySQL `wspm_combo` và khởi tạo toàn bộ 12 bảng, khoá ngoại và index.
+
+Tại thư mục gốc của dự án, chạy 2 lệnh sau:
+
+#### 1. Biên dịch và đóng gói Backend:
+```powershell
+mvn -pl backend -am package -DskipTests
+```
+*(Lệnh này sẽ tự động biên dịch thuật toán `mining-core` và đóng gói ứng dụng `backend`).*
+
+#### 2. Khởi chạy Backend:
+```powershell
+java -jar backend/target/backend-1.0-SNAPSHOT.jar
+```
+Khi thấy log xuất hiện dòng chữ:
+```text
+Started BackendApplication in X.XXX seconds
+```
+Backend đã khởi động thành công tại cổng `8080`.
+
+#### 3. Kiểm tra Backend:
+Mở trình duyệt web và truy cập các liên kết sau:
+- Kiểm tra sức khỏe hệ thống: [http://localhost:8080/api/health](http://localhost:8080/api/health) (kết quả trả về `{"status":"UP", ...}`)
+- Danh sách ngành hàng: [http://localhost:8080/api/v1/categories](http://localhost:8080/api/v1/categories)
+- Danh sách sản phẩm: [http://localhost:8080/api/v1/products](http://localhost:8080/api/v1/products)
+
+---
+
+### BƯỚC 4: Khởi chạy Giao diện Frontend
+
+Mở **một cửa sổ Terminal mới** (để cửa sổ Backend ở Bước 3 tiếp tục chạy), sau đó thực hiện:
+
+#### 1. Di chuyển vào thư mục frontend:
+```powershell
+Set-Location frontend
+# hoặc: cd frontend
 ```
 
-Cập nhật mật khẩu local trong `.env`. Không commit `.env`.
-
-## Build và test
-
-Chạy toàn bộ Maven reactor:
-
+#### 2. Cài đặt các thư viện phụ thuộc:
 ```powershell
-mvn clean test
+npm ci
 ```
+*(Nếu gặp lỗi xung đột phiên bản thư viện peer dependencies, dùng lệnh: `npm install --legacy-peer-deps`)*
 
-Chỉ kiểm thử mining-core:
-
+#### 3. Chạy giao diện ở môi trường phát triển:
 ```powershell
+npm start
+```
+Trình duyệt sẽ tự động mở trang web tại địa chỉ: **[http://localhost:3000](http://localhost:3000)**.
+Mọi request gọi API từ frontend sẽ tự động được chuyển tiếp (proxy) sang Backend tại cổng `8080`.
+
+---
+
+## 🛠️ Các câu lệnh hữu ích khác
+
+### Chạy kiểm thử tự động (Unit / Integration Tests)
+```powershell
+# Chạy toàn bộ test cả hệ thống
+mvn test
+
+# Chỉ chạy test thuật toán khai phá mẫu (mining-core)
 mvn -pl mining-core test
-```
 
-Chỉ kiểm thử backend và tự build dependency mining-core:
-
-```powershell
+# Chỉ chạy test backend (controller, service, repository, entity validation)
 mvn -pl backend -am test
 ```
 
-Đóng gói toàn bộ Java modules:
+### Chạy trực tiếp thuật toán Mining mẫu trong terminal
+Hai runner dưới đây sử dụng tập dữ liệu chuẩn Table 1 từ bài báo gốc (`mining-core/src/test/resources/datasets/wspm/table1.spmf`):
 
-```powershell
-mvn clean package
-```
+- **Chạy WSPM_PreTree (Thuật toán gốc):**
+  ```powershell
+  Set-Location mining-core
+  mvn test-compile
+  java -cp target/classes vn.edu.wspm.experiments.MainWspmPreTree
+  ```
 
-## Chạy thuật toán mining
+- **Chạy WSPM_BitPrune (Thuật toán cải tiến):**
+  ```powershell
+  Set-Location mining-core
+  mvn test-compile
+  java -cp target/classes vn.edu.wspm.bitprune.experiments.MainWspmBitPrune
+  ```
 
-Hai runner dùng cấu hình bất biến trong source, không yêu cầu nhập tham số bằng
-terminal. Trước khi chạy dataset khác, chỉnh các hằng cấu hình trong runner và
-ghi nhận thay đổi để thí nghiệm có thể tái lập.
+---
 
-### WSPM_PreTree
+## 📊 Kiến trúc và Công nghệ
 
-```powershell
-Set-Location mining-core
-mvn test-compile
-java -cp target/classes vn.edu.wspm.experiments.MainWspmPreTree
-```
+| Phân hệ | Công nghệ sử dụng | Vai trò |
+|---|---|---|
+| **Build System** | Java 21, Maven Multi-module | Quản lý vòng đời build đồng bộ cho cả dự án |
+| **Mining Core** | Java Core, JUnit Jupiter 5 | Hiện thực WSPM_PreTree và WSPM_BitPrune tối ưu |
+| **Backend** | Spring Boot 4.1.2, Spring Data JPA, Web MVC | Xử lý nghiệp vụ, quản lý Entity, ánh xạ DTO, REST API |
+| **Database & Migration**| MySQL 8.4 (Docker), Flyway | Lưu trữ dữ liệu quan hệ, tự động migrate schema 12 bảng |
+| **Frontend** | React 17, TypeScript 4.6, Create React App | Xây dựng giao diện Single-Page Application (SPA) |
+| **UI Components** | Mantine UI 4, Tabler Icons, React Query 3, Zustand | Hệ thống component UI, quản lý state và gọi API |
 
-### WSPM_BitPrune
+---
 
-```powershell
-Set-Location mining-core
-mvn test-compile
-java -cp target/classes vn.edu.wspm.bitprune.experiments.MainWspmBitPrune
-```
+## 🔬 Nghiên cứu và Độ tin cậy thuật toán (Correctness)
 
-Các runner mặc định dùng fixture Table 1 tại
-`mining-core/src/test/resources/datasets/wspm/table1.spmf` và đường dẫn được
-resolve tương đối từ thư mục `mining-core`.
+- Dữ liệu tuần tự định dạng SPMF: `-1` kết thúc một itemset, `-2` kết thúc một chuỗi sequence.
+- Thuật toán cải tiến **WSPM_BitPrune** bắt buộc phải thỏa mãn tính đúng đắn tuyệt đối so với **WSPM_PreTree** trên cùng ngưỡng:
+  ```text
+  pattern identity + exact support + total pattern count
+  ```
+- Không chấp nhận việc chỉ so sánh số lượng pattern; bắt buộc kiểm tra đồng nhất toàn bộ tập mẫu và độ hỗ trợ chính xác `pattern -> exact support`.
 
-## Chạy MySQL
+---
 
-Sau khi tạo `.env`:
+## 📚 Tài liệu kỹ thuật chi tiết
 
-```powershell
-docker compose up -d mysql
-docker compose ps
-```
+- [Bản đồ cấu trúc hệ thống (ARCHITECTURE.md)](ARCHITECTURE.md)
+- [Bản đồ tài liệu nghiên cứu (docs/README.md)](docs/README.md)
+- [Quy chuẩn thực thi và nguyên tắc nghiên cứu (AGENTS.md)](AGENTS.md)
+- [Đặc tả thuật toán WSPM_PreTree](docs/research/wspm-pretree-spec.md)
+- [Đặc tả mã hóa Prime-block PRISM](docs/research/prism-prime-block.md)
+- [Hợp đồng ngữ nghĩa WSPM_BitPrune](docs/research/wspm-bitprune-c01-1-semantic-contract.md)
+- [Báo cáo nghiệm thu Phase C WSPM_BitPrune](docs/research/wspm-bitprune-c16-final-acceptance-report.md)
 
-Dừng container:
+---
 
-```powershell
-docker compose down
-```
-
-Dữ liệu MySQL nằm trong named volume `wspm_mysql_data`; `docker compose down`
-không xóa volume. Không dùng tùy chọn `-v` nếu chưa chủ động muốn xóa dữ liệu.
-
-> Lưu ý: Compose chỉ khởi tạo MySQL/database. Backend hiện dùng
-> `spring.jpa.hibernate.ddl-auto=validate` và không tự tạo bảng. File
-> `docs/database/schema_v3_draft_review.sql` vẫn là bản draft để review, không
-> phải migration đã được phê duyệt.
-
-## Chạy backend
-
-Khi MySQL đã chạy và schema phù hợp đã được áp dụng:
-
-```powershell
-mvn -pl backend -am package -DskipTests
-java -jar backend/target/backend-1.0-SNAPSHOT.jar
-```
-
-Backend mặc định chạy tại `http://localhost:8080`. Các endpoint hiện có gồm:
-
-```text
-GET /api/health
-GET /actuator/health
-GET /api/v1/categories
-GET /api/v1/products
-```
-
-## Chạy frontend
-
-```powershell
-Set-Location frontend
-npm ci
-npm start
-```
-
-Frontend development server mặc định ở `http://localhost:3000` và proxy API
-trong `package.json` tới `http://127.0.0.1:8080`.
-
-Build production:
-
-```powershell
-npm run build
-```
-
-Chạy test một lần, không bật watch mode:
-
-```powershell
-npm test -- --watchAll=false
-```
-
-Trạng thái hiện tại: production build thành công nhưng có ESLint warnings; test
-`src/App.test.tsx` kế thừa đang fail vì render `App` ngoài Router và còn kiểm tra
-nội dung mẫu “hello world”. Đây là known frontend verification gap, không được
-báo cáo test frontend là xanh trước khi có task sửa test riêng.
-
-Frontend được kế thừa từ Electro và đang được thu hẹp theo phạm vi khóa luận;
-xem `frontend/LICENSE-ELECTRO` trước khi loại bỏ attribution hoặc tài nguyên gốc.
-
-## Dữ liệu nghiên cứu
-
-- SPMF sequence format: `-1` kết thúc itemset, `-2` kết thúc sequence.
-- Dataset lớn trong `mining-core/src/main/resources/datasets/` được ignore và
-  phải được cung cấp local theo đúng nguồn/provenance.
-- Fixture nhỏ phục vụ correctness tests được lưu trong Git.
-- Không biến transaction database thành sequence database bằng cách tự tạo thứ
-  tự nếu chưa có tài liệu hóa và phê duyệt nghiên cứu.
-
-## Nguyên tắc correctness
-
-Kết quả BitPrune chỉ được xem là đúng khi đồng nhất với baseline trên:
-
-```text
-pattern identity + exact support + total pattern count
-```
-
-Không dùng “cùng số lượng pattern” làm bằng chứng duy nhất. Không công bố nhanh
-hơn, ít bộ nhớ hơn hoặc mở rộng tốt hơn nếu chưa có benchmark tái lập và công
-bằng.
-
-## Tài liệu
-
-- [Architecture map](ARCHITECTURE.md)
-- [Documentation map](docs/README.md)
-- [Agent/research rules](AGENTS.md)
-- [WSPM_PreTree contract](docs/research/wspm-pretree-spec.md)
-- [PRISM Prime-block contract](docs/research/prism-prime-block.md)
-- [BitPrune semantic contract](docs/research/wspm-bitprune-c01-1-semantic-contract.md)
-- [BitPrune pruning-safety contract](docs/research/wspm-bitprune-c01-2-pruning-safety.md)
-- [Phase C final acceptance](docs/research/wspm-bitprune-c16-final-acceptance-report.md)
-
-## License
-
-Mã nguồn của repository sử dụng giấy phép MIT, xem [LICENSE](LICENSE). Các bài
-báo, dataset, mã tham khảo và frontend kế thừa có thể có giấy phép riêng.
+## 📄 License
+Mã nguồn của repository sử dụng giấy phép MIT, xem [LICENSE](LICENSE). Các bài báo, dataset tham khảo và mã nguồn frontend kế thừa tuân thủ giấy phép gốc tương ứng.

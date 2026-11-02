@@ -16,7 +16,6 @@ spring:
     init:
       mode: never
 
-  
   jpa:
     open-in-view: false
     hibernate:
@@ -25,6 +24,10 @@ spring:
         physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
     show-sql: false
 
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
 
 server:
   port: 8080
