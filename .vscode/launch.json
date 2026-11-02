@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "MainWspmPreTree",
+      "request": "launch",
+      "mainClass": "vn.edu.wspm.experiments.MainWspmPreTree",
+      "projectName": "mining-core"
+    },
+    {
+      "type": "java",
+      "name": "Run WSPM BitPrune",
+      "request": "launch",
+      "mainClass": "vn.edu.wspm.bitprune.experiments.MainWspmBitPrune",
+      "projectName": "mining-core",
+      "cwd": "${workspaceFolder}/mining-core",
+      "console": "integratedTerminal"
+    }
+  ]
+}

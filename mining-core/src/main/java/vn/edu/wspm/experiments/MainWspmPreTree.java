@@ -44,7 +44,7 @@ public final class MainWspmPreTree {
 
         public static void main(String[] args) throws IOException {
                 var configuration = new RunConfiguration(
-                                DATASET_PATH,
+                                resolveDefaultDatasetPath(),
                                 INPUT_FORMAT,
                                 MIN_SUP_IS_RELATIVE,
                                 MIN_SUP,
@@ -54,6 +54,20 @@ public final class MainWspmPreTree {
                                 EXPORT_PATTERNS,
                                 OUTPUT_PATH);
                 execute(configuration, System.out);
+        }
+
+        /**
+         * Keeps the documented module-relative dataset constant while also supporting IDE launches
+         * whose working directory is the repository root.
+         */
+        private static Path resolveDefaultDatasetPath() {
+                if (Files.isRegularFile(DATASET_PATH)) {
+                        return DATASET_PATH;
+                }
+                Path repositoryRootRelative = Path.of("mining-core").resolve(DATASET_PATH);
+                return Files.isRegularFile(repositoryRootRelative)
+                                ? repositoryRootRelative
+                                : DATASET_PATH;
         }
 
         static WspmMiningResult run(

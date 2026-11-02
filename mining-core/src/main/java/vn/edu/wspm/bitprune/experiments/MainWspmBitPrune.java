@@ -43,10 +43,10 @@ public final class MainWspmBitPrune {
 
     // Edit these constants to configure a reproducible non-interactive run.
     private static final Path DATASET_PATH =
-            Path.of("src/test/resources/datasets/wspm/table1.spmf");
+            Path.of("src/main/resources/datasets/T40I10D100K.txt");
 
     private static final SequenceDatabaseFormat INPUT_FORMAT =
-            SequenceDatabaseFormat.SPMF_SEQUENTIAL;
+            SequenceDatabaseFormat.FIMI_TRANSACTION;
 
     private static final boolean MIN_SUP_IS_RELATIVE = true;
 
@@ -75,7 +75,7 @@ public final class MainWspmBitPrune {
      */
     public static void main(String[] args) throws IOException {
         var configuration = new BitPruneRunConfiguration(
-                DATASET_PATH,
+                resolveDefaultDatasetPath(),
                 INPUT_FORMAT,
                 MIN_SUP_IS_RELATIVE,
                 MIN_SUP,
@@ -85,6 +85,20 @@ public final class MainWspmBitPrune {
                 OUTPUT_PATH);
 
         execute(configuration, System.out);
+    }
+
+    /**
+     * Keeps the documented module-relative dataset constant while also supporting IDE launches
+     * whose working directory is the repository root.
+     */
+    private static Path resolveDefaultDatasetPath() {
+        if (Files.isRegularFile(DATASET_PATH)) {
+            return DATASET_PATH;
+        }
+        Path repositoryRootRelative = Path.of("mining-core").resolve(DATASET_PATH);
+        return Files.isRegularFile(repositoryRootRelative)
+                ? repositoryRootRelative
+                : DATASET_PATH;
     }
 
     /**
@@ -379,4 +393,3 @@ public final class MainWspmBitPrune {
         lines.forEach(output::println);
     }
 }
-
