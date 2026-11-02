@@ -156,4 +156,21 @@ public final class BitPrunePrefixTreeIntegrator {
 
         return tree.insert(parent, acceptedCandidate.pattern(), acceptedCandidate.extensionType());
     }
+
+    /**
+     * Inserts a child created once by the validated prepared DFS hot path. PrefixTree performs the
+     * authoritative immediate-extension validation; this method deliberately creates no duplicate
+     * reconstructed Pattern.
+     */
+    PrefixTreeNode insertPreparedChild(
+            PrefixTree tree,
+            Pattern parent,
+            Pattern child,
+            ExtensionType extensionType) {
+        Objects.requireNonNull(tree, "tree must not be null");
+        Objects.requireNonNull(parent, "parent pattern must not be null");
+        Objects.requireNonNull(child, "child pattern must not be null");
+        Objects.requireNonNull(extensionType, "extension type must not be null");
+        return tree.insert(parent, child, extensionType);
+    }
 }

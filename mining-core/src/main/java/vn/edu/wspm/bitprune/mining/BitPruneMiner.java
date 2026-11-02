@@ -31,12 +31,14 @@ import vn.edu.wspm.mining.F1Builder;
 import vn.edu.wspm.mining.WeightedOnePattern;
 import vn.edu.wspm.model.Item;
 import vn.edu.wspm.model.Pattern;
+import vn.edu.wspm.model.PatternExtensions;
 import vn.edu.wspm.model.SequenceDatabase;
 import vn.edu.wspm.model.SequenceRecord;
 import vn.edu.wspm.statistics.ItemStatisticsCalculator;
 import vn.edu.wspm.statistics.ItemWeightCalculator;
 import vn.edu.wspm.statistics.ItemWeightResult;
 import vn.edu.wspm.statistics.SequenceDatabaseStatistics;
+import vn.edu.wspm.tree.ExtensionType;
 import vn.edu.wspm.tree.PrefixTree;
 
 /**
@@ -57,7 +59,7 @@ import vn.edu.wspm.tree.PrefixTree;
  * freezes the PrefixTree, and constructs the completed {@link BitPruneMiningResult};</li>
  * <li>Traverses the sequential pattern search space in deterministic ascending
  * DFS order;</li>
- * <li>Generates candidates strictly using {@link BitPruneCandidateEngine};</li>
+ * <li>Generates the same canonical candidates directly from the prepared F1 domain;</li>
  * <li>Evaluates candidates strictly using {@link BitPruneCandidateEvaluator};</li>
  * <li>Inserts only accepted candidates via {@link BitPrunePrefixTreeIntegrator};</li>
  * <li>Recurses only into accepted candidates using child bitmap and verification state;</li>
@@ -72,9 +74,9 @@ import vn.edu.wspm.tree.PrefixTree;
  */
 public final class BitPruneMiner {
 
-    private final BitPruneCandidateEngine candidateEngine = new BitPruneCandidateEngine();
     private final BitPruneCandidateEvaluator candidateEvaluator = new BitPruneCandidateEvaluator();
     private final BitPrunePrefixTreeIntegrator integrator = new BitPrunePrefixTreeIntegrator();
+    private final PatternExtensions patternExtensions = new PatternExtensions();
     private final ItemStatisticsCalculator itemStatisticsCalculator = new ItemStatisticsCalculator();
     private final ItemWeightCalculator itemWeightCalculator = new ItemWeightCalculator();
     private final F1Builder f1Builder = new F1Builder();
@@ -377,13 +379,19 @@ public final class BitPruneMiner {
             Map<Pattern, Integer> supportMap,
             BitPruneStatisticsAccumulator accumulator) {
 
-        for (WeightedOnePattern rootOne : prepared.sortedF1()) {
+        List<Item> extensionItems = new ArrayList<>(prepared.sortedF1().size());
+        for (WeightedOnePattern one : prepared.sortedF1()) {
+            extensionItems.add(new Item(one.itemId()));
+        }
+
+        for (int rootIndex = 0; rootIndex < prepared.sortedF1().size(); rootIndex++) {
+            WeightedOnePattern rootOne = prepared.sortedF1().get(rootIndex);
             int rootId = rootOne.itemId();
-            Pattern rootPattern = Pattern.singleton(new Item(rootId));
+            Pattern rootPattern = Pattern.singleton(extensionItems.get(rootIndex));
             SidBitmap rootBitmap = prepared.singletonBitmaps().get(rootId);
             VerificationResult rootVerif = prepared.singletonVerifications().get(rootId);
 
-            dfs(rootPattern, rootBitmap, rootVerif, prepared.sortedF1(), prepared.singletonBitmaps(),
+            dfs(rootPattern, rootBitmap, rootVerif, extensionItems, prepared.singletonBitmaps(),
                     tree, supportMap, prepared.cmapI(), prepared.cmapS(), prepared.occurrenceIndex(),
                     prepared.globalMeanWeight(), prepared.resolvedMinimumSupport(), accumulator);
         }
@@ -598,7 +606,7 @@ public final class BitPruneMiner {
             Pattern parentPattern,
             SidBitmap parentBitmap,
             VerificationResult parentVerif,
-            List<WeightedOnePattern> sortedF1,
+            List<Item> extensionItems,
             Map<Integer, SidBitmap> singletonBitmaps,
             PrefixTree tree,
             Map<Pattern, Integer> supportMap,
@@ -611,38 +619,68 @@ public final class BitPruneMiner {
 
         accumulator.recordExpandedNode();
 
-        List<BitPruneCandidateResult> candidates = candidateEngine.generateCandidates(parentPattern, sortedF1);
-        for (BitPruneCandidateResult candidate : candidates) {
-            Item extItem = candidate.extensionItem();
-            SidBitmap extBitmap = singletonBitmaps.get(extItem.id());
-
-            switch (candidate.extensionType()) {
-                case I_EXTENSION -> accumulator.recordGeneratedIExtension();
-                case S_EXTENSION -> accumulator.recordGeneratedSExtension();
+        int lastItemId = parentPattern.lastItem().orElseThrow().id();
+        for (Item extensionItem : extensionItems) {
+            if (extensionItem.id() > lastItemId) {
+                evaluateAndExpand(parentPattern, parentBitmap, parentVerif,
+                        ExtensionType.I_EXTENSION, extensionItem, extensionItems,
+                        singletonBitmaps, tree, supportMap, cmapI, cmapS, occurrenceIndex,
+                        globalMeanWeight, minimumSupport, accumulator);
             }
+        }
+        for (Item extensionItem : extensionItems) {
+            evaluateAndExpand(parentPattern, parentBitmap, parentVerif,
+                    ExtensionType.S_EXTENSION, extensionItem, extensionItems,
+                    singletonBitmaps, tree, supportMap, cmapI, cmapS, occurrenceIndex,
+                    globalMeanWeight, minimumSupport, accumulator);
+        }
+    }
 
-            BitPruneCandidateEvaluation eval = candidateEvaluator.evaluate(
-                    parentPattern, candidate, parentBitmap, extBitmap, parentVerif,
-                    cmapI, cmapS, occurrenceIndex, globalMeanWeight, minimumSupport);
+    private void evaluateAndExpand(
+            Pattern parentPattern,
+            SidBitmap parentBitmap,
+            VerificationResult parentVerif,
+            ExtensionType extensionType,
+            Item extensionItem,
+            List<Item> extensionItems,
+            Map<Integer, SidBitmap> singletonBitmaps,
+            PrefixTree tree,
+            Map<Pattern, Integer> supportMap,
+            CmapI cmapI,
+            CmapS cmapS,
+            VerticalOccurrenceIndex occurrenceIndex,
+            double globalMeanWeight,
+            ResolvedMinimumSupport minimumSupport,
+            BitPruneStatisticsAccumulator accumulator) {
+        switch (extensionType) {
+            case I_EXTENSION -> accumulator.recordGeneratedIExtension();
+            case S_EXTENSION -> accumulator.recordGeneratedSExtension();
+        }
 
-            switch (eval.outcome()) {
-                case CMAP_REJECTED -> accumulator.recordCmapRejected();
-                case BITMAP_REJECTED -> accumulator.recordBitmapRejected();
-                case EXACT_REJECTED -> accumulator.recordExactRejected();
-                case ACCEPTED -> {
-                    accumulator.recordAcceptedExtension();
-                    SidBitmap childBitmap = eval.candidateBitmap().orElseThrow(
-                            () -> new IllegalStateException("Accepted evaluation missing candidate bitmap"));
-                    VerificationResult childVerif = eval.verificationResult().orElseThrow(
-                            () -> new IllegalStateException("Accepted evaluation missing verification result"));
+        BitPruneHotEvaluation evaluation = candidateEvaluator.evaluatePreparedExtension(
+                parentPattern, extensionType, extensionItem, parentBitmap,
+                singletonBitmaps.get(extensionItem.id()), parentVerif,
+                cmapI, cmapS, occurrenceIndex, globalMeanWeight, minimumSupport);
 
-                    integrator.insertAcceptedChild(tree, parentPattern, candidate);
-                    supportMap.put(candidate.pattern(), childVerif.exactSupport());
-
-                    dfs(candidate.pattern(), childBitmap, childVerif, sortedF1, singletonBitmaps,
-                            tree, supportMap, cmapI, cmapS, occurrenceIndex,
-                            globalMeanWeight, minimumSupport, accumulator);
+        switch (evaluation.outcome()) {
+            case CMAP_REJECTED -> accumulator.recordCmapRejected();
+            case BITMAP_REJECTED -> accumulator.recordBitmapRejected();
+            case EXACT_REJECTED -> accumulator.recordExactRejected();
+            case ACCEPTED -> {
+                accumulator.recordAcceptedExtension();
+                Pattern childPattern = switch (extensionType) {
+                    case I_EXTENSION -> patternExtensions.iExtend(parentPattern, extensionItem);
+                    case S_EXTENSION -> patternExtensions.sExtend(parentPattern, extensionItem);
+                };
+                VerificationResult childVerif = evaluation.acceptedVerification();
+                integrator.insertPreparedChild(tree, parentPattern, childPattern, extensionType);
+                if (supportMap.put(childPattern, childVerif.exactSupport()) != null) {
+                    throw new IllegalStateException(
+                            "duplicate pattern reached by prepared DFS: " + childPattern.serialize());
                 }
+                dfs(childPattern, evaluation.acceptedBitmap(), childVerif,
+                        extensionItems, singletonBitmaps, tree, supportMap,
+                        cmapI, cmapS, occurrenceIndex, globalMeanWeight, minimumSupport, accumulator);
             }
         }
     }

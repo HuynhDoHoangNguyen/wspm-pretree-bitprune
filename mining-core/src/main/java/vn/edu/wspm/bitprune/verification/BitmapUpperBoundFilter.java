@@ -215,4 +215,33 @@ public final class BitmapUpperBoundFilter {
                 candidateBitmap.cardinality(),
                 globalMeanWeight);
     }
+
+    /** Applies the identical frozen predicate to a cardinality without a bitmap allocation. */
+    public boolean canPruneCardinality(
+            int candidateCardinality,
+            int sequenceCount,
+            double globalMeanWeight,
+            ResolvedMinimumSupport resolvedMinimumSupport) {
+        Objects.requireNonNull(resolvedMinimumSupport, "resolvedMinimumSupport must not be null");
+        if (sequenceCount < 0
+                || candidateCardinality < 0
+                || candidateCardinality > sequenceCount) {
+            throw new IllegalArgumentException(
+                    "candidate cardinality must be within the non-negative SID universe");
+        }
+        int resolvedSize = resolvedMinimumSupport.numberOfSequences();
+        if (sequenceCount != resolvedSize) {
+            throw new IllegalArgumentException(
+                    "SID universe size mismatch: sequenceCount=" + sequenceCount
+                            + " but resolvedMinimumSupport.numberOfSequences()=" + resolvedSize);
+        }
+        if (!Double.isFinite(globalMeanWeight) || globalMeanWeight < 0.0) {
+            throw new IllegalArgumentException(
+                    "globalMeanWeight must be finite and non-negative; got: " + globalMeanWeight);
+        }
+        if (resolvedMinimumSupport.effectiveThreshold() == 0.0) {
+            return false;
+        }
+        return !resolvedMinimumSupport.meetsThreshold(candidateCardinality, globalMeanWeight);
+    }
 }

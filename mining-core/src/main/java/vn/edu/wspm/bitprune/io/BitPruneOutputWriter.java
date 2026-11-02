@@ -1,11 +1,13 @@
 package vn.edu.wspm.bitprune.io;
 
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Objects;
+import vn.edu.wspm.bitprune.result.BitPruneMiningResult;
 import vn.edu.wspm.bitprune.result.BitPruneOutputProjection;
 
 /**
@@ -59,5 +61,29 @@ public final class BitPruneOutputWriter {
                 StandardOpenOption.CREATE,
                 StandardOpenOption.TRUNCATE_EXISTING,
                 StandardOpenOption.WRITE);
+    }
+
+    /** Streams a completed result without building entry, line, and whole-content snapshots. */
+    public void writeResult(Path outputPath, BitPruneMiningResult result) throws IOException {
+        Objects.requireNonNull(outputPath, "outputPath must not be null");
+        Objects.requireNonNull(result, "result must not be null");
+        Path absoluteOutput = outputPath.toAbsolutePath().normalize();
+        Path parent = absoluteOutput.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        try (BufferedWriter writer = Files.newBufferedWriter(
+                absoluteOutput,
+                StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING,
+                StandardOpenOption.WRITE)) {
+            for (var pattern : result.acceptedPatterns()) {
+                writer.write(pattern.serialize());
+                writer.write(" #SUP: ");
+                writer.write(Integer.toString(result.support(pattern)));
+                writer.write('\n');
+            }
+        }
     }
 }

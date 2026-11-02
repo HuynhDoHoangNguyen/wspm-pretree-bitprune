@@ -363,4 +363,17 @@ class SidBitmapTest {
         assertThrows(IllegalArgumentException.class, () -> SidBitmap.computeWordCount(-1));
         assertThrows(IllegalArgumentException.class, () -> SidBitmap.computeWordCount(-100));
     }
+
+    @Test
+    void intersectionCardinalityMatchesMaterializedAndAcrossWordBoundary() {
+        var mapping = mappingOfSize(130);
+        var left = SidBitmap.builder(mapping)
+                .setIndex(0).setIndex(63).setIndex(64).setIndex(129).build();
+        var right = SidBitmap.builder(mapping)
+                .setIndex(1).setIndex(63).setIndex(64).setIndex(128).build();
+
+        assertEquals(left.and(right).cardinality(), left.intersectionCardinality(right));
+        assertEquals(2, left.intersectionCardinality(right));
+        assertEquals(0, SidBitmap.empty(mapping).intersectionCardinality(right));
+    }
 }

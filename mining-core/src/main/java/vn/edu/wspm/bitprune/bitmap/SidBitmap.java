@@ -196,10 +196,7 @@ public final class SidBitmap {
      *                                  universe
      */
     public SidBitmap and(SidBitmap other) {
-        Objects.requireNonNull(other, "other bitmap must not be null");
-        if (!this.mapping.equals(other.mapping)) {
-            throw new IllegalArgumentException("Cannot AND bitmaps from different SID universes");
-        }
+        validateCompatible(other);
         if (this.words.length == 0) {
             return new SidBitmap(this.mapping, new long[0], 0);
         }
@@ -213,6 +210,26 @@ public final class SidBitmap {
             card += Long.bitCount(w);
         }
         return new SidBitmap(this.mapping, resultWords, card);
+    }
+
+    /**
+     * Counts set bits in the intersection without materializing an intersection bitmap.
+     * This is identical to {@code and(other).cardinality()} with no temporary word array.
+     */
+    public int intersectionCardinality(SidBitmap other) {
+        validateCompatible(other);
+        int card = 0;
+        for (int i = 0; i < words.length; i++) {
+            card += Long.bitCount(words[i] & other.words[i]);
+        }
+        return card;
+    }
+
+    private void validateCompatible(SidBitmap other) {
+        Objects.requireNonNull(other, "other bitmap must not be null");
+        if (!this.mapping.equals(other.mapping)) {
+            throw new IllegalArgumentException("Cannot AND bitmaps from different SID universes");
+        }
     }
 
     /**
