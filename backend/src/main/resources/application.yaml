@@ -2,5 +2,27 @@ spring:
   application:
     name: backend
 
+  config:
+    import: "optional:file:./.env[.properties]"
+
+  datasource:
+    url: "jdbc:mysql://127.0.0.1:${MYSQL_PORT:3307}/${MYSQL_DATABASE:wspm_combo}"
+    username: "${MYSQL_USER}"
+    password: "${MYSQL_PASSWORD}"
+
+  sql:
+    init:
+      mode: never
+
 server:
   port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-components: always
+      show-details: never

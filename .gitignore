@@ -45,3 +45,9 @@ mining-core/src/main/resources/datasets/*.txt
 
 # Generated module outputs
 **/target/
+
+
+# Docker / local environment
+/.env
+/.env.local
+/.env.*.local
