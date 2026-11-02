@@ -3,16 +3,28 @@ spring:
     name: backend
 
   config:
-    import: "optional:file:./.env[.properties]"
+    import:
+      - "optional:file:./.env[.properties]"
+      - "optional:file:../.env[.properties]"
 
   datasource:
     url: "jdbc:mysql://127.0.0.1:${MYSQL_PORT:3307}/${MYSQL_DATABASE:wspm_combo}"
-    username: "${MYSQL_USER}"
-    password: "${MYSQL_PASSWORD}"
+    username: "${MYSQL_USER:wspm_app}"
+    password: "${MYSQL_PASSWORD:123456}"
 
   sql:
     init:
       mode: never
+
+  
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    show-sql: false
+
 
 server:
   port: 8080

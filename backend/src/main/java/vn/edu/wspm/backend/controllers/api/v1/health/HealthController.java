@@ -1,4 +1,4 @@
-package vn.edu.wspm.backend.controller;
+package vn.edu.wspm.backend.controllers.api.v1.health;
 
 import java.util.Map;
 
