@@ -38,3 +38,10 @@ results/*
 docs/*
 !docs/research/
 !docs/research/**
+
+
+# Dataset files after Maven Multi-Module migration
+mining-core/src/main/resources/datasets/*.txt
+
+# Generated module outputs
+**/target/
