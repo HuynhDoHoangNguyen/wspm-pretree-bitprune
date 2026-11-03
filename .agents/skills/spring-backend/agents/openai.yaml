@@ -1,0 +1,3 @@
+interface:
+  display_name: "Spring Backend"
+  short_description: "Build focused Spring backend feature slices"
