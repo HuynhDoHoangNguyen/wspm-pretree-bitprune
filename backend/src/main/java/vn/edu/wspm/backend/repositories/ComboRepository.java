@@ -8,10 +8,10 @@ import vn.edu.wspm.backend.entities.ComboEntity;
 public interface ComboRepository
         extends JpaRepository<ComboEntity, String> {
 
-    List<ComboEntity> findByRun_RunId(String runId);
+    List<ComboEntity> findByBatch_Run_RunId(String runId);
 
     List<ComboEntity> findByComboStatus(String comboStatus);
 
-    List<ComboEntity> findByComboStatusOrderByComboScoreDesc(String comboStatus);
+    List<ComboEntity> findByComboStatusOrderBySupportDescWeightDesc(String comboStatus);
 }
 

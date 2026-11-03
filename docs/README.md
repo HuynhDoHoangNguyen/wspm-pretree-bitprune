@@ -106,6 +106,22 @@ loại trừ. Khi task yêu cầu một nguồn chưa có trong clone:
 `database/schema_v3_draft_review.sql` là đề xuất schema để review, không phải
 migration đã được phê duyệt và không được Docker/Spring tự động áp dụng.
 
+`database/laptop-combo-system-redesign.md` là phân tích hiện trạng và đề xuất
+thiết kế lại database/API/frontend cho phạm vi cửa hàng laptop. Tài liệu này cũng
+là proposal để review, chưa phải migration và không thay đổi mining semantics.
+
+`database/laptop-combo-data-dictionary.md` là từ điển toàn bộ bảng/trường của
+schema đích, gồm tài khoản, catalog, kho/nhập hàng, giao dịch, cart/checkout,
+payment, mining và combo. Đây vẫn là logical/physical proposal, chưa phải migration.
+
+`database/laptop-combo-seed-data-plan.md` phân loại bảng nào cần reference seed,
+fixture giao dịch, dữ liệu sinh từ pipeline hoặc chỉ phát sinh runtime; tài liệu
+ngăn việc seed thủ công pattern/combo làm sai bằng chứng khóa luận.
+
+`database/V2__complete_laptop_combo_schema.sql` là một Flyway V2 review draft duy
+nhất để chuyển V1 sang schema 45 bảng. File được giữ ngoài classpath migration để
+đáp ứng yêu cầu chưa chạy; chỉ chuyển vào backend sau khi entity/DTO/test sẵn sàng.
+
 ## Documentation maintenance
 
 - Cập nhật `../README.md` khi lệnh chạy hoặc prerequisite thay đổi.

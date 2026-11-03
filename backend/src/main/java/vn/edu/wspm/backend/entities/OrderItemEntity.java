@@ -5,24 +5,27 @@ import java.math.BigDecimal;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.IdClass;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "ORDER_ITEM")
-@IdClass(OrderItemId.class)
 public class OrderItemEntity {
 
     @Id
-    @Column(name = "order_id", length = 40)
-    private String orderId;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "order_item_id")
+    private Long orderItemId;
 
-    @Id
     @Column(name = "product_id", length = 40)
     private String productId;
+
+    @Column(name = "order_id", length = 40)
+    private String orderId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "order_id", insertable = false, updatable = false)
@@ -32,7 +35,7 @@ public class OrderItemEntity {
     @JoinColumn(name = "product_id", insertable = false, updatable = false)
     private ProductEntity product;
 
-    @Column(name = "unit_price", precision = 18, scale = 2)
+    @Column(name = "list_unit_price", precision = 19, scale = 2)
     private BigDecimal unitPrice;
 
     @Column(name = "quantity")
@@ -50,6 +53,10 @@ public class OrderItemEntity {
 
     public String getOrderId() {
         return orderId;
+    }
+
+    public Long getOrderItemId() {
+        return orderItemId;
     }
 
     public String getProductId() {

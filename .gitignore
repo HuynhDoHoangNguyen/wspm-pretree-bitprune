@@ -40,6 +40,12 @@ docs/*
 !docs/archive/
 !docs/archive/roadmaps/
 !docs/archive/roadmaps/**
+!docs/database/
+docs/database/*
+!docs/database/laptop-combo-system-redesign.md
+!docs/database/laptop-combo-data-dictionary.md
+!docs/database/laptop-combo-seed-data-plan.md
+!docs/database/V2__complete_laptop_combo_schema.sql
 !docs/research/
 !docs/research/**
 

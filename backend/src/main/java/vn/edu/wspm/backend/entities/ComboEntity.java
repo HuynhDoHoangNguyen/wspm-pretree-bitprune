@@ -20,28 +20,25 @@ public class ComboEntity {
     private String comboId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "run_id")
-    private RunEntity run;
+    @JoinColumn(name = "batch_id")
+    private ComboBatchEntity batch;
 
-    @Column(name = "combo_name", length = 255)
+    @Column(name = "name", length = 255)
     private String comboName;
 
-    @Column(name = "combo_type", length = 32)
+    @Column(name = "combo_kind", length = 40)
     private String comboType;
 
-    @Column(name = "combo_score")
-    private Double comboScore;
-
-    @Column(name = "combo_price", precision = 18, scale = 2)
+    @Column(name = "reference_sale_price", precision = 19, scale = 2)
     private BigDecimal comboPrice;
 
-    @Column(name = "support")
+    @Column(name = "support_abs")
     private Long support;
 
-    @Column(name = "weight")
+    @Column(name = "pattern_weight")
     private Double weight;
 
-    @Column(name = "combo_status", length = 16)
+    @Column(name = "status", length = 24)
     private String comboStatus;
 
     @Column(name = "created_at")
@@ -53,14 +50,13 @@ public class ComboEntity {
     protected ComboEntity() {
     }
 
-    public ComboEntity(String comboId, RunEntity run, String comboName, String comboType,
-                       Double comboScore, BigDecimal comboPrice, Long support, Double weight,
+    public ComboEntity(String comboId, ComboBatchEntity batch, String comboName, String comboType,
+                       BigDecimal comboPrice, Long support, Double weight,
                        String comboStatus, LocalDateTime createdAt) {
         this.comboId = comboId;
-        this.run = run;
+        this.batch = batch;
         this.comboName = comboName;
         this.comboType = comboType;
-        this.comboScore = comboScore;
         this.comboPrice = comboPrice;
         this.support = support;
         this.weight = weight;
@@ -73,15 +69,19 @@ public class ComboEntity {
     }
 
     public RunEntity getRun() {
-        return run;
+        return batch != null ? batch.getRun() : null;
     }
 
-    public void setRun(RunEntity run) {
-        this.run = run;
+    public ComboBatchEntity getBatch() {
+        return batch;
+    }
+
+    public void setBatch(ComboBatchEntity batch) {
+        this.batch = batch;
     }
 
     public String getRunId() {
-        return run != null ? run.getRunId() : null;
+        return batch != null ? batch.getRunId() : null;
     }
 
     public String getComboName() {
@@ -93,11 +93,11 @@ public class ComboEntity {
     }
 
     public Double getComboScore() {
-        return comboScore;
+        return null;
     }
 
-    public void setComboScore(Double comboScore) {
-        this.comboScore = comboScore;
+    public void setComboScore(Double ignored) {
+        // ComboScore was removed in V2.
     }
 
     public BigDecimal getComboPrice() {

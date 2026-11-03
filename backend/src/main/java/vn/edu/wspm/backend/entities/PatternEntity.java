@@ -23,13 +23,13 @@ public class PatternEntity {
     @JoinColumn(name = "run_id")
     private RunEntity run;
 
-    @Column(name = "support")
+    @Column(name = "support_abs")
     private Long support;
 
-    @Column(name = "weight")
+    @Column(name = "pattern_weight")
     private Double weight;
 
-    @Column(name = "pattern_length")
+    @Column(name = "pattern_item_count")
     private Integer patternLength;
 
     protected PatternEntity() {

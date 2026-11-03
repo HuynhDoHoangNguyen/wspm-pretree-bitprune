@@ -13,7 +13,7 @@ public class CategoryEntity {
     @Column(name = "category_id", length = 40)
     private String categoryId;
 
-    @Column(name = "category_name", length = 160)
+    @Column(name = "name", length = 160)
     private String categoryName;
 
     protected CategoryEntity() {

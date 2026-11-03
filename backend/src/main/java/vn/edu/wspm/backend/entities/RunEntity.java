@@ -6,44 +6,51 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 
 @Entity
-@Table(name = "RUN")
+@Table(name = "MINING_RUN")
 public class RunEntity {
 
     @Id
     @Column(name = "run_id", length = 40)
     private String runId;
 
+    @Column(name = "snapshot_id", length = 40)
+    private String snapshotId;
+
     @Column(name = "algorithm", length = 32)
     private String algorithm;
+
+    @Column(name = "status", length = 32)
+    private String status;
 
     @Column(name = "dataset_source", length = 255)
     private String datasetSource;
 
-    @Column(name = "minsup_ratio")
+    @Column(name = "minsup_mode", length = 32)
+    private String minsupMode;
+
+    @Column(name = "minsup_configured")
+    private Double minsupConfigured;
+
+    @Column(name = "minsup_relative_fraction")
     private Double minsupRatio;
 
-    @Column(name = "minsup_abs")
+    @Column(name = "effective_threshold")
     private Double minsupAbs;
-
-    @Column(name = "sequence_count")
-    private Long sequenceCount;
 
     @Column(name = "mean_w")
     private Double meanW;
 
-    @Column(name = "run_time")
+    @Column(name = "created_at")
     private LocalDateTime runTime;
 
-    @Column(name = "input_snapshot", length = 1024)
-    private String inputSnapshot;
+    @Column(name = "total_execution_ms")
+    private Long totalExecutionMs;
 
-    @Column(name = "execution_time")
-    private Double executionTime;
-
-    @Column(name = "memory_usage")
-    private Double memoryUsage;
+    @Column(name = "peak_sampled_jvm_heap_bytes")
+    private Long peakSampledJvmHeapBytes;
 
     @Column(name = "pattern_count")
     private Long patternCount;
@@ -51,155 +58,83 @@ public class RunEntity {
     @Column(name = "candidate_count")
     private Long candidateCount;
 
-    @Column(name = "top_k")
-    private Integer topK;
-
-    @Column(name = "category_filter")
-    private Boolean categoryFilter;
-
-    @Column(name = "coef_alpha")
-    private Double coefAlpha;
-
-    @Column(name = "coef_beta")
-    private Double coefBeta;
-
-    @Column(name = "coef_gamma")
-    private Double coefGamma;
-
-    @Column(name = "coef_delta")
-    private Double coefDelta;
-
     protected RunEntity() {
     }
 
-    public RunEntity(String runId, String algorithm, String datasetSource, Double minsupRatio, Double minsupAbs,
-                     Long sequenceCount, Double meanW, LocalDateTime runTime, String inputSnapshot) {
+    public RunEntity(String runId, String algorithm, String datasetSource,
+                     Double minsupRatio, Double minsupAbs, Long sequenceCount,
+                     Double meanW, LocalDateTime runTime, String inputSnapshot) {
         this.runId = runId;
+        this.snapshotId = runId;
         this.algorithm = algorithm;
+        this.status = "QUEUED";
         this.datasetSource = datasetSource;
+        this.minsupMode = "LEGACY_COMPATIBILITY";
+        this.minsupConfigured = minsupRatio;
         this.minsupRatio = minsupRatio;
         this.minsupAbs = minsupAbs;
-        this.sequenceCount = sequenceCount;
         this.meanW = meanW;
         this.runTime = runTime;
-        this.inputSnapshot = inputSnapshot;
-        this.categoryFilter = false;
     }
 
-    public String getRunId() {
-        return runId;
-    }
+    public String getRunId() { return runId; }
+    public String getSnapshotId() { return snapshotId; }
+    public String getAlgorithm() { return algorithm; }
+    public String getStatus() { return status; }
+    public String getDatasetSource() { return datasetSource; }
+    public Double getMinsupRatio() { return minsupRatio; }
+    public Double getMinsupAbs() { return minsupAbs; }
+    public Double getMeanW() { return meanW; }
+    public LocalDateTime getRunTime() { return runTime; }
 
-    public String getAlgorithm() {
-        return algorithm;
-    }
+    @Transient
+    public Long getSequenceCount() { return null; }
 
-    public String getDatasetSource() {
-        return datasetSource;
-    }
-
-    public Double getMinsupRatio() {
-        return minsupRatio;
-    }
-
-    public Double getMinsupAbs() {
-        return minsupAbs;
-    }
-
-    public Long getSequenceCount() {
-        return sequenceCount;
-    }
-
-    public Double getMeanW() {
-        return meanW;
-    }
-
-    public LocalDateTime getRunTime() {
-        return runTime;
-    }
-
-    public String getInputSnapshot() {
-        return inputSnapshot;
-    }
+    @Transient
+    public String getInputSnapshot() { return null; }
 
     public Double getExecutionTime() {
-        return executionTime;
+        return totalExecutionMs != null ? totalExecutionMs.doubleValue() : null;
     }
 
-    public void setExecutionTime(Double executionTime) {
-        this.executionTime = executionTime;
+    public void setExecutionTime(Double value) {
+        totalExecutionMs = value != null ? value.longValue() : null;
     }
 
     public Double getMemoryUsage() {
-        return memoryUsage;
+        return peakSampledJvmHeapBytes != null ? peakSampledJvmHeapBytes.doubleValue() : null;
     }
 
-    public void setMemoryUsage(Double memoryUsage) {
-        this.memoryUsage = memoryUsage;
+    public void setMemoryUsage(Double value) {
+        peakSampledJvmHeapBytes = value != null ? value.longValue() : null;
     }
 
-    public Long getPatternCount() {
-        return patternCount;
-    }
+    public Long getPatternCount() { return patternCount; }
+    public void setPatternCount(Long value) { patternCount = value; }
+    public Long getCandidateCount() { return candidateCount; }
+    public void setCandidateCount(Long value) { candidateCount = value; }
 
-    public void setPatternCount(Long patternCount) {
-        this.patternCount = patternCount;
-    }
+    @Transient
+    public Integer getTopK() { return null; }
+    public void setTopK(Integer ignored) { }
 
-    public Long getCandidateCount() {
-        return candidateCount;
-    }
+    @Transient
+    public Boolean getCategoryFilter() { return null; }
+    public void setCategoryFilter(Boolean ignored) { }
 
-    public void setCandidateCount(Long candidateCount) {
-        this.candidateCount = candidateCount;
-    }
+    @Transient
+    public Double getCoefAlpha() { return null; }
+    public void setCoefAlpha(Double ignored) { }
 
-    public Integer getTopK() {
-        return topK;
-    }
+    @Transient
+    public Double getCoefBeta() { return null; }
+    public void setCoefBeta(Double ignored) { }
 
-    public void setTopK(Integer topK) {
-        this.topK = topK;
-    }
+    @Transient
+    public Double getCoefGamma() { return null; }
+    public void setCoefGamma(Double ignored) { }
 
-    public Boolean getCategoryFilter() {
-        return categoryFilter;
-    }
-
-    public void setCategoryFilter(Boolean categoryFilter) {
-        this.categoryFilter = categoryFilter;
-    }
-
-    public Double getCoefAlpha() {
-        return coefAlpha;
-    }
-
-    public void setCoefAlpha(Double coefAlpha) {
-        this.coefAlpha = coefAlpha;
-    }
-
-    public Double getCoefBeta() {
-        return coefBeta;
-    }
-
-    public void setCoefBeta(Double coefBeta) {
-        this.coefBeta = coefBeta;
-    }
-
-    public Double getCoefGamma() {
-        return coefGamma;
-    }
-
-    public void setCoefGamma(Double coefGamma) {
-        this.coefGamma = coefGamma;
-    }
-
-    public Double getCoefDelta() {
-        return coefDelta;
-    }
-
-    public void setCoefDelta(Double coefDelta) {
-        this.coefDelta = coefDelta;
-    }
+    @Transient
+    public Double getCoefDelta() { return null; }
+    public void setCoefDelta(Double ignored) { }
 }
-

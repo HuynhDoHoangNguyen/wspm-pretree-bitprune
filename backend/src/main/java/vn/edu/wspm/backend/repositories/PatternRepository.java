@@ -8,6 +8,6 @@ import vn.edu.wspm.backend.entities.PatternEntity;
 public interface PatternRepository
         extends JpaRepository<PatternEntity, Long> {
 
-    List<PatternEntity> findByRun_RunIdOrderBySupportDesc(String runId);
+    List<PatternEntity> findByRun_RunIdOrderBySupportDescWeightDesc(String runId);
 }
 

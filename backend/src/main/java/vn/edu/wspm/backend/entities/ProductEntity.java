@@ -18,17 +18,17 @@ public class ProductEntity {
     @Column(name = "product_id", length = 40)
     private String productId;
 
-    @Column(name = "product_name", length = 200)
+    @Column(name = "name", length = 200)
     private String productName;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id")
     private CategoryEntity category;
 
-    @Column(name = "product_status", length = 24)
+    @Column(name = "status", length = 24)
     private String productStatus;
 
-    @Column(name = "price", precision = 18, scale = 2)
+    @Column(name = "current_price", precision = 19, scale = 2)
     private BigDecimal price;
 
     protected ProductEntity() {

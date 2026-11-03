@@ -22,10 +22,10 @@ public class OrderEntity {
     @JoinColumn(name = "customer_id")
     private CustomerEntity customer;
 
-    @Column(name = "order_time")
+    @Column(name = "ordered_at")
     private LocalDateTime orderTime;
 
-    @Column(name = "order_status", length = 16)
+    @Column(name = "status", length = 32)
     private String orderStatus;
 
     protected OrderEntity() {
