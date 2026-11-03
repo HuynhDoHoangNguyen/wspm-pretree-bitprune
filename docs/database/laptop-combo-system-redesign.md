@@ -1,6 +1,13 @@
 # Đề xuất thiết kế lại dữ liệu và giao diện hệ thống combo laptop
 
-**Trạng thái:** REVISED PROPOSAL FOR REVIEW — chưa phải Flyway migration
+**Trạng thái:** SCHEMA IMPLEMENTED BY FLYWAY V2 — application/API/frontend vẫn
+đang được triển khai và review theo từng lát cắt
+
+Flyway V2 hiện nằm trong runtime classpath. Kiểm tra read-only database local
+ngày 2026-11-03 xác nhận V1/V2 đều thành công trong `flyway_schema_history`,
+checksum V2 `727165286` khớp file runtime, đủ đúng 45 bảng V2 và không còn bảng
+`LEGACY_V1_*`. Kết quả này không chứng minh trạng thái database khác, tính đúng
+của toàn bộ dữ liệu nghiệp vụ hoặc việc application flow đã được hiện thực.
 
 **Phạm vi:** backend, database và frontend minh họa khóa luận
 
@@ -1066,14 +1073,15 @@ không nên giữ variant Electro nửa vời trong giai đoạn hiện tại.
 
 ### 8.5 Khoảng cách từ code hiện tại tới contract đích
 
-Database proposal và frontend đích phù hợp về mặt dữ liệu, nhưng code hiện tại
-chưa nối được end-to-end. Các thay đổi bắt buộc khi bước sang implementation:
+Schema V2 và frontend đích phù hợp về mặt dữ liệu, nhưng code hiện tại chưa nối
+được end-to-end. Migration schema local đã được xác minh read-only ngày
+2026-11-03; các thay đổi application còn lại phải được triển khai theo task riêng:
 
-1. Không sửa lịch sử `V1__initial_schema.sql`; tạo migration kế tiếp để loại
+1. Không sửa lịch sử `V1__initial_schema.sql` hoặc V2 đã áp dụng. V2 đã loại
    `RUN.coef_*`, `COMBO.combo_score`, index theo score và chuyển `top_k` sang
-   `COMBO_BATCH`.
-2. Xóa các field hệ số khỏi `RunEntity`; xóa `comboScore` khỏi `ComboEntity`,
-   `ComboResponse` và repository. Repository xếp theo support giảm dần, sau đó
+   `COMBO_BATCH`; mọi correction schema tiếp theo phải dùng V3+.
+2. Hoàn tất loại bỏ các field hệ số khỏi DTO/application code; xóa `comboScore`
+   khỏi API/repository còn liên quan. Repository xếp theo support giảm dần, sau đó
    pattern weight giảm dần và canonical pattern tăng dần.
 3. Sửa `RunCreateRequest`: bỏ `minWeight`; nhận rõ `minsupMode` và
    `minsupConfigured`, còn MeanW/ngưỡng hiệu dụng do backend resolve và trả về.
@@ -1088,9 +1096,10 @@ chưa nối được end-to-end. Các thay đổi bắt buộc khi bước sang 
 8. Thay menu/routes Electro bằng các vertical slice ở mục 8 và chỉ gọi endpoint
    đã được backend cung cấp.
 
-Do đó câu trả lời chính xác là: **schema đề xuất đã đủ cơ sở để tích hợp frontend
-đích, nhưng repository hiện tại chưa tích hợp; cần migration + entity/DTO/API +
-TypeScript contract đồng bộ trong các task riêng.**
+Do đó câu trả lời chính xác là: **schema V2 đã có trong Flyway và được xác minh
+đã áp dụng thành công trên database local, nhưng repository chưa tích hợp
+end-to-end; entity/DTO/API và TypeScript contract vẫn cần được đồng bộ trong các
+task riêng.**
 
 Không sao chép toàn bộ màn Electro rồi giả lập API. Việc chuyển đổi nên theo
 vertical slice: route + model + query + component + API + test cho từng màn.
@@ -1098,9 +1107,10 @@ vertical slice: route + model + query + component + API + test cho từng màn.
 ## 9. Thứ tự triển khai an toàn
 
 1. Phê duyệt ngữ nghĩa transaction và ranking policy.
-2. Viết Flyway `V2` theo hướng add/rename có kiểm soát; không sửa `V1` đã có thể
-   được áp dụng trên máy khác.
-3. Đồng bộ entity và DTO với schema; dùng enum cho status/mode/algorithm.
+2. **Đã thực hiện:** đưa Flyway V2 theo hướng rename/copy có kiểm soát vào
+   classpath và chạy trên database local. Không sửa V1/V2 đã áp dụng; dùng V3+
+   cho correction schema và kiểm tra `flyway_schema_history` theo từng môi trường.
+3. Hoàn tất đồng bộ entity và DTO với schema; dùng enum cho status/mode/algorithm.
 4. Cài `USER_ACCOUNT`/role/session và authorization test trước các API Admin.
 5. Cài catalog, supplier và warehouse.
 6. Cài PO → goods receipt → inventory balance/movement và concurrency test.
@@ -1171,8 +1181,10 @@ Không trộn thay đổi mining-core với migration/UI trong cùng một task 
    vốn nếu báo cáo lợi nhuận (`FIFO`/bình quân); schema hiện chỉ snapshot unit cost,
    chưa tuyên bố là hệ thống kế toán giá vốn hoàn chỉnh.
 
-Không nên tạo migration hoặc tuyên bố chất lượng recommendation trước khi các
-quyết định này được ghi nhận.
+Không nên tạo migration bổ sung làm thay đổi các semantics còn mở hoặc tuyên bố
+chất lượng recommendation trước khi các quyết định này được ghi nhận. V2 hiện
+hữu chỉ xác lập schema; nó không tự giải quyết các quyết định application/research
+trong danh sách trên.
 
 ## 12. Phán quyết đối với thiết kế sơ bộ
 

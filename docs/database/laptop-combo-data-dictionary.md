@@ -1,11 +1,17 @@
 # Từ điển dữ liệu hệ thống gợi ý combo cửa hàng laptop
 
-**Trạng thái:** LOGICAL/PHYSICAL PROPOSAL FOR REVIEW — chưa phải Flyway migration
+**Trạng thái:** V2 SCHEMA CONTRACT — application implementation còn từng phần
 
-Tài liệu này là danh mục đầy đủ các bảng và trường của schema đích. Nó phải được
-đọc cùng `laptop-combo-system-redesign.md`. Các kiểu dữ liệu là đề xuất cho MySQL
-8.4 và có thể tinh chỉnh khi viết migration, nhưng không được thay đổi mining
-semantics hoặc làm mất khả năng tái lập.
+Schema 45 bảng đã được đưa vào Flyway V2. Kiểm tra read-only database local ngày
+2026-11-03 xác nhận V2 thành công, checksum khớp và tập bảng thực tế khớp toàn bộ
+45 bảng V2. Trạng thái của môi trường khác chỉ được xác nhận bằng
+`flyway_schema_history`. Việc bảng tồn tại không đồng nghĩa entity, DTO, API hoặc
+frontend tương ứng đã hoàn tất.
+
+Tài liệu này là danh mục đầy đủ các bảng và trường của schema V2. Nó phải được
+đọc cùng `laptop-combo-system-redesign.md`. Các kiểu dữ liệu đã được hiện thực
+cho MySQL 8.4 trong V2; mọi điều chỉnh tiếp theo phải dùng migration V3+ và không
+được thay đổi mining semantics hoặc làm mất khả năng tái lập.
 
 ## 1. Quy ước chung
 
@@ -793,7 +799,7 @@ Mục đích: business rule loại cặp danh mục không được tạo combo.
 
 ## 10. Danh sách đầy đủ và ranh giới dữ liệu
 
-Schema proposal có 45 bảng:
+Schema V2 có 45 bảng:
 
 1. Identity: `USER_ACCOUNT`, `ROLE`, `USER_ROLE`, `USER_SESSION`, `USER_ADDRESS`,
    `CUSTOMER`.

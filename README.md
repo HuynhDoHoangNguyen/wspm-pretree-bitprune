@@ -90,7 +90,14 @@ Nếu thấy cột `STATUS` hiển thị `Up` (ví dụ `Up 10 seconds`), MySQL 
 > [!IMPORTANT]
 > **Bạn KHÔNG CẦN phải mở MySQL Workbench để chạy script tạo bảng thủ công!**
 > 
-> Hệ thống tích hợp sẵn công cụ **Flyway Migration**. Khi Backend khởi động, Flyway sẽ tự động kết nối vào MySQL `wspm_combo` và khởi tạo toàn bộ 12 bảng, khoá ngoại và index.
+> Hệ thống tích hợp sẵn **Flyway Migration** và quét `classpath:db/migration` khi
+> Backend khởi động. Nhánh hiện tại chứa `V1__initial_schema.sql` và
+> `V2__complete_laptop_combo_schema.sql`; V2 chuyển schema 12 bảng của V1 sang
+> schema đích 45 bảng. Kiểm tra read-only database local ngày 2026-11-03 xác nhận
+> V1 và V2 đều có `success = 1` trong `flyway_schema_history`; checksum V2
+> `727165286` khớp file runtime, đủ đúng 45 bảng và không còn bảng
+> `LEGACY_V1_*`. Trạng thái database khác vẫn phải kiểm tra riêng; không chạy lại
+> hoặc sửa file V2 đã áp dụng.
 
 Tại thư mục gốc của dự án, chạy 2 lệnh sau:
 

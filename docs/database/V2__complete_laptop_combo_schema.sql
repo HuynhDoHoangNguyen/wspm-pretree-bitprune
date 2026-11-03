@@ -1,15 +1,18 @@
--- CNTT-KLCN256 | REVIEW-ONLY; intentionally outside Flyway scan path.
+-- CNTT-KLCN256 | DOCUMENTATION REFERENCE COPY; this docs path is not scanned.
 -- Target: MySQL 8.4, exactly 45 application tables after successful migration.
 -- Source: V1__initial_schema.sql (12 tables).
 --
 -- IMPORTANT:
--- 1. This file is intentionally created but has NOT been executed.
--- 2. Spring Flyway is enabled. Do not start the backend against a V1 database
---    until this migration and the corresponding JPA/entity changes are approved.
--- 3. MySQL DDL auto-commits. Take a database backup before eventual execution.
--- 4. Legacy rows lacking checksums/weight provenance are preserved but marked
+-- 1. The runtime V2 is under backend/src/main/resources/db/migration/ and is
+--    scanned by Spring Flyway. Read-only verification on 2026-11-03 found V2
+--    success=1, checksum 727165286, all 45 V2 tables, and no LEGACY_V1_* tables
+--    in the local development database.
+-- 2. This docs copy is reference material, not a second migration location.
+-- 3. Keep the applied runtime V2 byte-for-byte immutable; use V3+ for fixes.
+-- 4. MySQL DDL auto-commits. Preserve a verified backup before recovery work.
+-- 5. Legacy rows lacking checksums/weight provenance are preserved but marked
 --    LEGACY_UNVERIFIED; they are not research acceptance evidence.
--- 5. No ComboScore or coefficient columns are created in the target schema.
+-- 6. No ComboScore or coefficient columns are created in the target schema.
 
 -- ---------------------------------------------------------------------------
 -- A. Isolate the V1 schema so target tables can be created with final names.

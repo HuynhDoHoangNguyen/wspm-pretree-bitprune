@@ -124,8 +124,16 @@ combo use cases should call a deliberate application boundary around
 
 `compose.yaml` creates a local MySQL 8.4 service and persistent named volume.
 Hibernate uses `ddl-auto: validate`; schema ownership therefore belongs to an
-explicit, reviewed schema/migration process. The current SQL under
-`docs/database/` is a review draft and is not automatically executed.
+explicit, reviewed schema/migration process. The active Flyway classpath under
+`backend/src/main/resources/db/migration/` contains V1 and V2. V2 promotes the
+12-table V1 schema to the 45-table target schema. A read-only verification of
+the local development database on 2026-11-03 found successful V1 and V2 rows in
+`flyway_schema_history`, a V2 checksum of `727165286` matching the runtime file,
+exactly the 45 V2 application tables, and no `LEGACY_V1_*` tables. This does not
+establish the state of any other database; inspect its history separately. The
+copy under `docs/database/` is documentation, not an additional migration
+source. Keep an applied versioned migration byte-for-byte immutable and use a
+later migration for corrections.
 
 ## Frontend boundary
 

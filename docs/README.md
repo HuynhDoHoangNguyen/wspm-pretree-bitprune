@@ -107,20 +107,29 @@ loại trừ. Khi task yêu cầu một nguồn chưa có trong clone:
 migration đã được phê duyệt và không được Docker/Spring tự động áp dụng.
 
 `database/laptop-combo-system-redesign.md` là phân tích hiện trạng và đề xuất
-thiết kế lại database/API/frontend cho phạm vi cửa hàng laptop. Tài liệu này cũng
-là proposal để review, chưa phải migration và không thay đổi mining semantics.
+thiết kế lại database/API/frontend cho phạm vi cửa hàng laptop. Phần schema đã
+được hiện thực bằng Flyway V2; các phần API/frontend và application flow vẫn phải
+được đánh giá theo code/test thực tế. Tài liệu không thay đổi mining semantics.
 
 `database/laptop-combo-data-dictionary.md` là từ điển toàn bộ bảng/trường của
 schema đích, gồm tài khoản, catalog, kho/nhập hàng, giao dịch, cart/checkout,
-payment, mining và combo. Đây vẫn là logical/physical proposal, chưa phải migration.
+payment, mining và combo. Flyway V2 hiện thực schema 45 bảng từ tài liệu này;
+việc một bảng có trong schema không chứng minh backend/frontend đã triển khai
+nghiệp vụ tương ứng.
 
 `database/laptop-combo-seed-data-plan.md` phân loại bảng nào cần reference seed,
 fixture giao dịch, dữ liệu sinh từ pipeline hoặc chỉ phát sinh runtime; tài liệu
 ngăn việc seed thủ công pattern/combo làm sai bằng chứng khóa luận.
 
-`database/V2__complete_laptop_combo_schema.sql` là một Flyway V2 review draft duy
-nhất để chuyển V1 sang schema 45 bảng. File được giữ ngoài classpath migration để
-đáp ứng yêu cầu chưa chạy; chỉ chuyển vào backend sau khi entity/DTO/test sẵn sàng.
+`database/V2__complete_laptop_combo_schema.sql` là bản tham chiếu tài liệu của
+Flyway V2 chuyển V1 sang schema 45 bảng. Bản runtime nằm tại
+`../backend/src/main/resources/db/migration/V2__complete_laptop_combo_schema.sql`
+và được Flyway quét. Kiểm tra read-only database local ngày 2026-11-03 xác nhận
+V2 có `success = 1`, checksum `727165286` khớp file runtime, đủ 45 bảng V2 và
+không còn bảng `LEGACY_V1_*`. Kết quả này không chứng minh trạng thái database
+khác hoặc tính đúng của toàn bộ dữ liệu nghiệp vụ. Không sửa file V2 runtime đã
+áp dụng vì sẽ làm thay đổi checksum; mọi correction phải đi qua migration phiên
+bản kế tiếp.
 
 ## Documentation maintenance
 
