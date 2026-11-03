@@ -25,9 +25,22 @@ If backend code merely consumes an unchanged mining result, inspect only the pub
 
 1. State the endpoint or feature slice, expected API contract, direct collaborators, and whether persistence or mining is involved.
 2. Trace only the relevant path: HTTP mapping and validation -> service transaction/business rule -> mapper/DTO -> repository/entity.
-3. Preserve dependency direction and avoid unrelated refactors across feature slices.
-4. Add or update the smallest focused test for the changed behavior.
-5. Run focused tests first; run `mvn -pl backend -am test` only when the requested change and dependencies justify module verification.
+3. Add service-layer logging at meaningful business transitions and failure points using the existing logging stack.
+4. Preserve dependency direction and avoid unrelated refactors across feature slices.
+5. Add or update the smallest focused test for the changed behavior.
+6. Run focused tests first; run `mvn -pl backend -am test` only when the requested change and dependencies justify module verification.
+
+## Service logging
+
+When creating or materially changing a service, add logs that make failures diagnosable without changing business behavior:
+
+- use SLF4J parameterized logging and the logging dependencies already provided by Spring Boot;
+- use `INFO` for material state changes or completed business operations, `DEBUG` for routine read/diagnostic detail, `WARN` for rejected or recoverable conditions, and `ERROR` for unexpected failures;
+- include stable context such as operation name and safe entity/run identifiers, but never credentials, tokens, raw personal data, full request payloads, mining datasets, or other sensitive/large values;
+- log an exception with its stack trace at the service boundary that owns enough business context, then rethrow or translate it according to the existing error contract; do not swallow it;
+- avoid duplicate logging of the same exception across repository, service, and controller layers, and avoid noisy per-row/per-item logs in loops.
+
+Do not add broad `try/catch` blocks solely to produce a log. Expected validation or not-found paths should follow the established exception contract and use a level proportional to their operational significance.
 
 ## Classify verification
 
@@ -45,6 +58,8 @@ Stop and request the missing contract or decision when the endpoint behavior is 
 
 - Request mapping, status, validation, and response DTO match the stated contract.
 - Service transaction boundary and repository query semantics are appropriate.
+- Service logs cover meaningful state transitions and unexpected failures with safe context and appropriate levels.
+- Exceptions are not swallowed or redundantly logged, and logs contain no secret, token, PII, dataset, or oversized payload.
 - Entity and DTO remain separate; schema-dependent fields match approved migrations.
 - Focused tests cover success plus relevant validation, empty, not-found, or error paths.
 - Broader tests and runtime/database checks are reported separately from unit evidence.
