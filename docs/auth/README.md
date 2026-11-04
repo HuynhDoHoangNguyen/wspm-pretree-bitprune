@@ -73,7 +73,7 @@ AUTH_JWT_SECRET=<secret Base64 sinh ở bước 2>
 AUTH_JWT_ISSUER=http://localhost:8080
 AUTH_JWT_KEY_ID=wspm-local-1
 AUTH_COOKIE_SECURE=false
-AUTH_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+AUTH_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,http://127.0.0.1:8080
 ~~~
 
 .env.example không chứa secret dùng được. Các biến AUTH_* ánh xạ sang auth.jwt.*,
@@ -267,7 +267,7 @@ Sau khi test, gửi kết quả các dòng PASS/FAIL và lỗi có requestId n�
 | Backend không startup | Đúng JDK, MySQL; các AUTH_* trong .env không trống; AUTH_JWT_SECRET là Base64 ít nhất 32 byte, issuer/kid đúng; không có override cũ trong shell |
 | Register 503 | Role CUSTOMER có tồn tại đúng casing không; storage có sẵn không |
 | Login 401 | Dùng username; đúng mật khẩu/host; account ACTIVE |
-| Auth POST 403 CSRF_REJECTED | Origin chính xác port 3000; cookie HTTP local không bật Secure; không trộn host |
+| Auth POST 403 CSRF_REJECTED | Origin hợp lệ port 3000 hoặc qua CRA proxy (port 8080); cookie HTTP local không bật Secure; không trộn host |
 | UI báo API khác origin | WDM API root=/api; restart frontend sau khi đổi env |
 | CUSTOMER không vào Admin | Đúng chính sách; cấp ADMIN riêng cho account mục tiêu |
 | Role đã cấp nhưng UI chưa thấy | Đăng xuất/đăng nhập lại hoặc dùng nút Kiểm tra lại quyền ở màn từ chối |
