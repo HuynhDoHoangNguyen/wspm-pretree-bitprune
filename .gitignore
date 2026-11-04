@@ -71,3 +71,9 @@ frontend/coverage/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Local AI Agent workspace
+.agent-workspace/
+
+# Backend runtime uploads
+/backend/uploads/

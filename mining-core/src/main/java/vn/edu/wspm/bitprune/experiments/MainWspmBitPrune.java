@@ -43,10 +43,10 @@ public final class MainWspmBitPrune {
 
     // Edit these constants to configure a reproducible non-interactive run.
     private static final Path DATASET_PATH =
-            Path.of("src/main/resources/datasets/T40I10D100K.txt");
+            Path.of("src/test/resources/datasets/wspm/table1.spmf");
 
     private static final SequenceDatabaseFormat INPUT_FORMAT =
-            SequenceDatabaseFormat.FIMI_TRANSACTION;
+            SequenceDatabaseFormat.SPMF_SEQUENTIAL;
 
     private static final boolean MIN_SUP_IS_RELATIVE = true;
 

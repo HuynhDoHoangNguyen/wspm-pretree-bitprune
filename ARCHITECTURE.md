@@ -67,6 +67,7 @@ wspm-pretree-bitprune/
 │   ├── package.json
 │   ├── public/
 │   └── src/
+│       ├── api/admin/data-mining/  Admin data/mining API client, types and tests
 │       ├── components/       Shared UI components
 │       ├── pages/            Client/admin pages and view models
 │       ├── hooks/            API and state hooks
@@ -143,10 +144,18 @@ adaptation source, not proof that corresponding backend capabilities exist.
 Remove unused functionality by coherent feature slices only after route/import
 and license review.
 
-The development proxy points to backend port 8080. A legacy
-`ApplicationConstants.HOME_PATH` currently references port 8085; resolve this
-configuration mismatch in a dedicated frontend task rather than hiding it in
-documentation.
+The development proxy points to backend port 8080. WDM uses `frontend/src/api/admin/data-mining/`
+with `/api` as its default API root, optionally configured by
+`REACT_APP_WDM_API_BASE_URL`. Its shared Auth adapter is an integration point,
+not an authentication implementation. Inherited Electro features still use the
+legacy `ApplicationConstants.HOME_PATH` on port 8085; their migration is separate
+from the WDM client foundation. See `frontend/README.md` for client usage and tests.
+
+Admin Data & Mining pages live in `frontend/src/pages/admin/data-mining/`, with
+routes `/admin/datasets`, `/admin/mining-runs` and `/admin/patterns`. They reuse the
+existing Admin shell and have UI-only ADMIN role guards. The pages currently show
+feature availability rather than fabricated business data; server-side Auth and
+the WDM business APIs remain pending.
 
 ## Dependency rules
 

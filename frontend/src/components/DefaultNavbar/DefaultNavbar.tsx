@@ -15,10 +15,12 @@ import {
   Message,
   Users
 } from 'tabler-icons-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import useAppStore from 'stores/use-app-store';
 import useDefaultNavbarStyles from 'components/DefaultNavbar/DefaultNavbar.styles';
 import useAdminAuthStore from 'stores/use-admin-auth-store';
+import DataMiningNavigation from 'pages/admin/data-mining/DataMiningNavigation';
+import { isDataMiningPath } from 'pages/admin/data-mining/routes';
 
 interface NavbarLink {
   link: string;
@@ -251,6 +253,8 @@ export function DefaultNavbar() {
   const { opened } = useAppStore();
   const { classes, cx } = useDefaultNavbarStyles();
   const [active, setActive] = useState('Trang chủ');
+  const { pathname } = useLocation();
+  const onDataMiningPage = isDataMiningPath(pathname);
 
   const { isOnlyEmployee } = useAdminAuthStore();
 
@@ -263,7 +267,7 @@ export function DefaultNavbar() {
       <Link
         to={navbarLink.link}
         className={cx(classes.link, {
-          [classes.linkActive]: navbarLink.label === active,
+          [classes.linkActive]: !onDataMiningPage && navbarLink.label === active,
           [classes.linkDisabled]: isOnlyEmployee() && navbarLink.disableForEmployee,
         })}
         onClick={() => setActive(navbarLink.label)}
@@ -271,7 +275,7 @@ export function DefaultNavbar() {
         <navbarLink.icon className={classes.linkIcon}/>
         <span>{navbarLink.label}</span>
       </Link>
-      {navbarLink.label === active && (navbarLink.childLinks || []).map(childLink => (
+      {!onDataMiningPage && navbarLink.label === active && (navbarLink.childLinks || []).map(childLink => (
         <Link
           key={childLink.label}
           to={childLink.link}
@@ -293,7 +297,9 @@ export function DefaultNavbar() {
       hidden={!opened}
     >
       <Navbar.Section grow component={ScrollArea}>
-        {navbarLinksFragment}
+        {navbarLinksFragment[0]}
+        <DataMiningNavigation/>
+        {navbarLinksFragment.slice(1)}
       </Navbar.Section>
     </Navbar>
   );
