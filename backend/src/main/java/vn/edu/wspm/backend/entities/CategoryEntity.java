@@ -5,6 +5,9 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import lombok.Getter;
+
+@Getter
 @Entity
 @Table(name = "CATEGORY")
 public class CategoryEntity {
@@ -16,20 +19,10 @@ public class CategoryEntity {
     @Column(name = "name", length = 160)
     private String categoryName;
 
-    protected CategoryEntity() {
-    }
+    protected CategoryEntity() {}
 
     public CategoryEntity(String categoryId, String categoryName) {
         this.categoryId = categoryId;
         this.categoryName = categoryName;
     }
-
-    public String getCategoryId() {
-        return categoryId;
-    }
-
-    public String getCategoryName() {
-        return categoryName;
-    }
 }
-
