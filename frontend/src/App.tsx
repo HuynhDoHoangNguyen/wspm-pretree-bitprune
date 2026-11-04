@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Route } from 'react-router-dom';
 import 'dayjs/locale/vi';
 import '@smastrom/react-rating/style.css';
 import { QueryClient, QueryClientProvider } from 'react-query';
@@ -87,6 +87,7 @@ import RewardManage from 'pages/reward-strategy';
 import ClientReward from 'pages/client-reward';
 import ClientSignup from 'pages/client-signup';
 import ClientForgotPassword, { ClientChangePassword } from 'pages/client-forgot-password';
+import { AuthRoutes } from 'auth/AuthBoundary';
 
 const queryClient = new QueryClient();
 
@@ -102,7 +103,7 @@ function App() {
           <NotificationsProvider>
             <ModalsProvider>
               <ScrollToTop/>
-              <Routes>
+              <AuthRoutes>
                 <Route path="/" element={<Client/>}>
                   <Route index element={<ClientHome/>}/>
                   <Route path="/*" element={<ClientError/>}/>
@@ -369,7 +370,7 @@ function App() {
                 </Route>
                 <Route path="/payment/success" element={<ClientPaymentSuccess/>}/>
                 <Route path="/payment/cancel" element={<ClientPaymentCancel/>}/>
-              </Routes>
+              </AuthRoutes>
             </ModalsProvider>
           </NotificationsProvider>
         </MantineProvider>

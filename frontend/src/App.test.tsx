@@ -1,22 +1,17 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import useAdminAuthStore from 'stores/use-admin-auth-store';
+import { authSession } from 'auth/session';
 import App from './App';
 
-jest.mock('stores/use-admin-auth-store', () => ({ __esModule: true, default: jest.fn() }));
 
-const authStore = useAdminAuthStore as jest.Mock;
+
+
 const fetchMock = jest.fn();
 
 beforeEach(() => {
-  authStore.mockReturnValue({
-    user: null,
-    jwtToken: null,
-    updateJwtToken: jest.fn(),
-    updateUser: jest.fn(),
-    resetAdminAuthState: jest.fn(),
-  });
+  authSession.useStore.setState({ status: 'anonymous', user: null, accessToken: null, forbidden: false, error: null });
+  jest.spyOn(authSession, 'bootstrap').mockResolvedValue();
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: jest.fn(query => ({
     matches: false, media: query, onchange: null, addListener: jest.fn(), removeListener: jest.fn(),
     addEventListener: jest.fn(), removeEventListener: jest.fn(), dispatchEvent: jest.fn(),
@@ -44,4 +39,12 @@ test.each(['/admin', '/admin/datasets'])('renders the actual sign-in form at %s 
   expect(screen.getByRole('button', { name: 'Đăng nhập' })).toBeEnabled();
   expect(screen.queryByRole('heading', { name: 'Thống kê hệ thống' })).not.toBeInTheDocument();
   expect(screen.queryByRole('navigation', { name: 'Dữ liệu & Khai phá' })).not.toBeInTheDocument();
+});
+
+test('forged persisted ADMIN identity is removed and never grants the admin shell', () => {
+  localStorage.setItem('electro-admin-auth-store', JSON.stringify({ state: { user: { roles: ['ADMIN'] }, jwtToken: 'forged' } }));
+  render(<MemoryRouter initialEntries={['/admin/datasets']}><App/></MemoryRouter>);
+  expect(screen.getByRole('button', { name: 'Đăng nhập' })).toBeEnabled();
+  expect(localStorage.getItem('electro-admin-auth-store')).toBeNull();
+  expect(authSession.useStore.getState().user).toBeNull();
 });

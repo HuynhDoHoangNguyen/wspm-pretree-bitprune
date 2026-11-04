@@ -18,7 +18,7 @@ import {
 import { Link, useLocation } from 'react-router-dom';
 import useAppStore from 'stores/use-app-store';
 import useDefaultNavbarStyles from 'components/DefaultNavbar/DefaultNavbar.styles';
-import useAdminAuthStore from 'stores/use-admin-auth-store';
+import { useSharedAuth } from 'auth/session';
 import DataMiningNavigation from 'pages/admin/data-mining/DataMiningNavigation';
 import { isDataMiningPath } from 'pages/admin/data-mining/routes';
 
@@ -256,7 +256,8 @@ export function DefaultNavbar() {
   const { pathname } = useLocation();
   const onDataMiningPage = isDataMiningPath(pathname);
 
-  const { isOnlyEmployee } = useAdminAuthStore();
+  const { user } = useSharedAuth();
+  const isOnlyEmployee = () => !!user && !user.roles.includes('ADMIN');
 
   const navbarLinksFragment = navbarLinks.map(navbarLink => (
     <Stack

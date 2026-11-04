@@ -1,36 +1,27 @@
 import React from 'react';
-import { AppShell } from '@mantine/core';
+import { Alert, AppShell, Button, Stack } from '@mantine/core';
 import { DefaultHeader } from 'components/DefaultHeader/DefaultHeader';
 import { DefaultNavbar } from 'components/DefaultNavbar/DefaultNavbar';
-import { Outlet } from 'react-router-dom';
-import useTitle from 'hooks/use-title';
-import useAdminAuthStore from 'stores/use-admin-auth-store';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import AdminSignin from 'pages/admin-signin';
+import AuthGate from 'auth/AuthGate';
+import { authSession, useSharedAuth } from 'auth/session';
+import ManagerPath from 'constants/ManagerPath';
 
-function Admin() {
-  useTitle();
-
-  const { user } = useAdminAuthStore();
-
-  if (!user) {
-    return <AdminSignin/>;
-  }
-
-  return (
-    <AppShell
-      fixed
-      header={<DefaultHeader/>}
-      navbar={<DefaultNavbar/>}
-      styles={theme => ({
-        main: {
-          backgroundColor: theme.colorScheme === 'dark' ? theme.colors.dark[8] : theme.colors.gray[0],
-          maxWidth: '100%',
-        },
-      })}
-    >
-      <Outlet/>
-    </AppShell>
-  );
+export default function Admin() {
+  const state = useSharedAuth();
+  const { pathname } = useLocation();
+  const normalized = pathname.replace(/\/+$/, '').toLowerCase();
+  if (['bootstrapping', 'unavailable', 'signing-out'].includes(state.status)) return <AuthGate/>;
+  if (!state.user) return <AdminSignin/>;
+  if (!state.user.roles.includes('ADMIN') || state.forbidden) return <Stack p="xl">
+    <Alert color="red" role="alert">Tài khoản đã đăng nhập nhưng không có quyền ADMIN hoặc máy chủ đã từ chối quyền truy cập.</Alert>
+    <Button onClick={() => void authSession.checkIdentity().catch(() => undefined)}>Kiểm tra lại quyền</Button>
+    <Button onClick={() => void authSession.logout().catch(() => undefined)}>Đăng xuất</Button>
+  </Stack>;
+  if (normalized === '/admin') return <Navigate to="/admin/datasets" replace/>;
+  const supported = ['/admin/datasets', '/admin/mining-runs', '/admin/patterns', ManagerPath.ACCOUNT].includes(normalized);
+  return <AppShell fixed header={<DefaultHeader/>} navbar={<DefaultNavbar/>}>
+    {supported ? <Outlet/> : <Alert role="status">Chức năng legacy này chưa được nối với API hiện tại. Phiên đăng nhập đã được xác thực.</Alert>}
+  </AppShell>;
 }
-
-export default Admin;

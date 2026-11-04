@@ -1,0 +1,4 @@
+# Explicit opt-in: --spring.profiles.active=local for HTTP development through CRA.
+auth:
+  cookie-secure: ${AUTH_COOKIE_SECURE:false}
+  allowed-origins: ${AUTH_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}

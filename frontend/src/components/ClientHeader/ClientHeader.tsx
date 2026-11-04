@@ -39,6 +39,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import CategoryMenu from 'components/ClientHeader/CategoryMenu';
 import { useElementSize } from '@mantine/hooks';
 import useAuthStore from 'stores/use-auth-store';
+import { authSession, useSharedAuth } from 'auth/session';
+import { authMessage } from 'auth/api';
 import NotifyUtils from 'utils/NotifyUtils';
 import { useQuery } from 'react-query';
 import FetchUtils, { ErrorMessage } from 'utils/FetchUtils';
@@ -78,7 +80,8 @@ function ClientHeader() {
 
   const { ref: refHeaderStack, width: widthHeaderStack } = useElementSize();
 
-  const { user, resetAuthState, currentTotalCartItems } = useAuthStore();
+  const { user: legacyUser, currentTotalCartItems } = useAuthStore();
+  const { user } = useSharedAuth();
 
   // Search state & function
   const navigate = useNavigate();
@@ -102,10 +105,10 @@ function ClientHeader() {
     }
   };
 
-  const handleSignoutMenu = () => {
+  const handleSignoutMenu = async () => {
     if (user) {
-      resetAuthState();
-      NotifyUtils.simpleSuccess('Đăng xuất thành công');
+      try { await authSession.logout(); NotifyUtils.simpleSuccess('Đăng xuất thành công'); }
+      catch (error) { NotifyUtils.simpleFailed('Đã xóa truy cập cục bộ; chưa xác nhận đăng xuất máy chủ. ' + authMessage(error)); }
     }
   };
 
@@ -138,7 +141,7 @@ function ClientHeader() {
               onKeyDown={handleSearchInput}
             />
             <Group spacing="xs">
-              {user && (
+              {legacyUser && (
                 <>
                   <Tooltip label="Giỏ hàng" position="bottom">
                     <UnstyledButton component={Link} to="/cart">

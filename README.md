@@ -87,6 +87,13 @@ Nếu thấy cột `STATUS` hiển thị `Up` (ví dụ `Up 10 seconds`), MySQL 
 
 ### BƯỚC 3: Build và Chạy Backend (Tự động chạy Migration)
 
+Auth dùng HS256 với một `AUTH_JWT_SECRET` (Base64 của ít nhất 32 byte ngẫu nhiên)
+trong `.env`, cùng issuer và key ID; cookie/Origin dùng `AUTH_COOKIE_SECURE` và
+`AUTH_ALLOWED_ORIGINS` trong cùng file.
+Thiếu/sai cấu hình sẽ làm backend startup thất bại. Xem
+[Shared Auth setup](docs/auth/README.md) trước khi chạy. Profile `local` chỉ cấu
+hình HTTP cookie/Origin, không tạo secret, role hoặc tài khoản mặc định. Không cần file key.
+
 > [!IMPORTANT]
 > **Bạn KHÔNG CẦN phải mở MySQL Workbench để chạy script tạo bảng thủ công!**
 > 
@@ -109,13 +116,15 @@ mvn -pl backend -am package -DskipTests
 
 #### 2. Khởi chạy Backend:
 ```powershell
-java -jar backend/target/backend-1.0-SNAPSHOT.jar
+java -jar backend/target/backend-1.0-SNAPSHOT.jar --spring.profiles.active=local
 ```
 Khi thấy log xuất hiện dòng chữ:
 ```text
 Started BackendApplication in X.XXX seconds
 ```
-Backend đã khởi động thành công tại cổng `8080`.
+Backend đã khởi động thành công tại cổng `8080`. Lệnh trên dành cho HTTP local;
+cấu hình JWT được đọc từ `.env` ở repo root theo
+[hướng dẫn Auth và test tay](docs/auth/README.md#manual-test).
 
 #### 3. Kiểm tra Backend:
 Mở trình duyệt web và truy cập các liên kết sau:
