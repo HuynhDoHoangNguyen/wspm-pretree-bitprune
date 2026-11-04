@@ -10,6 +10,7 @@ import { ModalsProvider } from '@mantine/modals';
 import ManagerPath from 'constants/ManagerPath';
 import Client from 'pages/Client';
 import Admin from 'pages/Admin';
+import PatternExplorer from 'pages/pattern/PatternExplorer';
 import AdminDashboard from 'pages/AdminDashboard';
 import AddressManage, { AddressCreate, AddressUpdate } from 'pages/address';
 import ProvinceManage, { ProvinceCreate, ProvinceUpdate } from 'pages/province';
@@ -192,6 +193,7 @@ function App() {
                   <Route path="/change-password" element={<ClientChangePassword/>}/>
                 </Route>
                 <Route path="/admin" element={<Admin/>}>
+                  <Route path="patterns" element={<PatternExplorer/>}/>
                   <Route path="/admin/*" element={<AdminError/>}/>
                   <Route index element={<AdminDashboard/>}/>
                   {/* ADDRESS */}
