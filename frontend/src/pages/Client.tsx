@@ -6,6 +6,8 @@ import { Messages, MoonStars, Sun } from 'tabler-icons-react';
 import { useDisclosure, useHotkeys } from '@mantine/hooks';
 import { useIsFetching } from 'react-query';
 import useAuthStore from 'stores/use-auth-store';
+import { authSession } from 'auth/session';
+import NotifyUtils from 'utils/NotifyUtils';
 
 function Client() {
   const isLoading = useIsFetching();
@@ -62,7 +64,6 @@ function Shortcut() {
     ['alt+Q', () => handlers.toggle()],
   ]);
 
-  const { resetAuthState } = useAuthStore();
 
   return (
     <Affix position={{ bottom: 20, right: 100 }} sx={{ display: opened ? 'block' : 'none' }}>
@@ -70,8 +71,8 @@ function Shortcut() {
         <Group>
           <Anchor component={Link} to="/">Client</Anchor>
           <Anchor component={Link} to="/admin">Admin</Anchor>
-          <Button color="teal" variant="light" compact onClick={resetAuthState}>
-            ResetAuthState
+          <Button color="teal" variant="light" compact onClick={() => void authSession.logout().catch(() => NotifyUtils.simpleFailed('Chưa xác nhận đăng xuất máy chủ.'))}>
+            Đăng xuất
           </Button>
           <ActionIcon
             size="sm"

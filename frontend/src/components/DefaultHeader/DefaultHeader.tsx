@@ -5,7 +5,8 @@ import { Link } from 'react-router-dom';
 import useAppStore from 'stores/use-app-store';
 import { ElectroLogo } from 'components';
 import NotifyUtils from 'utils/NotifyUtils';
-import useAdminAuthStore from 'stores/use-admin-auth-store';
+import { authSession, useSharedAuth } from 'auth/session';
+import { authMessage } from 'auth/api';
 
 const useStyles = createStyles((theme) => ({
   header: {
@@ -93,7 +94,7 @@ export function DefaultHeader() {
   const { opened, toggleOpened } = useAppStore();
   const { colorScheme, toggleColorScheme } = useMantineColorScheme();
 
-  const { user, resetAdminAuthState } = useAdminAuthStore();
+  const { user } = useSharedAuth();
 
   const dark = colorScheme === 'dark';
 
@@ -109,11 +110,10 @@ export function DefaultHeader() {
     </Link>
   ));
 
-  const handleSignoutButton = () => {
+  const handleSignoutButton = async () => {
     if (user) {
-      resetAdminAuthState();
-      toggleColorScheme('light');
-      NotifyUtils.simpleSuccess('Đăng xuất thành công');
+      try { await authSession.logout(); toggleColorScheme('light'); NotifyUtils.simpleSuccess('Đăng xuất thành công'); }
+      catch (error) { NotifyUtils.simpleFailed('Đã xóa truy cập cục bộ; chưa xác nhận đăng xuất máy chủ. ' + authMessage(error)); }
     }
   };
 

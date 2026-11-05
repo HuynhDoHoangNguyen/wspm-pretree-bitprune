@@ -7,10 +7,17 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+
+import lombok.Getter;
+import lombok.Setter;
+
 import org.hibernate.annotations.ColumnDefault;
+import org.hibernate.validator.constraints.CodePointLength;
 
 import java.time.Instant;
 
+@Getter
+@Setter
 @Entity
 @Table(name = "USER_ACCOUNT")
 public class UserAccountEntity {
@@ -36,7 +43,7 @@ public class UserAccountEntity {
     @Column(name = "password_hash", nullable = false)
     private String passwordHash;
 
-    @Size(max = 160)
+    @CodePointLength(max = 160)
     @NotNull
     @Column(name = "display_name", nullable = false, length = 160)
     private String displayName;
@@ -71,109 +78,4 @@ public class UserAccountEntity {
     @ColumnDefault("CURRENT_TIMESTAMP(6)")
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
-
-    public String getUserId() {
-        return userId;
-    }
-
-    public void setUserId(String userId) {
-        this.userId = userId;
-    }
-
-    public String getUsername() {
-        return username;
-    }
-
-    public void setUsername(String username) {
-        this.username = username;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
-    }
-
-    public String getPhone() {
-        return phone;
-    }
-
-    public void setPhone(String phone) {
-        this.phone = phone;
-    }
-
-    public String getPasswordHash() {
-        return passwordHash;
-    }
-
-    public void setPasswordHash(String passwordHash) {
-        this.passwordHash = passwordHash;
-    }
-
-    public String getDisplayName() {
-        return displayName;
-    }
-
-    public void setDisplayName(String displayName) {
-        this.displayName = displayName;
-    }
-
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
-    }
-
-    public Instant getEmailVerifiedAt() {
-        return emailVerifiedAt;
-    }
-
-    public void setEmailVerifiedAt(Instant emailVerifiedAt) {
-        this.emailVerifiedAt = emailVerifiedAt;
-    }
-
-    public Instant getPhoneVerifiedAt() {
-        return phoneVerifiedAt;
-    }
-
-    public void setPhoneVerifiedAt(Instant phoneVerifiedAt) {
-        this.phoneVerifiedAt = phoneVerifiedAt;
-    }
-
-    public Instant getLastLoginAt() {
-        return lastLoginAt;
-    }
-
-    public void setLastLoginAt(Instant lastLoginAt) {
-        this.lastLoginAt = lastLoginAt;
-    }
-
-    public Long getVersion() {
-        return version;
-    }
-
-    public void setVersion(Long version) {
-        this.version = version;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(Instant createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public Instant getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public void setUpdatedAt(Instant updatedAt) {
-        this.updatedAt = updatedAt;
-    }
-
 }

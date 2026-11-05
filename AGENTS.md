@@ -173,6 +173,21 @@ overflow without reproducible measurements under equivalent conditions.
 - Generated directories such as `target/`, `node_modules/`, and `build/` are not
   source artifacts and must remain ignored.
 
+### File scope and cleanup
+
+For repository changes, apply
+[repo-file-hygiene](.agents/skills/repo-file-hygiene/SKILL.md).
+Identify the task's file scope and pre-existing changes before writing; track
+created, modified and deleted files, and explain necessary scope expansions.
+Avoid disposable helpers/reports by default. Clean disposable files created by
+the agent during the current task only after verifying they are unneeded and
+have no project/evidence dependencies. Deleting files that predate the task,
+including ignored/generated files and artifacts from earlier agent tasks,
+requires the user's explicit confirmation of the concrete deletion list.
+Required source, tests, contracts and acceptance evidence are not disposable
+merely because the agent created them. Report file changes and pending cleanup
+in the final chat report rather than generating an extra report file by default.
+
 ## 11. Task workflow
 
 Keep tasks small and reviewable.

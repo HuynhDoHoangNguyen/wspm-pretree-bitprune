@@ -1,4 +1,8 @@
 class ManagerPath {
+  static DATASETS = '/admin/datasets';
+  static MINING_RUNS = '/admin/mining-runs';
+  static PATTERNS = '/admin/patterns';
+
   static ADDRESS = '/admin/address';
   static PROVINCE = '/admin/address/province';
   static DISTRICT = '/admin/address/district';

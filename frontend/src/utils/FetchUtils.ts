@@ -1,3 +1,5 @@
+import { authSession } from 'auth/session';
+import { AuthError } from 'auth/api';
 import ApplicationConstants from 'constants/ApplicationConstants';
 import { CollectionWrapper } from 'types';
 import { UploadedImageResponse } from 'models/Image';
@@ -39,6 +41,16 @@ export interface ErrorMessage {
 type BasicRequestParams = Record<string, string | number | null | boolean>;
 
 class FetchUtils {
+  private static sharedToken(resourceUrl: string): string {
+    const target = new URL(resourceUrl, window.location.href);
+    if (target.origin !== window.location.origin || !target.pathname.startsWith('/api/v1/')) {
+      throw new AuthError(null, 'UNSUPPORTED_LEGACY_ENDPOINT', 'API legacy chưa được nối; credential chỉ gửi cùng origin.');
+    }
+    const token = authSession.token();
+    if (!token) throw new AuthError(401, 'AUTHENTICATION_REQUIRED', 'Authentication is required.');
+    return token;
+  }
+
   /**
    * Hàm get cho các trường hợp truy vấn dữ liệu bên client
    * @param resourceUrl
@@ -99,9 +111,8 @@ class FetchUtils {
    * @param requestParams
    * @param isAdmin
    */
-  static async getWithToken<O>(resourceUrl: string, requestParams?: BasicRequestParams, isAdmin?: boolean): Promise<O> {
-    const token = JSON.parse(localStorage
-      .getItem(isAdmin ? 'electro-admin-auth-store' : 'electro-auth-store') || '{}').state?.jwtToken;
+  static async getWithToken<O>(resourceUrl: string, requestParams?: BasicRequestParams, _isAdmin?: boolean): Promise<O> {
+    const token = FetchUtils.sharedToken(resourceUrl);
 
     // Source: https://stackoverflow.com/a/70426220
     const response = await fetch(FetchUtils.concatParams(resourceUrl, requestParams), {
@@ -124,9 +135,8 @@ class FetchUtils {
    * @param requestBody
    * @param isAdmin
    */
-  static async postWithToken<I, O>(resourceUrl: string, requestBody: I, isAdmin?: boolean): Promise<O> {
-    const token = JSON.parse(localStorage
-      .getItem(isAdmin ? 'electro-admin-auth-store' : 'electro-auth-store') || '{}').state?.jwtToken;
+  static async postWithToken<I, O>(resourceUrl: string, requestBody: I, _isAdmin?: boolean): Promise<O> {
+    const token = FetchUtils.sharedToken(resourceUrl);
 
     const response = await fetch(resourceUrl, {
       method: 'POST',
@@ -150,9 +160,8 @@ class FetchUtils {
    * @param requestBody
    * @param isAdmin
    */
-  static async putWithToken<I, O>(resourceUrl: string, requestBody: I, isAdmin?: boolean): Promise<O> {
-    const token = JSON.parse(localStorage
-      .getItem(isAdmin ? 'electro-admin-auth-store' : 'electro-auth-store') || '{}').state?.jwtToken;
+  static async putWithToken<I, O>(resourceUrl: string, requestBody: I, _isAdmin?: boolean): Promise<O> {
+    const token = FetchUtils.sharedToken(resourceUrl);
 
     const response = await fetch(resourceUrl, {
       method: 'PUT',
@@ -176,9 +185,8 @@ class FetchUtils {
    * @param entityIds
    * @param isAdmin
    */
-  static async deleteWithToken<T>(resourceUrl: string, entityIds: T[], isAdmin?: boolean) {
-    const token = JSON.parse(localStorage
-      .getItem(isAdmin ? 'electro-admin-auth-store' : 'electro-auth-store') || '{}').state?.jwtToken;
+  static async deleteWithToken<T>(resourceUrl: string, entityIds: T[], _isAdmin?: boolean) {
+    const token = FetchUtils.sharedToken(resourceUrl);
 
     const response = await fetch(resourceUrl, {
       method: 'DELETE',

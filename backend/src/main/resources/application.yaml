@@ -23,6 +23,8 @@ spring:
       naming:
         physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
     show-sql: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
 
   flyway:
     enabled: true
@@ -31,6 +33,27 @@ spring:
 
 server:
   port: 8080
+
+# .env is imported as properties above; map its explicit names to Auth's contract.
+auth:
+  jwt:
+    secret: ${AUTH_JWT_SECRET:}
+    issuer: ${AUTH_JWT_ISSUER:}
+    key-id: ${AUTH_JWT_KEY_ID:}
+  cookie-secure: ${AUTH_COOKIE_SECURE:true}
+  allowed-origins: ${AUTH_ALLOWED_ORIGINS:}
+
+# Hibernate duplicate-key diagnostics can contain username/email values. Auth
+# logs safe operation/context instead; never emit raw SQL errors or bound hashes.
+logging:
+  level:
+    org.hibernate.orm.jdbc.error: "OFF"
+    org.hibernate.orm.jdbc.bind: "OFF"
+
+wdm:
+  order-export:
+    max-rows: ${WDM_ORDER_EXPORT_MAX_ROWS:100000}
+    max-bytes: ${WDM_ORDER_EXPORT_MAX_BYTES:104857600}
 
 management:
   endpoints:

@@ -55,11 +55,16 @@ wspm-pretree-bitprune/
 │   ├── pom.xml
 │   └── src/
 │       ├── main/java/vn/edu/wspm/backend/
+│       │   ├── common/api/   Shared success/error DTOs
+│       │   ├── config/       Auth/runtime bean configuration
 │       │   ├── controllers/  REST endpoints
 │       │   ├── dto/          API response models
 │       │   ├── entities/     JPA entities
-│       │   ├── mappers/      Entity-to-DTO mapping
+│       │   ├── exception/    ErrorCode, ApplicationException, global MVC handler
+│       │   ├── mappers/      MapStruct entity-to-DTO mapping and shared config
 │       │   ├── repositories/ Spring Data repositories
+│       │   ├── security/jwt/ HS256 token signing/verification
+│       │   ├── web/          Auth/WDM guards and shared correlation/error writer
 │       │   └── services/     Application services
 │       ├── main/resources/application.yaml
 │       └── test/             Backend unit/integration tests
@@ -67,6 +72,9 @@ wspm-pretree-bitprune/
 │   ├── package.json
 │   ├── public/
 │   └── src/
+│       ├── api/admin/data-mining/  Admin data/mining API client, types and tests
+│       ├── api/common/       Shared response contracts and strict envelope parser
+│       ├── auth/             Shared Auth client, memory session and UI boundary
 │       ├── components/       Shared UI components
 │       ├── pages/            Client/admin pages and view models
 │       ├── hooks/            API and state hooks
@@ -108,13 +116,68 @@ as an independent test oracle for tiny controlled databases.
 
 ## Backend boundaries
 
-The backend currently exposes health, product and category reads. It uses:
+The backend exposes health, product and category reads.
+
+Shared Auth additionally exposes registration, login, refresh, identity and logout
+under `/api/v1/auth`. `security/jwt` signs/verifies HS256 access JWTs using one secret;
+the root `.env` supplies `AUTH_JWT_SECRET`,
+`AUTH_JWT_ISSUER`, `AUTH_JWT_KEY_ID`, `AUTH_COOKIE_SECURE` and `AUTH_ALLOWED_ORIGINS`.
+The imported properties are explicitly mapped in application.yaml; the local
+profile also honors these values. The Base64 secret decodes to at least 32 random
+bytes, stays in ignored .env, and has no generated/default fallback at startup.
+No PEM files are used; legacy RS256 tokens are rejected. Explicit test properties
+still override local settings for isolated test databases/secrets.
+`services/auth` and `repositories/auth` own account/session lifecycle; `web/auth`
+owns CSRF/Origin and identity HTTP protection. `exception/GlobalExceptionHandler`
+owns API-wide MVC error translation; `web/common/ApiErrorWriter` serves pre-MVC
+filter failures using the same immutable `common/api` error DTO. Session checks
+read current account/session/roles from MySQL. Setup and evidence boundaries are
+in [Shared Auth](docs/auth/README.md). AUTH-04 connects the same authenticator to
+the WDM ADMIN provider. `ApiSecurityFilter` applies strict HTTP firewall checks
+and an explicit API route allowlist before downstream guards; other API routes
+are denied by default, including routes added without a declared policy.
+
+It uses:
 
 - Spring Web MVC for HTTP;
 - Spring Data JPA/JDBC for persistence;
 - MySQL Connector/J;
 - Actuator for operational health;
 - `mining-core` as an in-reactor Java dependency.
+
+WDM also defines `GET /api/v1/admin/order-exports` with a historical JDBC
+projection and bounded CSV serialization. `web/wdm` owns the WDM authorization
+guard and shared Auth integration seam. `web/common/RequestIdFilter` runs before
+the firewall and guards, generating one server request ID for headers and JSON;
+incoming correlation IDs are not trusted. Without a unique
+`WdmAdminAuthorizer` provider, `/api/v1/admin/**` returns 503 before business
+processing. The default `SharedAuthWdmAdminAuthorizer` verifies shared JWT/account/
+session identity and requires exact DB role ADMIN: absent/invalid credentials
+return 401, eligible non-ADMIN returns 403, eligible ADMIN reaches the export.
+HTTP/Auth/export integration is tested with disposable MySQL. AUTH-06 additionally
+verifies Edge UI/session/cookies, concurrency and actual CSV file download through
+a test-only harness using the production WDM client. Dataset business UI remains
+pending. The exact CSV/filter
+contract and test evidence are in [dataset-csv-contract.md](docs/wdm/dataset-csv-contract.md).
+
+Business JSON success responses are explicit `ApiResponse<T>` values containing
+`code`, `message`, `data`, `requestId`; the HTTP status remains authoritative.
+Failures retain `status`, `code`, `message`, `path`, `requestId`, `details`.
+`ErrorCode` determines status/code together and `ApplicationException` carries
+safe business errors independently of Auth/WDM web packages. Health stays raw
+JSON, logout stays empty 204 and CSV stays a file. Auth/WDM retain no-store,
+Bearer challenges and authorization-before-validation. See the
+[shared API contract](docs/auth/README.md#api-contract).
+
+The backend alone configures Lombok and MapStruct annotation processing, including
+lombok-mapstruct-binding. Lombok reduces trivial injection/accessor/logging code;
+entities do not use generated equality/toString via `@Data`. Sensitive DTOs remain
+records with redacted toString methods. MapStruct uses a shared Spring constructor
+injection config and fails compilation on unmapped target fields. IdentityMapper
+receives already-resolved roles; it does not query or assign permissions.
+AuthSessionService keeps explicit TransactionTemplate boundaries and
+account-before-session locks, with named methods for session creation, rotation,
+revocation and current-identity checks.
 
 Application code must not copy mining logic into controllers/services. Future
 combo use cases should call a deliberate application boundary around
@@ -143,10 +206,40 @@ adaptation source, not proof that corresponding backend capabilities exist.
 Remove unused functionality by coherent feature slices only after route/import
 and license review.
 
-The development proxy points to backend port 8080. A legacy
-`ApplicationConstants.HOME_PATH` currently references port 8085; resolve this
-configuration mismatch in a dedicated frontend task rather than hiding it in
-documentation.
+The development proxy points to backend port 8080. WDM uses `frontend/src/api/admin/data-mining/`
+with `/api` as its default API root, optionally configured by
+`REACT_APP_WDM_API_BASE_URL`, restricted to the frontend origin by shared Auth.
+`frontend/src/auth/` owns the shared API contract, memory-only access token,
+bootstrap/refresh/logout and verified `/me` identity. Refresh stays in the
+HttpOnly cookie; Auth POSTs obtain a fresh CSRF token. Its WDM adapter attaches
+Bearer credentials, aborts protected requests and clears query/cart state on
+session invalidation. Protected requests are never automatically replayed.
+Inherited Electro features still reference the legacy port 8085 and rich numeric
+profiles. Unsupported protected screens display availability notices instead of
+inventing profile data or invoking those APIs. Compatibility stores hold no Auth
+identity/token. See `frontend/README.md` for client usage and tests.
+
+`frontend/src/api/common/response.ts` owns transport response types and parsing.
+Auth and WDM business clients unwrap success `data` exactly once and require its
+request ID to match `X-Request-Id`; session/UI callers retain their domain DTOs.
+Only GET /health may opt into raw-health JSON mode; downloads retain the Blob
+path. This backend/frontend wire change is coordinated, without dual-format
+fallbacks. Existing legacy port-8085 clients are not silently redirected.
+
+Admin Data & Mining pages live in `frontend/src/pages/admin/data-mining/`, with
+routes `/admin/datasets`, `/admin/mining-runs` and `/admin/patterns`. They reuse the
+existing Admin shell and have UI-only ADMIN role guards. The pages currently show
+feature availability rather than fabricated business data; shared frontend Auth
+is integrated, while dataset upload/mining business APIs remain pending. The backend
+order export is protected by shared Auth/ADMIN independently of this UI guard.
+Frontend module tests and isolated real HTTP/CSV integration are covered in
+AUTH-05. `frontend/e2e/` owns AUTH-06's separate browser runner, disposable MySQL/
+Spring setup, HTTPS test reverse proxy and test-only harness. Edge checks include
+HttpOnly/Secure cookie handling, two-tab refresh/logout and downloaded CSV content.
+CRA health forwarding is separately verified with a loopback host allowlist and
+owned port-8080 bridge. No E2E routes/hooks are shipped in the application bundle.
+Other browser engines, real production deployment and export-capacity benchmarks
+are not established by this gate; owner acceptance is recorded in the checklist.
 
 ## Dependency rules
 

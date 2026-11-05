@@ -1,38 +1,16 @@
-import { Anchor, Button, Container, Group, Stack, Text, Title } from '@mantine/core';
 import React from 'react';
-import useAuthStore from 'stores/use-auth-store';
-import { Link } from 'react-router-dom';
+import { Alert, Button, Container, Stack } from '@mantine/core';
+import { Link, useLocation } from 'react-router-dom';
+import { useSharedAuth } from 'auth/session';
+import AuthGate from 'auth/AuthGate';
+import IdentityPanel from 'auth/IdentityPanel';
 
-function ProtectedRoute({ children }: { children: JSX.Element }): JSX.Element {
-  const { user } = useAuthStore();
-
-  if (!user) {
-    return (
-      <main>
-        <Container size="xl">
-          <Stack spacing="xl" sx={{ textAlign: 'center' }}>
-            <Text
-              weight={700}
-              sx={theme => ({
-                fontSize: 120,
-                color: theme.colorScheme === 'dark' ? theme.colors.dark[4] : theme.colors.gray[2],
-              })}
-            >
-              401
-            </Text>
-            <Title>Vui lòng <Anchor component={Link} to="/signin" inherit>đăng nhập</Anchor> để truy cập</Title>
-            <Group position="center">
-              <Button component={Link} to="/" variant="subtle" size="md">
-                Trở về Trang chủ
-              </Button>
-            </Group>
-          </Stack>
-        </Container>
-      </main>
-    );
-  }
-
-  return children;
+export default function ProtectedRoute({ children }: { children: JSX.Element }): JSX.Element {
+  void children; // Inherited consumers need unsupported numeric-ID profiles/APIs.
+  const state = useSharedAuth(); const { pathname } = useLocation();
+  if (['bootstrapping', 'unavailable', 'signing-out'].includes(state.status)) return <AuthGate/>;
+  if (!state.user) return <Container><Stack><Alert role="alert">Vui lòng đăng nhập để truy cập.</Alert>
+    <Button component={Link} to="/signin">Đăng nhập</Button></Stack></Container>;
+  if (pathname === '/user' || pathname === '/user/') return <Container><IdentityPanel/></Container>;
+  return <Container><Alert role="status">Chức năng này chưa được nối với API hiện tại. Bạn đã đăng nhập.</Alert></Container>;
 }
-
-export default ProtectedRoute;

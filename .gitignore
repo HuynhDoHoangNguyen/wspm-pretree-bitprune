@@ -37,6 +37,15 @@ results/*
 # Keep reproducibility notes while excluding locally acquired source documents.
 docs/*
 !docs/README.md
+!docs/auth/
+docs/auth/*
+!docs/auth/README.md
+!docs/auth/api-refactor-baseline.md
+!docs/auth/api-response-contract.md
+!docs/auth/api-refactor-result.md
+!docs/wdm/
+docs/wdm/*
+!docs/wdm/dataset-csv-contract.md
 !docs/archive/
 !docs/archive/roadmaps/
 !docs/archive/roadmaps/**
@@ -71,3 +80,9 @@ frontend/coverage/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Local AI Agent workspace
+.agent-workspace/
+
+# Backend runtime uploads
+/backend/uploads/
