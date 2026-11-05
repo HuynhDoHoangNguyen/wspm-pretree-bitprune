@@ -152,6 +152,20 @@ it('rejects empty and non-CSV files before POST', () => {
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
+it('allows clearing the selected file with the remove button', () => {
+  render(page());
+  expect(screen.getByText('Chọn tệp CSV…')).toBeInTheDocument();
+  choose(new File(['line1,line2'], 'my-data.csv', { type: 'text/csv' }));
+  expect(screen.getByText('my-data.csv')).toBeInTheDocument();
+  expect(within(uploadForm()).getByRole('button')).toBeEnabled();
+
+  fireEvent.click(screen.getByLabelText('Bỏ chọn tệp'));
+  expect(screen.queryByText('my-data.csv')).not.toBeInTheDocument();
+  expect(screen.getByText('Chọn tệp CSV…')).toBeInTheDocument();
+  expect(within(uploadForm()).getByRole('button')).toBeDisabled();
+  expect((screen.getByLabelText('Tệp CSV') as HTMLInputElement).value).toBe('');
+});
+
 it.each([400, 401, 403, 413, 415, 503])('shows upload HTTP %s safely with request ID and no replay', async status => {
   fetchMock.mockResolvedValue(denied(status));
   render(page()); choose(); fireEvent.submit(uploadForm());

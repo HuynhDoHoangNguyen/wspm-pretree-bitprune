@@ -1,6 +1,7 @@
 import { createWdmApiClient, WdmApiError } from './client';
 import { WdmAuthAdapter } from './types';
 import { createDatasetApi } from './datasets';
+import { createValidationApi } from './validation';
 
 let authAdapter: WdmAuthAdapter | null = null;
 
@@ -15,6 +16,8 @@ export const wdmApi = createWdmApiClient({
 });
 
 export const datasetApi = createDatasetApi(wdmApi);
+export const validationApi = createValidationApi(wdmApi);
+export type { ValidationReport, ValidationDiagnostic, ValidationPosition } from './validation-response';
 export type { DatasetSnapshotResponse, SnapshotDetail } from './types';
 
 export interface BackendHealth {

@@ -5,6 +5,7 @@ import { datasetApi, SnapshotDetail, WdmApiError } from 'api/admin/data-mining';
 import useTitle from 'hooks/use-title';
 import { useDatasetRequest } from './useDatasetRequest';
 import { downloadDatasetFile } from './downloadDatasetFile';
+import SnapshotValidationPanel from './SnapshotValidationPanel';
 
 function Failure({ error, download = false }: { error: WdmApiError; download?: boolean }) {
   const messages: Record<number, string> = {
@@ -49,9 +50,11 @@ export default function SnapshotDetailPage() {
   useTitle('Chi tiết snapshot');
   const id = useParams<{ snapshotId: string }>().snapshotId || '';
   const [revision, setRevision] = useState(0);
+  const [metadataRefreshFailed, setMetadataRefreshFailed] = useState(false);
   const [state, setState] = useState<{ id: string; loading: boolean; detail: SnapshotDetail | null; error: WdmApiError | null }>({ id: '', loading: true, detail: null, error: null });
   useEffect(() => {
     const controller = new AbortController();
+    setMetadataRefreshFailed(false);
     setState({ id, loading: true, detail: null, error: null });
     datasetApi.detail(id, controller.signal).then(detail => {
       if (!controller.signal.aborted) setState({ id, loading: false, detail, error: null });
@@ -63,13 +66,23 @@ export default function SnapshotDetailPage() {
   }, [id, revision]);
   const loading = state.id !== id || state.loading;
   const detail = !loading && state.id === id ? state.detail : null;
-  const validations = { PENDING: 'PENDING — Chưa kiểm tra dữ liệu', VALID: 'VALID — Đã đạt kiểm tra', INVALID: 'INVALID — Không hợp lệ', LEGACY_UNVERIFIED: 'Dữ liệu cũ chưa xác minh' };
+  async function refreshValidationMetadata(signal: AbortSignal) {
+    setMetadataRefreshFailed(false);
+    try {
+      const next = await datasetApi.detail(id, signal);
+      if (!signal.aborted) setState(current => current.id === id ? { ...current, detail: next } : current);
+    } catch {
+      if (!signal.aborted) setMetadataRefreshFailed(true);
+    }
+  }
+  const validations = { PENDING: 'PENDING — Chưa có kết quả hoàn tất', VALID: 'VALID — Có dữ liệu sạch sử dụng được', INVALID: 'INVALID — Chưa có dữ liệu sạch sử dụng được', LEGACY_UNVERIFIED: 'Dữ liệu cũ chưa xác minh' };
   return <Stack spacing="lg" mb={30}>
     <Anchor component={Link} to="/admin/datasets">Về trang dữ liệu</Anchor>
     <Title order={2}>Chi tiết snapshot</Title>
     {loading && <Text role="status">Đang tải chi tiết snapshot…</Text>}
     {!loading && state.error && <Failure error={state.error}/>}
     <Button variant="light" onClick={() => setRevision(value => value + 1)} disabled={loading}>Tải lại chi tiết</Button>
+    {metadataRefreshFailed && <Alert role="alert" color="yellow">Đã nhận báo cáo nhưng chưa tải lại được metadata. Báo cáo vẫn được giữ; hãy tải lại chi tiết.</Alert>}
     {detail && <Paper withBorder radius="md" p="lg"><Stack spacing="lg">
       <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: 16, margin: 0 }}>
         <Field label="Snapshot ID" value={detail.snapshotId}/>
@@ -89,5 +102,6 @@ export default function SnapshotDetailPage() {
       </dl>
       <RawDownload key={detail.snapshotId} detail={detail}/>
     </Stack></Paper>}
+    {detail && <SnapshotValidationPanel key={detail.snapshotId} detail={detail} onComplete={refreshValidationMetadata}/>}
   </Stack>;
 }

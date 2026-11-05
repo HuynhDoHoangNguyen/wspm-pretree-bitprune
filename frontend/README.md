@@ -315,6 +315,31 @@ Bootstrap chờ xác minh; không tin storage hoặc decoded-only JWT. UI guard 
 Dataset hiện có export/upload/detail/raw như mô tả ở trên. Mining Runs và Patterns
 vẫn là khung chức năng, chưa có chạy mining hoặc danh sách mẫu/run từ backend.
 
+### WDM-02.6 — Validation trong chi tiết snapshot
+
+`/admin/datasets/:snapshotId` có panel **Kiểm tra dữ liệu** dùng POST/GET validation
+đã triển khai ở backend. POST không có body/query, chỉ chạy khi Admin chủ động
+nhấn nút; không tự retry khi mất kết nối, lỗi 409/503 hoặc refresh phiên. Khi kết
+quả POST chưa xác nhận, dùng **Kiểm tra lại trạng thái** để đọc bằng GET trước
+khi cân nhắc thao tác mới. Abort/unmount không hủy công việc trên máy chủ.
+
+Report đã hoàn tất tự tải bằng GET. Response reader kiểm tra snapshot ID, version,
+policy, schema/counters và trang; panel đối chiếu SHA/size với metadata. Counter
+giữ dạng chuỗi, null hiển thị Chưa xác định; prefix parse không là tổng dataset.
+VALID chỉ xác nhận cleaned subset còn dùng được, không khẳng định mọi dòng raw
+đúng. Report cũ là bằng chứng trên checksum đã ghi, không re-attest file/catalog.
+
+Diagnostics có stage/code/field/vị trí, phân trang server 20 thông báo; nhóm vị
+trí dài hiển thị từng 5 vị trí có nhãn rõ. Không render raw values hoặc manifest.
+Metadata được tải lại sau POST thành công hoặc GET phục hồi trạng thái khác
+metadata. Lỗi tải metadata không xóa report đã nhận. Request/report cũ bị loại
+khi đổi snapshot/binding hoặc identity/session; dùng Auth/WDM client hiện hữu.
+
+Không thêm route, dependency, Auth flow, conversion/mining action hoặc thay đổi
+backend contract. Focused tests gồm validation API/reader, panel và snapshot
+detail. Gate `npm --prefix frontend/test/e2e run test:dataset` từ repo root dùng
+UI build thật, shared Auth, backend và MySQL cô lập, nay gồm cả validation.
+
 Kiểm tra cả navigation và API foundation:
 
 ```powershell

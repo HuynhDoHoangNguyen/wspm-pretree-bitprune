@@ -65,3 +65,32 @@ or ignored local output, with a safe summary recorded in the Dataset contract.
 
 The former `frontend/e2e/` directory moved here at the owner's request. Historical
 reports may reference its previous location; use the commands above for current runs.
+
+WDM-02.6 extends Dataset mode with three validation browser cases, keeping the
+seven existing Dataset cases. The combined RESULT.json gate is labeled
+`WDM-01.8 + WDM-02.6`; its evidence directory retains the existing WDM-01.8 prefix.
+No separate Auth harness or injected application API is served in this mode.
+Cases cover a single bodyless POST, duplicate-click exclusion, committed DB
+report/status, metadata refresh, GET-only reload, raw hash preservation and
+recovery by GET after deliberately losing a real committed POST response.
+Additional flows exercise INVALID UTF-8/empty/unassignable-order outcomes,
+nullable counters and decoder accuracy. Snapshots still originate only through
+the real upload API; only synthetic commercial fixtures are used.
+
+Each run packages/serves the current backend and UI build; packaging with
+skipTests is preparation only. Validation lifecycle is the real accepted backend
+implementation, not mocked responses. Delayed/aborted browser responses are
+test-only transport controls. This does not certify all browsers or establish
+production capacity.
+
+WDM-02.7 adds two API cases through the same real shared Auth/HTTPS/browser
+session and disposable MySQL, bringing Dataset mode to twelve cases. The combined
+label is `WDM-01.8 + WDM-02.6 + WDM-02.7`. Anonymous/customer requests are denied
+before invalid input lookup. PENDING, INVALID and a deliberately corrupted
+VALID-only status are rejected with 409. The sole direct snapshot SQL update is
+that negative corruption fixture; every snapshot originates from actual upload.
+Positive admission uses actual upload -> validation -> conversion POST, checks
+the explicit 503 "Conversion is not available yet.", and verifies unchanged
+metadata/raw and no artifacts beyond raw.csv on repeated requests. A same-size
+raw tamper then produces sanitized admission 503 without changing validation.
+Successful conversion/SPMF remains NOT VERIFIED and belongs to WDM-03.

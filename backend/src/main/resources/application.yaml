@@ -59,6 +59,13 @@ logging:
     org.hibernate.orm.jdbc.bind: "OFF"
 
 wdm:
+  validation:
+    max-record-characters: ${WDM_VALIDATION_MAX_RECORD_CHARACTERS:16384}
+    max-rows: ${WDM_VALIDATION_MAX_ROWS:100000}
+    max-report-bytes: ${WDM_VALIDATION_MAX_REPORT_BYTES:8388608}
+    max-raw-bytes: ${WDM_VALIDATION_MAX_RAW_BYTES:16777216}
+    max-duration-millis: ${WDM_VALIDATION_MAX_DURATION_MILLIS:30000}
+    max-concurrent: ${WDM_VALIDATION_MAX_CONCURRENT:2}
   snapshot-storage:
     root: ${WDM_SNAPSHOT_STORAGE_ROOT:${user.home}/.wspm/snapshots}
   order-export:
