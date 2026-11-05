@@ -35,6 +35,7 @@ interface NavbarChildLink {
 
 const navbarLinks: NavbarLink[] = [
   { link: '/admin/patterns', label: 'Pattern', icon: Box, disableForEmployee: true },
+  { link: '/admin/combos', label: 'Combo', icon: Box, disableForEmployee: true },
   {
     link: '/admin',
     label: 'Trang chủ',
