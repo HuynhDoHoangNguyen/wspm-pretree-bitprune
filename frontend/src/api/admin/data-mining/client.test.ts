@@ -7,7 +7,8 @@ import { WdmAuthAdapter, WdmPage } from './types';
 Object.assign(globalThis, runInThisContext('({ fetch, Headers, Response, FormData, Blob })'));
 
 function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
+  const payload = status >= 200 && status < 300 ? { code: 'SUCCESS', message: 'Request completed successfully.', data: body, requestId: 'req-test' } : body;
+  return new Response(JSON.stringify(payload), { status, headers: { 'Content-Type': 'application/json', ...(status < 300 ? { 'X-Request-Id': 'req-test' } : {}), ...headers } });
 }
 
 describe('WDM API client', () => {
@@ -36,9 +37,17 @@ describe('WDM API client', () => {
   });
 
   it('supports an explicit backend root without retaining port 8085', async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ status: 'UP' }));
-    await createWdmApiClient({ baseUrl: 'http://127.0.0.1:8080/api/', fetchImpl: fetchMock as typeof fetch }).get('/health');
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ status: 'UP' }), { headers: { 'Content-Type': 'application/json' } }));
+    await createWdmApiClient({ baseUrl: 'http://127.0.0.1:8080/api/', fetchImpl: fetchMock as typeof fetch }).get('/health', { responseMode: 'raw-health' });
     expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:8080/api/health');
+  });
+
+  it('rejects legacy business JSON and cannot use health mode to bypass envelope validation', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { headers: { 'Content-Type': 'application/json' } }));
+    await expect(client().get('/v1/admin/mining-runs')).rejects.toMatchObject({ kind: 'response', code: 'INVALID_RESPONSE' });
+    fetchMock.mockClear();
+    await expect(client().get('/v1/admin/mining-runs', { responseMode: 'raw-health' })).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it.each(['//other.example/api', 'ftp://other.example/api', 'https://u:p@example.com/api', '/api?token=x', '/api#x', '/wrong'])('rejects invalid API roots: %s', value => {
@@ -142,7 +151,7 @@ describe('WDM API client', () => {
     controller.abort();
     fetchMock.mockRejectedValue(Object.assign(new Error('aborted'), { name: 'AbortError' }));
     await expect(client().get('/health', { signal: controller.signal })).rejects.toMatchObject({ code: 'REQUEST_ABORTED' });
-    expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal);
+    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
   });
 
   it('serializes JSON bodies once and handles empty 204 responses', async () => {

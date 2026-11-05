@@ -1,0 +1,2 @@
+# CSV fixtures are byte-level contract evidence; preserve BOM/newlines exactly.
+/backend/src/test/resources/wdm/csv-v1/*.csv -text whitespace=cr-at-eol

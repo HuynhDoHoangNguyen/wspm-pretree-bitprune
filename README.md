@@ -94,6 +94,14 @@ Thiếu/sai cấu hình sẽ làm backend startup thất bại. Xem
 [Shared Auth setup](docs/auth/README.md) trước khi chạy. Profile `local` chỉ cấu
 hình HTTP cookie/Origin, không tạo secret, role hoặc tài khoản mặc định. Không cần file key.
 
+WDM snapshot upload lưu file gốc trong `${user.home}/.wspm/snapshots` trên máy
+chạy backend. Có thể đặt `WDM_SNAPSHOT_STORAGE_ROOT=E:/wspm-data/snapshots` trong
+`.env`; dùng đường dẫn tuyệt đối nằm ngoài cây làm việc của ứng dụng. Tài khoản
+chạy backend cần quyền đọc/ghi riêng tại đó. Thư mục được tạo khi upload đầu tiên,
+không được public qua web. Giữ storage và metadata MySQL cùng nhau khi backup;
+đổi cấu hình không tự di chuyển artifact đã lưu. Chi tiết response, giới hạn
+upload và xử lý lỗi: [CSV/snapshot contract](docs/wdm/dataset-csv-contract.md).
+
 > [!IMPORTANT]
 > **Bạn KHÔNG CẦN phải mở MySQL Workbench để chạy script tạo bảng thủ công!**
 > 

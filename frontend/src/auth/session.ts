@@ -112,7 +112,7 @@ export function createAuthSession(api: AuthApi = createAuthApi(), lock: Lock = b
         throw error;
       });
     },
-    unauthorized() { invalidate('anonymous', 'Phiên truy cập bị từ chối. Vui lòng đăng nhập hoặc khôi phục phiên.'); },
+    unauthorized() { invalidate('anonymous', 'Phiên truy cập bị từ chối. Vui lòng đăng nhập lại.'); },
     forbidden() {
       protectedRequests.abort(); protectedRequests = new AbortController();
       useStore.setState({ forbidden: true }); clearListeners.forEach(listener => listener());
@@ -134,7 +134,7 @@ export function createAuthSession(api: AuthApi = createAuthApi(), lock: Lock = b
     receive(event: unknown) {
       const message = event as SessionEvent | null;
       if (message && message.source !== source && ['identity-changed', 'logout-requested', 'logout'].includes(message.kind)) {
-        invalidate('anonymous', message.kind === 'identity-changed' ? 'Tài khoản đã thay đổi ở tab khác. Hãy khôi phục phiên để tiếp tục.' : null);
+        invalidate('anonymous', message.kind === 'identity-changed' ? 'Tài khoản đã thay đổi ở tab khác. Vui lòng đăng nhập lại để tiếp tục.' : null);
       }
     },
     stop() { started = false; invalidate('bootstrapping'); broadcast = undefined; },

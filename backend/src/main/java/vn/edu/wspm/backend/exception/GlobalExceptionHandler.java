@@ -21,6 +21,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 
 import vn.edu.wspm.backend.common.api.ApiErrorResponse;
 import vn.edu.wspm.backend.common.api.FieldErrorDetail;
@@ -55,6 +57,13 @@ public class GlobalExceptionHandler {
     private ApplicationException translate(
             Exception exception, HttpServletRequest request, HttpServletResponse response) {
         if (exception instanceof ApplicationException known) return known;
+        if (exception instanceof MaxUploadSizeExceededException) {
+            return new ApplicationException(ErrorCode.PAYLOAD_TOO_LARGE,
+                    "Upload exceeds configured file or request limits.");
+        }
+        if (exception instanceof MultipartException) {
+            return new ApplicationException(ErrorCode.MALFORMED_REQUEST);
+        }
         if (exception instanceof MethodArgumentNotValidException validation) {
             List<FieldErrorDetail> details =
                     validation.getBindingResult().getFieldErrors().stream()

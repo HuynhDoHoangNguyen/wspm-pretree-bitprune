@@ -29,8 +29,10 @@ it.each([null, { status: 'UP', service: 'other-backend' }, { status: 'DOWN', ser
 });
 
 it('uses the installed shared Auth adapter and supports detaching it', async () => {
-  const mock = jest.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('{}', {
-    headers: { 'Content-Type': 'application/json' },
+  const mock = jest.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
+    code: 'SUCCESS', message: 'Request completed successfully.', data: {}, requestId: 'test-id',
+  }), {
+    headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'test-id' },
   }));
   setWdmAuthAdapter({ getAccessToken: () => 'provided-by-shared-auth' });
   await wdmApi.get('/v1/admin/mining-runs');

@@ -1,15 +1,15 @@
 import React from 'react';
 import { Stack, Text } from '@mantine/core';
 import { NavLink } from 'react-router-dom';
-import useAdminAuthStore from 'stores/use-admin-auth-store';
+import { useSharedAuth } from 'auth/session';
 import useDefaultNavbarStyles from 'components/DefaultNavbar/DefaultNavbar.styles';
 import { hasDataMiningAdminAccess } from './access';
 import { dataMiningPages } from './routes';
 
 export default function DataMiningNavigation() {
-  const { user } = useAdminAuthStore();
+  const { user, status, forbidden } = useSharedAuth();
   const { classes, cx } = useDefaultNavbarStyles();
-  if (!hasDataMiningAdminAccess(user)) return null;
+  if (status !== 'authenticated' || forbidden || !hasDataMiningAdminAccess(user)) return null;
 
   return (
     <nav aria-label="Dữ liệu & Khai phá">

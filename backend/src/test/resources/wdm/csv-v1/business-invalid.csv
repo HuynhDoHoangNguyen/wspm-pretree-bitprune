@@ -1,0 +1,6 @@
+order_id,order_item_id,customer_code,ordered_at,status,product_id,sku_snapshot,product_name_snapshot,quantity,list_unit_price,allocated_discount_amount,line_total,currency_code
+order-unknown,101,anon-A,2026-11-01T00:00:00.000000Z,COMPLETED,product-missing,LAP-OLD,Laptop lich su,1,100.00,0.00,100.00,VND
+order-conflict,102,anon-A,2026-11-01T00:00:00.000000Z,COMPLETED,product-laptop,LAP-OLD,Laptop lich su,1,100.00,0.00,100.00,VND
+order-conflict,103,anon-B,2026-11-01T00:00:00.000000Z,COMPLETED,product-laptop,LAP-OLD,Laptop lich su,1,100.00,0.00,100.00,VND
+order-duplicate,104,anon-A,2026-11-01T00:00:00.000000Z,COMPLETED,product-laptop,LAP-OLD,Laptop lich su,1,100.00,0.00,100.00,VND
+order-duplicate,104,anon-A,2026-11-01T00:00:00.000000Z,COMPLETED,product-laptop,LAP-OLD,Laptop lich su,1,100.00,0.00,100.00,VND

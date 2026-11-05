@@ -1,5 +1,6 @@
 import { createWdmApiClient, WdmApiError } from './client';
 import { WdmAuthAdapter } from './types';
+import { createDatasetApi } from './datasets';
 
 let authAdapter: WdmAuthAdapter | null = null;
 
@@ -13,6 +14,9 @@ export const wdmApi = createWdmApiClient({
   getAuthAdapter: () => authAdapter,
 });
 
+export const datasetApi = createDatasetApi(wdmApi);
+export type { DatasetSnapshotResponse, SnapshotDetail } from './types';
+
 export interface BackendHealth {
   status: 'UP';
   service: 'wspm-backend';
@@ -20,7 +24,7 @@ export interface BackendHealth {
 
 /** Existing public backend endpoint; no dependency on the future WDM/Admin endpoints. */
 export async function getBackendHealth(): Promise<BackendHealth> {
-  const health = await wdmApi.get<BackendHealth>('/health', { auth: false });
+  const health = await wdmApi.get<BackendHealth>('/health', { auth: false, responseMode: 'raw-health' });
   if (!health || health.status !== 'UP' || health.service !== 'wspm-backend') {
     throw new WdmApiError('response', 200, 'INVALID_HEALTH_RESPONSE', 'Unexpected backend health response.');
   }

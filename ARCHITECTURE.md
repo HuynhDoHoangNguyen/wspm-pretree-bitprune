@@ -156,9 +156,21 @@ session identity and requires exact DB role ADMIN: absent/invalid credentials
 return 401, eligible non-ADMIN returns 403, eligible ADMIN reaches the export.
 HTTP/Auth/export integration is tested with disposable MySQL. AUTH-06 additionally
 verifies Edge UI/session/cookies, concurrency and actual CSV file download through
-a test-only harness using the production WDM client. Dataset business UI remains
-pending. The exact CSV/filter
+a test-only harness using the production WDM client. Dataset business UI is
+implemented in WDM-01.6/01.7; WDM-01.8 verifies its browser/API/DB flow. The exact CSV/filter
 contract and test evidence are in [dataset-csv-contract.md](docs/wdm/dataset-csv-contract.md).
+
+`POST /api/v1/admin/dataset-snapshots` now acquires a CSV snapshot after the
+same ADMIN guard and multipart transport checks. `services/dataset` streams
+original bytes to an exclusively allocated UUID directory, computes SHA-256,
+and commits acquisition metadata through `repositories/dataset` before HTTP 201.
+The public DTO in `dto/dataset` exposes PENDING acquisition metadata without
+internal paths or computed sequence statistics. Storage is external to the
+application working tree and has no static resource mapping. DB rollback before
+the commit phase cleans only the current request's owned artifact; once the commit
+phase begins, an uncertain outcome keeps it for
+manual reconciliation. Storage and MySQL do not share an atomic transaction.
+Validation and SPMF conversion remain later WDM tasks.
 
 Business JSON success responses are explicit `ApiResponse<T>` values containing
 `code`, `message`, `data`, `requestId`; the HTTP status remains authoritative.
@@ -226,16 +238,59 @@ Only GET /health may opt into raw-health JSON mode; downloads retain the Blob
 path. This backend/frontend wire change is coordinated, without dual-format
 fallbacks. Existing legacy port-8085 clients are not silently redirected.
 
+Within the Dataset API slice, `datasets.ts` owns request paths/methods and file
+transport, while `dataset-response.ts` validates and projects the receipt/detail
+wire shapes. Shared primitive checks preserve canonical IDs, UTC timestamps,
+SHA-256 and exact string counts without weakening unknown/PENDING handling.
+
+Shared Auth UI resolves login destinations from verified roles: ADMIN reaches
+`/admin/datasets` from either sign-in form, CUSTOMER reaches the public home.
+Client/Admin headers expose same-session navigation links; `auth/useSignOut`
+centralizes notification and replacement navigation to `/` for every product
+logout entry, including an unconfirmed server logout. Public browsing remains
+available without identity; private account/order data stays guarded and commerce
+legacy APIs are not enabled by these UI changes. Paper-wrapped forms render local
+and whitelisted server field errors, with explicit password error accessibility.
+Password confirmation is UI-only; registration keeps the four-field API DTO.
+Manual recovery controls are replaced by sign-in/home links; automatic refresh
+and the session's token/cookie/cancellation/role enforcement remain unchanged.
+
 Admin Data & Mining pages live in `frontend/src/pages/admin/data-mining/`, with
 routes `/admin/datasets`, `/admin/mining-runs` and `/admin/patterns`. They reuse the
-existing Admin shell and have UI-only ADMIN role guards. The pages currently show
-feature availability rather than fabricated business data; shared frontend Auth
-is integrated, while dataset upload/mining business APIs remain pending. The backend
+existing Admin shell and have UI-only ADMIN role guards. The Dataset page now
+provides period CSV export and multipart snapshot acquisition using the real WDM
+client contracts. Its calendar uses explicit fixed UTC+07 bounds, downloads
+CSV Blobs and shows only verified 201 PENDING acquisition receipts. The other
+two pages remain availability skeletons; validation/conversion and mining UI
+are pending. Shared frontend Auth is integrated. The backend
 order export is protected by shared Auth/ADMIN independently of this UI guard.
 Frontend module tests and isolated real HTTP/CSV integration are covered in
-AUTH-05. `frontend/e2e/` owns AUTH-06's separate browser runner, disposable MySQL/
+AUTH-05. `frontend/test/e2e/` owns AUTH-06's separate browser runner, disposable MySQL/
 Spring setup, HTTPS test reverse proxy and test-only harness. Edge checks include
 HttpOnly/Secure cookie handling, two-tab refresh/logout and downloaded CSV content.
+WDM-01.6 adds mocked-HTTP UI/API tests for the Dataset forms and preserves
+request cancellation/no POST replay. The new business UI's real browser/API/DB
+gate is implemented in WDM-01.8 using the application build and real routes;
+historical AUTH-06 harness evidence remains separate.
+
+WDM-01.7 adds `/admin/datasets/:snapshotId` and a link from the successful upload
+receipt. It reads explicit metadata from GET `/api/v1/admin/dataset-snapshots/{id}`
+and downloads only original CSV from GET `.../{id}/artifacts/raw`, both behind
+the shared ADMIN guard. `SnapshotReadService` projects approved public fields;
+unknown provenance/status metadata stays null and uncomputed sequence counts
+remain hidden. `RawSnapshotStorage` probes availability without creating files,
+then bounds and verifies exact size/SHA-256 into a byte buffer before a download
+response is committed. Missing raw does not hide existing snapshot metadata.
+No list, validation, conversion or mining actions are added. WDM-01.8 verifies
+the full Dataset flow in Edge with disposable MySQL and an external temporary
+storage root. It found and fixed the Admin shell's missing detail-route allowance;
+an App regression now traverses the real Admin shell for a snapshot deep URL.
+`frontend/test/e2e/` holds the relocated Auth gate and independent Dataset cases
+using shared infrastructure. Dataset mode does not serve the Auth harness.
+The gate checks exact CSV/UTC+07 bounds, one real upload/commit, independent SQL/
+file/hash evidence, detail reload/raw download, authorization/transport failures,
+missing/tampered raw, duplicate submit and logout cancellation. Technical checks
+pass; owner acceptance is recorded separately in the checklist.
 CRA health forwarding is separately verified with a loopback host allowlist and
 owned port-8080 bridge. No E2E routes/hooks are shipped in the application bundle.
 Other browser engines, real production deployment and export-capacity benchmarks
@@ -261,6 +316,7 @@ are not established by this gate; owner acceptance is recorded in the checklist.
 | MySQL host binding | `127.0.0.1:3307` |
 | MySQL container port | `3306` |
 | MySQL volume | `wspm_mysql_data` |
+| Raw snapshot storage | `${user.home}/.wspm/snapshots`, configurable with `WDM_SNAPSHOT_STORAGE_ROOT` |
 
 ## Documentation ownership
 

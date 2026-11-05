@@ -2,23 +2,23 @@ import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter, Outlet, Route, Routes, useNavigate } from 'react-router-dom';
-import useAdminAuthStore from 'stores/use-admin-auth-store';
+import { useSharedAuth } from 'auth/session';
 import useAppStore from 'stores/use-app-store';
 import { DefaultNavbar } from 'components/DefaultNavbar/DefaultNavbar';
 import DataMiningNavigation from './DataMiningNavigation';
 import { createDataMiningRoutes, dataMiningPages, isDataMiningPath } from './routes';
 import { hasDataMiningAdminAccess } from './access';
 
-jest.mock('stores/use-admin-auth-store', () => ({ __esModule: true, default: jest.fn() }));
+jest.mock('auth/session', () => ({ useSharedAuth: jest.fn() }));
 jest.mock('stores/use-app-store', () => ({ __esModule: true, default: jest.fn() }));
 
-const authStore = useAdminAuthStore as jest.Mock;
+const authStore = useSharedAuth as unknown as jest.Mock;
 const appStore = useAppStore as jest.Mock;
-const admin = { roles: [{ code: 'ADMIN' }] };
+const admin = { roles: ['ADMIN'] };
 const fetchMock = jest.fn();
 
 function setIdentity(user: Parameters<typeof hasDataMiningAdminAccess>[0]) {
-  authStore.mockReturnValue({ user, isOnlyEmployee: () => !!user && !hasDataMiningAdminAccess(user) });
+  authStore.mockReturnValue({ user, status: user ? 'authenticated' : 'anonymous', forbidden: false });
 }
 
 function HistoryButtons() {
@@ -70,7 +70,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  // Skeleton pages must not pretend that a missing business API is already wired.
+  // Navigation/page mount never triggers business export/upload requests.
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
@@ -81,7 +81,7 @@ describe('Admin Data & Mining navigation', () => {
     expect(screen.getByRole('heading', { level: 2, name: label })).toBeInTheDocument();
     expect(within(nav).getByRole('link', { name: label })).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getAllByRole('link')).toHaveLength(3);
-    expect(screen.getByText('Chức năng đang được chuẩn bị')).toBeInTheDocument();
+    expect(screen.queryByText('Chức năng đang được chuẩn bị') !== null).toBe(path !== '/admin/datasets');
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.queryByText(/không có dữ liệu/i)).not.toBeInTheDocument();
   });
@@ -118,7 +118,7 @@ describe('Admin Data & Mining navigation', () => {
     expect(screen.getByRole('link', { name: 'Mẫu khai phá' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it.each([null, { roles: [] }, { roles: [{ code: 'EMPLOYEE' }] }, { roles: [{ code: 'ROLE_ADMIN' }] }])('hides the menu and denies direct page access without the exact Admin UI role', user => {
+  it.each([null, { roles: [] }, { roles: ['EMPLOYEE'] }, { roles: ['ROLE_ADMIN'] }])('hides the menu and denies direct page access without the exact Admin UI role', user => {
     setIdentity(user);
     render(<Feature entries={['/admin/patterns']}/>);
     expect(screen.queryByRole('navigation', { name: 'Dữ liệu & Khai phá' })).not.toBeInTheDocument();
@@ -128,7 +128,7 @@ describe('Admin Data & Mining navigation', () => {
 
   it('removes menu and page access when the shared UI identity loses the Admin role', () => {
     const view = render(<Feature/>);
-    setIdentity({ roles: [{ code: 'EMPLOYEE' }] });
+    setIdentity({ roles: ['EMPLOYEE'] });
     view.rerender(<Feature/>);
     expect(screen.queryByRole('navigation', { name: 'Dữ liệu & Khai phá' })).not.toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Không có quyền truy cập');
@@ -144,7 +144,7 @@ describe('Admin Data & Mining navigation', () => {
   });
 
   it('does not add WDM navigation to the legacy navbar for a non-Admin', () => {
-    setIdentity({ roles: [{ code: 'EMPLOYEE' }] });
+    setIdentity({ roles: ['EMPLOYEE'] });
     render(<Feature entries={['/admin']} fullNavbar/>);
     expect(screen.queryByRole('navigation', { name: 'Dữ liệu & Khai phá' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Đơn hàng' })).toHaveAttribute('href', '/admin/order');
@@ -159,11 +159,11 @@ describe('Admin Data & Mining navigation', () => {
 });
 
 describe('Admin UI access predicate', () => {
-  it.each([undefined, null, {}, { roles: null }, { roles: [] }, { roles: [{}] }, { roles: [{ code: 'admin' }] }])('fails closed for missing or unrelated role data', identity => {
+  it.each([undefined, null, {}, { roles: null }, { roles: [] }, { roles: [{}] }, { roles: ['admin'] }])('fails closed for missing or unrelated role data', identity => {
     expect(hasDataMiningAdminAccess(identity)).toBe(false);
   });
 
   it('allows the exact role even when another role is also present', () => {
-    expect(hasDataMiningAdminAccess({ roles: [{ code: 'EMPLOYEE' }, { code: 'ADMIN' }] })).toBe(true);
+    expect(hasDataMiningAdminAccess({ roles: ['EMPLOYEE', 'ADMIN'] })).toBe(true);
   });
 });
