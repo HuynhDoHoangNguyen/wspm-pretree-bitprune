@@ -86,3 +86,10 @@ yarn-error.log*
 
 # Backend runtime uploads
 /backend/uploads/
+
+# E2E source is versioned; generated evidence and browser credentials are local.
+/frontend/test/e2e/test-results/
+/frontend/test/e2e/playwright-report/
+/frontend/test/e2e/downloads/
+/frontend/test/e2e/playwright/.auth/
+/frontend/test/e2e/.auth/

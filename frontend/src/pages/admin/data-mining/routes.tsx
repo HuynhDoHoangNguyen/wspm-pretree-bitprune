@@ -6,6 +6,7 @@ import DataMiningGuard from './DataMiningGuard';
 import DatasetsPage from './DatasetsPage';
 import MiningRunsPage from './MiningRunsPage';
 import PatternsPage from './PatternsPage';
+import SnapshotDetailPage from './SnapshotDetailPage';
 
 export const dataMiningPages = [
   { path: ManagerPath.DATASETS, label: 'Dữ liệu khai phá', Component: DatasetsPage, Icon: Database },
@@ -19,11 +20,13 @@ export function isDataMiningPath(pathname: string): boolean {
 
 /** Return actual Route elements so React Router and tests consume the same configuration. */
 export function createDataMiningRoutes() {
-  return dataMiningPages.map(({ path, Component }) => (
+  return [...dataMiningPages.map(({ path, Component }) => (
     <Route key={path} path={path} element={(
       <DataMiningGuard>
         <Component/>
       </DataMiningGuard>
     )}/>
-  ));
+  )), <Route key="snapshot-detail" path={ManagerPath.DATASETS + '/:snapshotId'} element={(
+    <DataMiningGuard><SnapshotDetailPage/></DataMiningGuard>
+  )}/>];
 }

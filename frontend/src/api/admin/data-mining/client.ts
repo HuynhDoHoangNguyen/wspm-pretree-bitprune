@@ -1,4 +1,5 @@
-import { WdmAuthAdapter, WdmErrorResponse, WdmQuery, WdmValidationDetail } from './types';
+import { isApiErrorResponse, unwrapApiResponse } from 'api/common/response';
+import { WdmAuthAdapter, WdmQuery, WdmValidationDetail } from './types';
 
 export class WdmApiError extends Error {
   constructor(
@@ -16,6 +17,8 @@ export class WdmApiError extends Error {
 }
 
 export interface WdmRequestOptions {
+  expectedStatus?: number;
+  responseMode?: 'envelope' | 'raw-health';
   query?: WdmQuery;
   signal?: AbortSignal;
   /** Public endpoints such as health deliberately do not send the Admin token. */
@@ -33,6 +36,7 @@ export interface WdmDownload {
   blob: Blob;
   contentType: string | null;
   contentDisposition: string | null;
+  requestId: string | null;
 }
 
 export function normalizeWdmBaseUrl(value = '/api'): string {
@@ -47,16 +51,6 @@ export function normalizeWdmBaseUrl(value = '/api'): string {
     throw new Error('WDM API base URL must be an HTTP(S) URL or relative path ending in /api.');
   }
   return base;
-}
-
-function isErrorResponse(value: unknown, status: number): value is WdmErrorResponse {
-  if (!value || typeof value !== 'object') return false;
-  const error = value as WdmErrorResponse;
-  return error.status === status && typeof error.code === 'string'
-    && typeof error.message === 'string' && typeof error.path === 'string'
-    && typeof error.requestId === 'string' && Array.isArray(error.details)
-    && error.details.every(detail => detail && typeof detail.field === 'string'
-      && typeof detail.code === 'string' && typeof detail.message === 'string');
 }
 
 function notifyAuth(adapter: WdmAuthAdapter | null, status: number): void {
@@ -94,8 +88,16 @@ export function createWdmApiClient(options: ClientOptions = {}) {
     requestOptions: WdmRequestOptions,
     download = false
   ): Promise<T> {
+    if (requestOptions.responseMode === 'raw-health' && (path !== '/health' || method !== 'GET')) {
+      throw new Error('Raw JSON mode is restricted to GET /health.');
+    }
     const url = urlFor(path, requestOptions.query);
     const adapter = requestOptions.auth === false ? null : options.getAuthAdapter?.() || null;
+    const sessionSignal = adapter?.getSessionSignal?.();
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    const signals = [requestOptions.signal, sessionSignal].filter((signal): signal is AbortSignal => !!signal);
+    signals.forEach(signal => { if (signal.aborted) abort(); else signal.addEventListener('abort', abort); });
     const token = adapter?.getAccessToken()?.trim();
     const headers = new Headers({ Accept: download ? '*/*' : 'application/json' });
     if (token) headers.set('Authorization', 'Bearer ' + token);
@@ -105,27 +107,35 @@ export function createWdmApiClient(options: ClientOptions = {}) {
 
     try {
       const response = await (options.fetchImpl || fetch)(url, {
-        method, headers, body: payload, signal: requestOptions.signal, credentials: 'omit',
+        method, headers, body: payload, signal: controller.signal, credentials: 'omit',
       });
       const requestId = response.headers.get('X-Request-Id');
-      if (!response.ok) notifyAuth(adapter, response.status);
+      if (controller.signal.aborted) throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
+      if (response.ok && requestOptions.expectedStatus !== undefined && response.status !== requestOptions.expectedStatus) {
+        throw new WdmApiError('response', response.status, 'INVALID_RESPONSE', 'API returned an unexpected success status.', requestId);
+      }
       if (response.ok && download) {
+        const blob = await response.blob();
+        if (controller.signal.aborted) throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
         return {
-          blob: await response.blob(),
+          blob,
           contentType: response.headers.get('Content-Type'),
           contentDisposition: response.headers.get('Content-Disposition'),
+          requestId,
         } as unknown as T;
       }
       if (response.ok && response.status === 204) return undefined as unknown as T;
 
       const text = await response.text();
+      if (response.ok && controller.signal.aborted) throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
       const jsonContent = /\bapplication\/(?:[\w.-]+\+)?json\b/i.test(response.headers.get('Content-Type') || '');
       let data: unknown;
       if (jsonContent) {
         try { data = JSON.parse(text); } catch { /* handled below without leaking the raw body */ }
       }
       if (!response.ok) {
-        if (isErrorResponse(data, response.status)) {
+        notifyAuth(adapter, response.status); // Parse first so session abort does not hide the original denial.
+        if (isApiErrorResponse(data, response.status)) {
           throw new WdmApiError('http', response.status, data.code, data.message,
             requestId || data.requestId, data.details);
         }
@@ -136,13 +146,17 @@ export function createWdmApiClient(options: ClientOptions = {}) {
         throw new WdmApiError('response', response.status, 'INVALID_RESPONSE',
           'API returned an invalid JSON response.', requestId);
       }
-      return data as T;
+      if (requestOptions.responseMode === 'raw-health') return data as T;
+      try { return unwrapApiResponse<T>(data, requestId); }
+      catch { throw new WdmApiError('response', response.status, 'INVALID_RESPONSE', 'API returned an invalid response envelope.', requestId); }
     } catch (error) {
       if (error instanceof WdmApiError) throw error;
-      if (requestOptions.signal?.aborted || (error instanceof Error && error.name === 'AbortError')) {
+      if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
         throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
       }
       throw new WdmApiError('network', null, 'NETWORK_ERROR', 'Unable to connect to the API.');
+    } finally {
+      signals.forEach(signal => signal.removeEventListener('abort', abort));
     }
   }
 

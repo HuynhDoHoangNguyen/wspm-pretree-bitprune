@@ -73,6 +73,7 @@ AUTH_JWT_SECRET=<secret Base64 sinh ở bước 2>
 AUTH_JWT_ISSUER=http://localhost:8080
 AUTH_JWT_KEY_ID=wspm-local-1
 AUTH_COOKIE_SECURE=false
+AUTH_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 AUTH_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,http://127.0.0.1:8080
 ~~~
 
@@ -267,6 +268,7 @@ Sau khi test, gửi kết quả các dòng PASS/FAIL và lỗi có requestId n�
 | Backend không startup | Đúng JDK, MySQL; các AUTH_* trong .env không trống; AUTH_JWT_SECRET là Base64 ít nhất 32 byte, issuer/kid đúng; không có override cũ trong shell |
 | Register 503 | Role CUSTOMER có tồn tại đúng casing không; storage có sẵn không |
 | Login 401 | Dùng username; đúng mật khẩu/host; account ACTIVE |
+| Auth POST 403 CSRF_REJECTED | Origin chính xác port 3000; cookie HTTP local không bật Secure; không trộn host |
 | Auth POST 403 CSRF_REJECTED | Origin hợp lệ port 3000 hoặc qua CRA proxy (port 8080); cookie HTTP local không bật Secure; không trộn host |
 | UI báo API khác origin | WDM API root=/api; restart frontend sau khi đổi env |
 | CUSTOMER không vào Admin | Đúng chính sách; cấp ADMIN riêng cho account mục tiêu |
@@ -420,7 +422,7 @@ Baseline lưu status/HEAD/hash và runner run-baseline.mjs trong api-refactor.
 Không xoá bằng chứng chỉ vì tài liệu đã gom.
 
 Kiểm tra lại automated gate cần đúng môi trường biệt lập. Runner hiện tại
-frontend/e2e/run.mjs tạo container MySQL, key/TLS tạm, chạy app/browser và dọn
+frontend/test/e2e/run.mjs tạo container MySQL, key/TLS tạm, chạy app/browser và dọn
 tài nguyên nó sở hữu; không ghi fixtures vào DB phát triển. Full-context backend
 tests phải có datasource và key test tường minh, không chạy bằng default dev DB.
 Từ repo root, sau khi build backend và frontend tương ứng, có thể dùng:
@@ -428,7 +430,7 @@ Từ repo root, sau khi build backend và frontend tương ứng, có thể dùn
 ~~~powershell
 $env:AUTH06_REGRESSION = '1'
 $env:AUTH_E2E_LOG_DIR = '.agent-workspace/api-refactor/browser'
-node frontend/e2e/run.mjs
+node frontend/test/e2e/run.mjs
 ~~~
 
 Runner yêu cầu dependency e2e đã cài; xem [frontend README](../../frontend/README.md)
@@ -436,10 +438,16 @@ cho lệnh cài/build và điều kiện browser. Chọn thư mục log mới n�
 lượt kiểm chứng khác; không ghi đè evidence đã chọn giữ.
 
 <a id="commit-boundary"></a>
-## 5. Phạm vi commit sau khi chủ dự án test tay
+## 5. Phạm vi commit và tích hợp
 
-**Chưa stage/commit trong lượt tài liệu này.** Chỉ chuẩn bị commit sau khi chủ
-dự án báo kết quả test. Không dùng git add . hoặc stage cả backend/frontend.
+**Checkpoint lịch sử trước khi owner cho phép tích hợp:** chỉ chuẩn bị commit sau
+khi chủ dự án báo kết quả test. Không dùng git add . hoặc stage cả backend/frontend.
+Owner sau đó đã yêu cầu review/refactor WDM-01, commit và merge vào
+`experiment/combo-recommendation-web`; đồng thời yêu cầu push cả `.env.example`
+và `.vscode/launch.json`. Phạm vi tích hợp hiện gồm WDM-01 và follow-up Auth UI
+đã triển khai cùng các test/docs liên quan. Bảng tách nhóm dưới đây lưu kế hoạch
+cũ trước quyền tích hợp này; không còn là yêu cầu hoãn WDM-01. Staging vẫn dùng
+danh sách file cụ thể, loại `frontend/.env`, keys/logs/build và dependencies.
 
 | Nhóm | Cách xử lý dự kiến khi chuẩn bị commit |
 |---|---|
@@ -459,3 +467,66 @@ lập được, báo dependency thay vì đưa lén WDM-01 vào commit.
 
 Không thay mining-core, V1/V2 hoặc semantics threshold vì dọn/tách Auth.
 R6 và exact-real comparator equivalence vẫn mở như trước.
+
+## 6. Follow-up Auth UI và điều hướng Admin–Client (2026-11-05)
+
+Owner đã chấp thuận kế hoạch chỉnh UI/điều hướng; đây không phải thay đổi API Auth,
+schema, quyền truy cập hoặc lifecycle token/cookie. Sau `/me` thành công, đăng nhập
+ở Client hay Admin đều dùng role hiện tại: ADMIN → `/admin/datasets`, CUSTOMER → `/`.
+Header Client có Trang quản trị khi có ADMIN; header Admin có Về cửa hàng trong
+cùng tab và cùng session, không truyền token trên URL. Shortcut cũ cũng tuân theo
+role hiện tại thay vì hiển thị Admin cho mọi người.
+
+Các điểm logout trên hai header, màn hình từ chối Admin và shortcut dùng chung
+`useSignOut`. Session owner vẫn xóa truy cập cục bộ/cache và hủy protected requests
+trước khi gọi server; UI cuối cùng đi về `/` cả khi server thất bại, kèm thông báo
+chưa xác nhận logout. Mất phiên trên `/user` không giữ access wall. Trang Client
+công khai vẫn cho khách xem; tài khoản/lịch sử đơn riêng tư không trở thành public.
+`/cart` guest hiện đi tới đăng nhập; guest cart/checkout/order API legacy không được
+triển khai hay tuyên bố hoạt động trong slice này.
+
+Sign-in/signup dùng Paper có viền và bố cục responsive, validation từng field,
+thông báo dưới ô và focus sau khi field được bật lại. Login không áp chính sách
+độ dài của mật khẩu mới lên mật khẩu hiện có. Signup giữ chính sách đã chốt
+(codepoint/72-byte UTF-8/không trim), thêm xác nhận mật khẩu so sánh nguyên chuỗi;
+chỉ bốn field cũ được gửi lên API. Bỏ nhãn CUSTOMER; form Admin không có đăng ký,
+Client giữ link Đăng ký. API 400 chỉ giữ field name whitelist, bỏ raw detail text;
+401 đánh dấu nhóm credentials và 409 đánh dấu cả username/email bằng thông báo chung,
+không suy đoán trường nào sai/trùng. Network/5xx không làm input đỏ.
+
+Không còn nút Khôi phục phiên trên UI. AuthGate có Đăng nhập lại và Về cửa hàng;
+bootstrap/refresh nền và các primitive restore/checkIdentity vẫn giữ cho session.
+Không gọi protected legacy APIs, tạo profile số hoặc nới backend guard để phục vụ UI.
+
+Technical verification PASS, chờ owner review cho follow-up UI:
+
+| Kiểm tra | Kết quả |
+|---|---|
+| Full frontend `CI=true npm test -- --watchAll=false --runInBand` | 199 PASS, 2 existing live opt-in SKIPPED, 14 passing suites |
+| Final focused forms / final navigation | 13/13 PASS / 8/8 PASS qua App và hai header thật; catalog widget mock được phân biệt với browser evidence |
+| TypeScript, focused ESLint, node syntax, git diff --check | PASS |
+| Normal frontend build | PASS; inherited non-Auth warnings và Browserslist notice vẫn còn |
+| Real Auth Edge browser/MySQL | 12/12 PASS, exit 0; `.agent-workspace/phase-wdm/AUTH-06-sNhVNc/` |
+| Real Dataset browser/API/DB regression | 7/7 PASS, exit 0; `.agent-workspace/phase-wdm/WDM-01.8-cnT0Fc/RESULT.json` |
+| CRA proxy | NOT VERIFIED lần này vì cổng 8080 đang có dịch vụ; giữ nguyên process của owner |
+| Cleanup | Runner dọn tài nguyên sở hữu; docker chỉ còn wspm-mysql; không xóa evidence cũ |
+
+Browser cases bổ sung xác nhận mật khẩu/validation dưới field và form 375 px,
+ADMIN login từ Client, nút chuyển hai giao diện, CUSTOMER logout từ /user về /,
+và đăng nhập lại sau lỗi phiên thay cho manual recovery. Test credentials chỉ nằm
+trong disposable DB. Gate Dataset tiếp tục kiểm BOM/tiếng Việt, raw bytes/SHA và
+logout hủy response trễ. Backend API/SQL/migration/dependencies không đổi nên
+không chạy lại Maven; không dùng kết quả Maven lịch sử làm test mới của lượt này.
+
+Browser phát hiện Tooltip bọc menu control của Mantine 4 tạo nested button roles;
+đã đổi control thành một UnstyledButton có menuButtonLabel. PasswordInput được gắn
+aria-invalid/error description rõ ràng, và field lỗi server chỉ được focus sau
+khi hết busy. Các assertion role/visibility/mismatch/authorization được giữ; những
+run lỗi được giữ riêng. JSDOM navigation queries được giới hạn theo landmark/text
+thực tế của Mantine 4 để tránh dò CSS toàn bộ Admin shell; final focused test PASS.
+
+Tạo hai file `auth/useSignOut.ts`, `auth/navigation.test.tsx`; sửa 18 file hiện có
+trong slice runtime/tests/E2E/docs/checklist, không xóa source. Backend đang chạy,
+frontend .env và các thay đổi có sẵn được giữ nguyên. Không ghi DB dev hoặc
+stage/commit/push/merge. Cross-browser, production deployment, audit accessibility
+đầy đủ và API commerce legacy vẫn NOT VERIFIED/ngoài phạm vi; WDM-02 chưa bắt đầu.

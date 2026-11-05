@@ -1,0 +1,145 @@
+{
+  "contractVersion": "wdm-order-csv-v1",
+  "csvFiles": [
+    "valid.csv",
+    "empty.csv",
+    "business-invalid.csv"
+  ],
+  "catalogProductIds": [
+    "product-laptop",
+    "product-mouse",
+    "product-bag"
+  ],
+  "valid": {
+    "rowCount": 5,
+    "orderCount": 3,
+    "customerCount": 2,
+    "orderedLineIds": [
+      "9",
+      "10",
+      "9007199254740993",
+      "9007199254740994",
+      "9007199254740995"
+    ],
+    "sameTimestampOrderIds": [
+      "order-a",
+      "order-b"
+    ],
+    "specialLineId": "9",
+    "specialProductName": "Laptop Việt, \"bản cũ\"\r\nDòng thứ hai",
+    "formulaLikeSku": "=OLD-SKU"
+  },
+  "period": {
+    "fromTime": "2026-11-01T00:00:00.000000Z",
+    "toTime": "2026-11-02T00:00:00.000000Z",
+    "sourceOrders": [
+      {
+        "orderId": "before",
+        "status": "COMPLETED",
+        "orderedAt": "2026-10-31T23:59:59.999999Z",
+        "completedAt": "2026-11-01T12:00:00.000000Z"
+      },
+      {
+        "orderId": "order-a",
+        "status": "COMPLETED",
+        "orderedAt": "2026-11-01T00:00:00.000000Z",
+        "completedAt": "2026-11-03T00:00:00.000000Z"
+      },
+      {
+        "orderId": "order-b",
+        "status": "COMPLETED",
+        "orderedAt": "2026-11-01T00:00:00.000000Z",
+        "completedAt": "2026-11-01T10:00:00.000000Z"
+      },
+      {
+        "orderId": "order-c",
+        "status": "COMPLETED",
+        "orderedAt": "2026-11-01T23:59:59.999999Z",
+        "completedAt": "2026-11-03T00:00:00.000000Z"
+      },
+      {
+        "orderId": "at-end",
+        "status": "COMPLETED",
+        "orderedAt": "2026-11-02T00:00:00.000000Z",
+        "completedAt": "2026-11-02T12:00:00.000000Z"
+      },
+      {
+        "orderId": "excluded-pending_payment",
+        "status": "PENDING_PAYMENT",
+        "orderedAt": "2026-11-01T12:00:00.000000Z",
+        "completedAt": null
+      },
+      {
+        "orderId": "excluded-paid",
+        "status": "PAID",
+        "orderedAt": "2026-11-01T12:00:00.000000Z",
+        "completedAt": null
+      },
+      {
+        "orderId": "excluded-processing",
+        "status": "PROCESSING",
+        "orderedAt": "2026-11-01T12:00:00.000000Z",
+        "completedAt": null
+      },
+      {
+        "orderId": "excluded-cancelled",
+        "status": "CANCELLED",
+        "orderedAt": "2026-11-01T12:00:00.000000Z",
+        "completedAt": null
+      },
+      {
+        "orderId": "excluded-expired",
+        "status": "EXPIRED",
+        "orderedAt": "2026-11-01T12:00:00.000000Z",
+        "completedAt": null
+      },
+      {
+        "orderId": "excluded-returned",
+        "status": "RETURNED",
+        "orderedAt": "2026-11-01T12:00:00.000000Z",
+        "completedAt": null
+      },
+      {
+        "orderId": "excluded-refunded",
+        "status": "REFUNDED",
+        "orderedAt": "2026-11-01T12:00:00.000000Z",
+        "completedAt": null
+      }
+    ],
+    "expectedOrderIds": [
+      "order-a",
+      "order-b",
+      "order-c"
+    ],
+    "offsetExamples": [
+      {
+        "input": "2026-11-01T07:00:00.000000+07:00",
+        "utc": "2026-11-01T00:00:00.000000Z"
+      },
+      {
+        "input": "2026-10-31T19:00:00.000000-05:00",
+        "utc": "2026-11-01T00:00:00.000000Z"
+      }
+    ]
+  },
+  "businessFailures": [
+    {
+      "case": "unknown_product",
+      "orderId": "order-unknown",
+      "rowCount": 1,
+      "expected": "WDM-02 reports unknown catalog reference; cleaning policy reserved"
+    },
+    {
+      "case": "conflicting_order",
+      "orderId": "order-conflict",
+      "rowCount": 2,
+      "expected": "WDM-02 reports conflicting customer_code within one order; cleaning policy reserved"
+    },
+    {
+      "case": "duplicate_line_identity",
+      "orderId": "order-duplicate",
+      "rowCount": 2,
+      "expected": "WDM-02 reports repeated order_item_id; deduplication policy reserved"
+    }
+  ]
+}

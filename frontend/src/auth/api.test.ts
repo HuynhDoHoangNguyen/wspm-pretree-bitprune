@@ -63,3 +63,15 @@ test('nullable V2 identity fields stay nullable and unexpected profile/secrets a
   expect(result.email).toBeNull(); expect(result.username).toBeNull();
   expect(result).not.toHaveProperty('passwordHash');
 });
+
+test('preserves only approved validation field names without raw server details', async () => {
+  const fetcher = jest.fn().mockResolvedValue(response({ status: 400, code: 'VALIDATION_FAILED',
+    message: 'private body', path: '/api/v1/auth/register', requestId: 'request-test', details: [
+      { field: 'email', code: 'INVALID', message: 'private field message' },
+      { field: '/private/path', code: 'INVALID', message: 'private field message' },
+    ] }, 400));
+  const error = await createAuthApi(fetcher).me('token').catch(value => value);
+  expect(error.fields).toEqual(['email']);
+  expect(error.message).not.toContain('private');
+  expect(error).not.toHaveProperty('details');
+});

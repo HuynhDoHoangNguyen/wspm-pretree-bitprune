@@ -16,18 +16,41 @@ export interface AuthGrant {
   user: AuthIdentity;
 }
 export interface RegistrationInput { username: string; email: string; password: string; displayName: string }
+export type RegistrationField = keyof RegistrationInput;
+export type AuthFormErrors = Partial<Record<RegistrationField | 'passwordConfirmation', string>>;
+const registrationFields: RegistrationField[] = ['username', 'email', 'displayName', 'password'];
 export class AuthError extends Error {
   constructor(public readonly status: number | null, public readonly code: string,
-    message: string, public readonly requestId: string | null = null) { super(message); }
+    message: string, public readonly requestId: string | null = null,
+    public readonly fields: readonly RegistrationField[] = []) { super(message); }
 }
 
-export function validRegistration(input: RegistrationInput): boolean {
+export function registrationErrors(input: RegistrationInput): AuthFormErrors {
+  const errors: AuthFormErrors = {};
+  if (!/^[a-z0-9][a-z0-9._-]{2,79}$/i.test(input.username.trim())) {
+    errors.username = 'Tên tài khoản cần 3–80 ký tự: chữ, số, dấu chấm, gạch dưới hoặc gạch ngang; bắt đầu bằng chữ hoặc số.';
+  }
+  if (!/^[\x21-\x7e]+@[^\s@]+$/.test(input.email.trim()) || input.email.trim().length > 254) errors.email = 'Vui lòng nhập email hợp lệ.';
+  if (!input.displayName.trim() || Array.from(input.displayName.trim()).length > 160) errors.displayName = 'Tên hiển thị cần từ 1 đến 160 ký tự.';
   const password = input.password;
-  return /^[a-z0-9][a-z0-9._-]{2,79}$/i.test(input.username.trim())
-    && !!input.displayName.trim() && Array.from(input.displayName.trim()).length <= 160
-    && /^[\x21-\x7e]+@[^\s@]+$/.test(input.email.trim()) && input.email.trim().length <= 254
-    && Array.from(password).length >= 8 && new Blob([password]).size <= 72
-    && !password.includes('\0') && !Array.from(password).some(c => c.length === 1 && /[\ud800-\udfff]/.test(c));
+  if (Array.from(password).length < 8) errors.password = 'Mật khẩu cần ít nhất 8 ký tự.';
+  else if (new Blob([password]).size > 72) errors.password = 'Mật khẩu quá dài (tối đa 72 byte UTF-8).';
+  else if (password.includes('\0') || Array.from(password).some(c => c.length === 1 && /[\ud800-\udfff]/.test(c))) errors.password = 'Mật khẩu chứa ký tự không hợp lệ.';
+  return errors;
+}
+export function validRegistration(input: RegistrationInput): boolean {
+  return Object.keys(registrationErrors(input)).length === 0;
+}
+
+/** Field names are whitelisted; raw server detail messages are never rendered. */
+export function authFieldErrors(error: unknown): AuthFormErrors {
+  if (!(error instanceof AuthError)) return {};
+  if (error.status === 401) return { username: 'Kiểm tra lại tên tài khoản và mật khẩu.', password: 'Kiểm tra lại tên tài khoản và mật khẩu.' };
+  if (error.status === 409) return { username: 'Tên tài khoản hoặc email đã được sử dụng.', email: 'Tên tài khoản hoặc email đã được sử dụng.' };
+  if (error.status !== 400) return {};
+  const messages: Record<RegistrationField, string> = { username: 'Tên tài khoản không hợp lệ.',
+    email: 'Email không hợp lệ.', displayName: 'Tên hiển thị không hợp lệ.', password: 'Mật khẩu không hợp lệ.' };
+  return Object.fromEntries(registrationFields.filter(field => error.fields.includes(field)).map(field => [field, messages[field]]));
 }
 function identity(value: unknown): AuthIdentity {
   const user = value as AuthIdentity | null;
@@ -72,9 +95,12 @@ export function createAuthApi(fetchImpl: typeof fetch = (...args) => fetch(...ar
       if (/\bapplication\/(?:[\w.-]+\+)?json\b/i.test(response.headers.get('Content-Type') || '')) data = await response.json();
     } catch { /* Raw transport/error payloads never become displayed messages. */ }
     if (!response.ok) {
-      const code = isApiErrorResponse(data, response.status) ? data.code : 'HTTP_ERROR';
+      const failure = isApiErrorResponse(data, response.status) ? data : null;
+      const code = failure?.code || 'HTTP_ERROR';
+      const details = failure?.details || [];
+      const fields = registrationFields.filter(field => details.some(detail => detail.field === field));
       throw new AuthError(response.status, code,
-        'Yêu cầu xác thực không thành công.', requestId);
+        'Yêu cầu xác thực không thành công.', requestId, fields);
     }
     if (data === undefined) throw new AuthError(response.status, 'INVALID_RESPONSE', 'Máy chủ trả dữ liệu không hợp lệ.', requestId);
     try { return unwrapApiResponse(data, requestId); }

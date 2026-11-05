@@ -1,0 +1,7 @@
+{
+  "name": "wspm-auth-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node run.mjs", "test:dataset": "node dataset-run.mjs" },
+  "devDependencies": { "esbuild": "0.28.2", "playwright-core": "1.64.1" }
+}
