@@ -170,7 +170,21 @@ application working tree and has no static resource mapping. DB rollback before
 the commit phase cleans only the current request's owned artifact; once the commit
 phase begins, an uncertain outcome keeps it for
 manual reconciliation. Storage and MySQL do not share an atomic transaction.
-Validation and SPMF conversion remain later WDM tasks.
+WDM-02.5 adds POST/GET `/api/v1/admin/dataset-snapshots/{id}/validation`.
+`services/dataset/validation` verifies raw integrity, runs the accepted CSV/business/
+consistency/cleaning stages, and builds a versioned report with complete record
+lineage. A dedicated repository publishes report/status atomically inside V2's
+existing JSON field; public DTOs paginate safe diagnostics and hide the manifest.
+Configured budgets, local concurrency limits and first-writer-wins publication
+bound the synchronous operation. WDM-02.6 provides the snapshot validation panel.
+WDM-02.7 adds the read-only `services/dataset/conversion` admission gate and POST
+`/api/v1/admin/dataset-snapshots/{id}/conversion`. It checks completed report binding,
+READY manifest/counts, raw integrity and fresh snapshot state, returning immutable
+verified bytes/kept records internally. Ineligible snapshots return 409; eligible
+snapshots currently return explicit 503 because conversion is not implemented.
+The proof does not reserve execution; WDM-03 must atomically claim/recheck state
+and consume verified input before producing artifacts. SPMF conversion remains
+WDM-03. Details and evidence are in the Dataset CSV contract.
 
 Business JSON success responses are explicit `ApiResponse<T>` values containing
 `code`, `message`, `data`, `requestId`; the HTTP status remains authoritative.
@@ -261,8 +275,9 @@ existing Admin shell and have UI-only ADMIN role guards. The Dataset page now
 provides period CSV export and multipart snapshot acquisition using the real WDM
 client contracts. Its calendar uses explicit fixed UTC+07 bounds, downloads
 CSV Blobs and shows only verified 201 PENDING acquisition receipts. The other
-two pages remain availability skeletons; validation/conversion and mining UI
-are pending. Shared frontend Auth is integrated. The backend
+two pages remain availability skeletons; conversion and mining UI are pending.
+WDM-02.6 adds validation actions/reporting within the snapshot detail route.
+Shared frontend Auth is integrated. The backend
 order export is protected by shared Auth/ADMIN independently of this UI guard.
 Frontend module tests and isolated real HTTP/CSV integration are covered in
 AUTH-05. `frontend/test/e2e/` owns AUTH-06's separate browser runner, disposable MySQL/
@@ -281,7 +296,8 @@ unknown provenance/status metadata stays null and uncomputed sequence counts
 remain hidden. `RawSnapshotStorage` probes availability without creating files,
 then bounds and verifies exact size/SHA-256 into a byte buffer before a download
 response is committed. Missing raw does not hide existing snapshot metadata.
-No list, validation, conversion or mining actions are added. WDM-01.8 verifies
+Validation actions are added separately by WDM-02.6; list, conversion and mining
+actions remain pending. WDM-01.8 verifies
 the full Dataset flow in Edge with disposable MySQL and an external temporary
 storage root. It found and fixed the Admin shell's missing detail-route allowance;
 an App regression now traverses the real Admin shell for a snapshot deep URL.
