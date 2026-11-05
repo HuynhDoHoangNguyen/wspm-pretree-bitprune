@@ -1,12 +1,10 @@
 import React from 'react';
-import { ActionIcon, Box, Burger, createStyles, Group, Header, MediaQuery, useMantineColorScheme } from '@mantine/core';
+import { ActionIcon, Box, Burger, Button, createStyles, Group, Header, MediaQuery, useMantineColorScheme } from '@mantine/core';
 import { Bell, Browser, Icon, Logout, Messages, MoonStars, Search, Sun, User } from 'tabler-icons-react';
 import { Link } from 'react-router-dom';
 import useAppStore from 'stores/use-app-store';
 import { ElectroLogo } from 'components';
-import NotifyUtils from 'utils/NotifyUtils';
-import { authSession, useSharedAuth } from 'auth/session';
-import { authMessage } from 'auth/api';
+import { useSignOut } from 'auth/useSignOut';
 
 const useStyles = createStyles((theme) => ({
   header: {
@@ -80,12 +78,6 @@ const headerLinks: HeaderLink[] = [
     label: 'Tin nhắn',
     icon: Messages,
   },
-  {
-    link: '/',
-    label: 'Website',
-    icon: Browser,
-    target: '_blank',
-  },
 ];
 
 export function DefaultHeader() {
@@ -94,7 +86,7 @@ export function DefaultHeader() {
   const { opened, toggleOpened } = useAppStore();
   const { colorScheme, toggleColorScheme } = useMantineColorScheme();
 
-  const { user } = useSharedAuth();
+  const handleSignoutButton = useSignOut();
 
   const dark = colorScheme === 'dark';
 
@@ -109,13 +101,6 @@ export function DefaultHeader() {
       {headerLink.label}
     </Link>
   ));
-
-  const handleSignoutButton = async () => {
-    if (user) {
-      try { await authSession.logout(); toggleColorScheme('light'); NotifyUtils.simpleSuccess('Đăng xuất thành công'); }
-      catch (error) { NotifyUtils.simpleFailed('Đã xóa truy cập cục bộ; chưa xác nhận đăng xuất máy chủ. ' + authMessage(error)); }
-    }
-  };
 
   return (
     <Header height={56} className={classes.header}>
@@ -134,13 +119,14 @@ export function DefaultHeader() {
             {headerLinksFragment}
           </Group>
           <Group spacing="xs">
-            <ActionIcon
+            <Button component={Link} to="/" variant="light" size="xs" leftIcon={<Browser size={16}/>}>Về cửa hàng</Button>
+            <MediaQuery smallerThan="sm" styles={{ display: 'none' }}><ActionIcon
               variant="outline"
               title="Tìm kiếm"
               color="blue"
             >
               <Search size={18}/>
-            </ActionIcon>
+            </ActionIcon></MediaQuery>
             <ActionIcon
               variant="outline"
               title="Thay đổi chế độ màu"

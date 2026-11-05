@@ -2,6 +2,14 @@ spring:
   application:
     name: backend
 
+  servlet:
+    multipart:
+      max-file-size: ${WDM_CSV_UPLOAD_MAX_FILE_BYTES:104857600}B
+      max-request-size: ${WDM_CSV_UPLOAD_MAX_REQUEST_BYTES:105906176}B
+      file-size-threshold: 0B
+      # Authorization must precede parsing, including malformed/oversized uploads.
+      resolve-lazily: true
+
   config:
     import:
       - "optional:file:./.env[.properties]"
@@ -51,6 +59,8 @@ logging:
     org.hibernate.orm.jdbc.bind: "OFF"
 
 wdm:
+  snapshot-storage:
+    root: ${WDM_SNAPSHOT_STORAGE_ROOT:${user.home}/.wspm/snapshots}
   order-export:
     max-rows: ${WDM_ORDER_EXPORT_MAX_ROWS:100000}
     max-bytes: ${WDM_ORDER_EXPORT_MAX_BYTES:104857600}

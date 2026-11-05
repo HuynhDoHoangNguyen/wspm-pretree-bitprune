@@ -6,8 +6,8 @@ import { Messages, MoonStars, Sun } from 'tabler-icons-react';
 import { useDisclosure, useHotkeys } from '@mantine/hooks';
 import { useIsFetching } from 'react-query';
 import useAuthStore from 'stores/use-auth-store';
-import { authSession } from 'auth/session';
-import NotifyUtils from 'utils/NotifyUtils';
+import { useSharedAuth } from 'auth/session';
+import { useSignOut } from 'auth/useSignOut';
 
 function Client() {
   const isLoading = useIsFetching();
@@ -55,6 +55,8 @@ function ChatButton() {
 
 // Only for test
 function Shortcut() {
+  const { user } = useSharedAuth();
+  const signOut = useSignOut();
   const { colorScheme, toggleColorScheme } = useMantineColorScheme();
   const dark = colorScheme === 'dark';
 
@@ -70,10 +72,10 @@ function Shortcut() {
       <Card shadow="sm" p="sm">
         <Group>
           <Anchor component={Link} to="/">Client</Anchor>
-          <Anchor component={Link} to="/admin">Admin</Anchor>
-          <Button color="teal" variant="light" compact onClick={() => void authSession.logout().catch(() => NotifyUtils.simpleFailed('Chưa xác nhận đăng xuất máy chủ.'))}>
+          {user?.roles.includes('ADMIN') && <Anchor component={Link} to="/admin">Admin</Anchor>}
+          {user && <Button color="teal" variant="light" compact onClick={() => void signOut()}>
             Đăng xuất
-          </Button>
+          </Button>}
           <ActionIcon
             size="sm"
             variant="outline"

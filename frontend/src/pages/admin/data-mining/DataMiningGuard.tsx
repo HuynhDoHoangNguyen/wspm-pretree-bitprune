@@ -1,11 +1,13 @@
 import React, { ReactNode } from 'react';
 import { Alert } from '@mantine/core';
 import { Lock } from 'tabler-icons-react';
-import useAdminAuthStore from 'stores/use-admin-auth-store';
+import { useSharedAuth } from 'auth/session';
+import AuthGate from 'auth/AuthGate';
 import { hasDataMiningAdminAccess } from './access';
 
 export default function DataMiningGuard({ children }: { children: ReactNode }) {
-  const { user } = useAdminAuthStore();
+  const { user, status, forbidden } = useSharedAuth();
+  if (['bootstrapping', 'unavailable', 'signing-out'].includes(status)) return <AuthGate/>;
 
   if (!user) {
     return (
@@ -15,7 +17,7 @@ export default function DataMiningGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!hasDataMiningAdminAccess(user)) {
+  if (forbidden || !hasDataMiningAdminAccess(user)) {
     return (
       <Alert role="alert" icon={<Lock size={20}/>} title="Không có quyền truy cập" color="red">
         Tài khoản hiện tại không có quyền Admin để truy cập dữ liệu khai phá.
