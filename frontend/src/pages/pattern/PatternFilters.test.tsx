@@ -12,7 +12,7 @@ const page = (r = 'A', p = 0): PatternPage => ({ runId: r, runStatus: 'SUCCEEDED
 const dictionary = (r: string, q: string, p: number, size: number): DictionaryPage => ({ runId: r, query: q, page: p, size,
   resultState: 'READY', dictionaryTotal: '21', matchedTotal: '21', items: [option(q ? 2 : 1)] });
 function client(): jest.Mocked<PatternClient> {
-  return { runs: jest.fn().mockResolvedValue([{ runId: 'A', label: 'Run A' }, { runId: 'B', label: 'Run B' }]),
+  return { runs: jest.fn().mockResolvedValue({ page: 0, size: 20, total: '2', items: [{ runId: 'A', label: 'Run A' }, { runId: 'B', label: 'Run B' }] }),
     list: jest.fn().mockImplementation((r, p) => Promise.resolve(page(r, p))),
     dictionary: jest.fn().mockImplementation((r, q, p, s) => Promise.resolve(dictionary(r, q, p, s))),
     detail: jest.fn() };
@@ -36,13 +36,13 @@ test('dictionary search/page leaves applied Pattern page unchanged; selected ite
   fireEvent.click(await screen.findByRole('checkbox', { name: /Tên snapshot 2/ }));
   await click('Dictionary sau');
   expect(api.list).toHaveBeenCalledTimes(calls);
-  expect(api.dictionary).toHaveBeenLastCalledWith('A', 'SKU-2', 1, 20);
+  expect(api.dictionary).toHaveBeenLastCalledWith('A', 'SKU-2', 1, 20, expect.objectContaining({ signal: expect.anything() }));
   expect(screen.getByText('Đã chọn: 2')).toBeInTheDocument();
   await input('Support tối thiểu (sequence)', '9007199254740993');
   await click('Áp dụng');
-  expect(api.list).toHaveBeenLastCalledWith('A', 0, 20, { itemIds: ['1', '2'], supportMin: '9007199254740993' });
+  expect(api.list).toHaveBeenLastCalledWith('A', 0, 20, { itemIds: ['1', '2'], supportMin: '9007199254740993' }, expect.objectContaining({ signal: expect.anything() }));
   await click('Bỏ lọc');
-  expect(api.list).toHaveBeenLastCalledWith('A', 0, 20);
+  expect(api.list).toHaveBeenLastCalledWith('A', 0, 20, undefined, expect.objectContaining({ signal: expect.anything() }));
   expect(screen.getByText('Đã chọn: 0')).toBeInTheDocument();
 });
 
@@ -86,7 +86,7 @@ test.each(['error', 'disabled'])('weight recovery %s removes only weight once', 
   await click('Áp dụng');
   await screen.findByText(/Đã bỏ cận trọng số và tải lại:/);
   await waitFor(() => expect(api.list).toHaveBeenCalledTimes(3));
-  expect(api.list).toHaveBeenLastCalledWith('A', 0, 20, { itemIds: ['1'], supportMin: '3' });
+  expect(api.list).toHaveBeenLastCalledWith('A', 0, 20, { itemIds: ['1'], supportMin: '3' }, expect.objectContaining({ signal: expect.anything() }));
   expect(screen.getByLabelText('Trọng số mẫu tối thiểu')).toBeDisabled();
   expect(screen.getByLabelText('Trọng số mẫu tối thiểu')).toHaveValue('');
   expect(screen.getByText('Đã chọn: 1')).toBeInTheDocument();
@@ -116,7 +116,7 @@ test('old dictionary error cannot replace new run or selections', async () => {
   expect(screen.getByLabelText('Support tối thiểu (sequence)')).toHaveValue('');
   expect(screen.getByLabelText('Tìm sản phẩm theo tên hoặc SKU snapshot')).toHaveValue('');
   expect(screen.queryByText('Không tải được dictionary.')).not.toBeInTheDocument();
-  expect(api.list).toHaveBeenLastCalledWith('B', 0, 20);
+  expect(api.list).toHaveBeenLastCalledWith('B', 0, 20, undefined, expect.objectContaining({ signal: expect.anything() }));
 });
 test('equal inclusive bounds are sent unchanged to backend', async () => {
   const api = client(); render(<PatternExplorer client={api}/>); await choose();
@@ -124,7 +124,7 @@ test('equal inclusive bounds are sent unchanged to backend', async () => {
   await input('Trọng số mẫu tối thiểu', '0.4'); await input('Trọng số mẫu tối đa', '0.4');
   await click('Áp dụng');
   expect(api.list).toHaveBeenLastCalledWith('A', 0, 20,
-    { supportMin: '4', supportMax: '4', weightMin: '0.4', weightMax: '0.4' });
+    { supportMin: '4', supportMax: '4', weightMin: '0.4', weightMax: '0.4' }, expect.objectContaining({ signal: expect.anything() }));
 });
 test('late filtered Pattern response cannot replace newer applied bounds', async () => {
   let finish: (value: PatternPage) => void = () => undefined;

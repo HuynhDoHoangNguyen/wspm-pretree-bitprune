@@ -47,3 +47,24 @@ test('foreign-origin Auth/WDM configuration fails closed without sending credent
   expect(screen.queryByText('Private fixture')).not.toBeInTheDocument();
   expect(authSession.bootstrap).not.toHaveBeenCalled();
 });
+
+test.each(['bootstrapping', 'signing-out'] as const)('guard waits during %s even when old Admin identity is present', status => {
+  authSession.useStore.setState({ status });
+  render(<MantineProvider><DataMiningGuard><p>Private fixture</p></DataMiningGuard></MantineProvider>);
+  expect(screen.getByRole('status')).toBeInTheDocument();
+  expect(screen.queryByText('Private fixture')).not.toBeInTheDocument();
+  expect(screen.queryByText(/Cần đăng nhập/)).not.toBeInTheDocument();
+});
+
+test('guard follows mixed Admin/Customer roles, role denial and logout from the same session', () => {
+  const user = authSession.useStore.getState().user;
+  if (!user) throw new Error('Fixture identity missing');
+  authSession.useStore.setState({ user: { ...user, roles: ['CUSTOMER', 'ADMIN'] } });
+  render(<MantineProvider><DataMiningGuard><p>Private fixture</p></DataMiningGuard></MantineProvider>);
+  expect(screen.getByText('Private fixture')).toBeInTheDocument();
+  act(() => authSession.useStore.setState({ user: { ...user, roles: ['CUSTOMER'] } }));
+  expect(screen.queryByText('Private fixture')).not.toBeInTheDocument();
+  expect(screen.getByRole('alert')).toHaveTextContent('Không có quyền truy cập');
+  act(() => authSession.unauthorized());
+  expect(screen.getByRole('alert')).toHaveTextContent('Cần đăng nhập');
+});

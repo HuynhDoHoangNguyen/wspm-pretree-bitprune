@@ -1,13 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Group, Paper, Stack, Table, Text, Title } from '@mantine/core';
 import { PatternClient, PatternClientError, PatternDetail, PatternPage, PatternSummary,
-  PatternFilters, WeightCapability, RunOption, unavailablePatternClient } from './PatternClient';
+  PatternFilters, WeightCapability, RunOption } from './PatternClient';
+import { patternHttpClient } from './PatternHttpClient';
 import PatternFiltersPanel from './PatternFiltersPanel';
 
 const metric = (value: number | null) => value === null || !Number.isFinite(value) ? 'Không khả dụng' : String(value);
 function errorText(error: unknown): string {
   if (error instanceof PatternClientError) {
     if (error.code === 'API_NOT_AVAILABLE') return 'Chưa thể kết nối: API chọn run và API Pattern có quyền Admin phía server chưa sẵn sàng.';
+    if (error.kind === 'aborted') return 'Yêu cầu đã bị hủy.';
     if (error.status === 401) return 'Vui lòng đăng nhập lại.';
     if (error.status === 403) return 'Bạn không có quyền Admin để đọc Pattern.';
     if (error.status === 404) return 'Không tìm thấy run hoặc Pattern trong run đã chọn.';
@@ -28,8 +30,10 @@ function Metrics({ pattern }: { pattern: PatternSummary }) {
   </Stack>;
 }
 
-export default function PatternExplorer({ client = unavailablePatternClient }: { client?: PatternClient }) {
+export default function PatternExplorer({ client = patternHttpClient }: { client?: PatternClient }) {
   const [runs, setRuns] = useState<RunOption[]>([]);
+  const [runPage, setRunPage] = useState(0);
+  const [runTotal, setRunTotal] = useState<string | null>(null);
   const [runsError, setRunsError] = useState('');
   const [runsLoading, setRunsLoading] = useState(true);
   const [runId, setRunId] = useState('');
@@ -45,6 +49,7 @@ export default function PatternExplorer({ client = unavailablePatternClient }: {
   const [listRetry, setListRetry] = useState(0);
   const [detailRetry, setDetailRetry] = useState(0);
   const generation = useRef(0);
+  const runsGeneration = useRef(0);
   const detailGeneration = useRef(0);
   const [applied, setApplied] = useState<PatternFilters>({});
   const [capability, setCapability] = useState<WeightCapability>({ enabled: false, reason: 'Chưa có xác nhận từ server', policy: null });
@@ -53,16 +58,22 @@ export default function PatternExplorer({ client = unavailablePatternClient }: {
   const recovered = useRef(false);
 
   useEffect(() => {
+    const token = ++runsGeneration.current;
+    const controller = new AbortController();
     let current = true;
-    setRunsLoading(true); setRunsError('');
-    client.runs().then(value => { if (current) setRuns(value); })
-      .catch(error => { if (current) setRunsError(errorText(error)); })
-      .finally(() => { if (current) setRunsLoading(false); });
-    return () => { current = false; };
-  }, [client, runsRetry]);
+    setRunsLoading(true); setRunsError(''); setRuns([]); setRunTotal(null);
+    client.runs(runPage, 20, { signal: controller.signal }).then(value => {
+      if (!current || controller.signal.aborted || runsGeneration.current !== token) return;
+      if (value.page !== runPage || value.size !== 20 || !/^\d+$/.test(value.total)) throw new Error('Invalid run page');
+      setRuns(value.items); setRunTotal(value.total);
+    }).catch(error => { if (current && !controller.signal.aborted && runsGeneration.current === token) setRunsError(errorText(error)); })
+      .finally(() => { if (current && !controller.signal.aborted && runsGeneration.current === token) setRunsLoading(false); });
+    return () => { current = false; controller.abort(); };
+  }, [client, runPage, runsRetry]);
 
   useEffect(() => {
     const token = ++generation.current;
+    const controller = new AbortController();
     let active = true;
     if (!runId) return;
     setListLoading(true); setListError(''); setList(null);
@@ -77,9 +88,9 @@ export default function PatternExplorer({ client = unavailablePatternClient }: {
       setApplied(remaining); setPage(0);
       return true;
     }
-    const request = Object.keys(applied).length ? client.list(runId, page, 20, applied) : client.list(runId, page, 20);
+    const request = client.list(runId, page, 20, Object.keys(applied).length ? applied : undefined, { signal: controller.signal });
     request.then(value => {
-      if (!active || generation.current !== token) return;
+      if (!active || controller.signal.aborted || generation.current !== token) return;
       if (value.runId !== runId || value.page !== page || value.size !== 20) throw new Error('Mismatched response');
       if (value.resultState === 'READY' && (value.filteredTotal === null || value.runPatternTotal === null
         || !/^\d+$/.test(value.filteredTotal) || !/^\d+$/.test(value.runPatternTotal))) throw new Error('Invalid totals');
@@ -88,30 +99,31 @@ export default function PatternExplorer({ client = unavailablePatternClient }: {
       if (!weight.enabled && recoverWeight(weight.reason ?? 'WEIGHT_FILTER_UNAVAILABLE')) return;
       setList(value);
     }).catch(error => {
-      if (!active || generation.current !== token) return;
+      if (!active || controller.signal.aborted || generation.current !== token) return;
       if (error instanceof PatternClientError && error.code === 'WEIGHT_FILTER_UNAVAILABLE') {
         if (recoverWeight(error.code)) return;
         setFilterError('WEIGHT_FILTER_UNAVAILABLE: không thể áp dụng trọng số.');
       } else if (error instanceof PatternClientError && ['INVALID_FILTER', 'INVALID_QUERY', 'ITEM_NOT_IN_RUN_DICTIONARY'].includes(error.code)) {
-        setFilterError(`${error.code}: kiểm tra sản phẩm và cận đang nhập, rồi áp dụng lại.`);
+        setFilterError(`${error.code}: kiểm tra sản phẩm và cận đang nhập, rồi áp dụng lại.${error.offendingItemIds.length ? ' Item: ' + error.offendingItemIds.join(', ') : ''}`);
       } else setListError(errorText(error));
     })
-      .finally(() => { if (active && generation.current === token) setListLoading(false); });
-    return () => { active = false; };
+      .finally(() => { if (active && !controller.signal.aborted && generation.current === token) setListLoading(false); });
+    return () => { active = false; controller.abort(); };
   }, [client, runId, page, listRetry, applied]);
 
   useEffect(() => {
     const token = ++detailGeneration.current;
+    const controller = new AbortController();
     let active = true;
     if (!selected || !runId) return;
     setDetailLoading(true); setDetailError(''); setDetail(null);
-    client.detail(runId, selected).then(value => {
-      if (!active || detailGeneration.current !== token) return;
+    client.detail(runId, selected, { signal: controller.signal }).then(value => {
+      if (!active || controller.signal.aborted || detailGeneration.current !== token) return;
       if (value.runId !== runId || value.patternId !== selected) throw new Error('Mismatched detail');
       setDetail(value);
-    }).catch(error => { if (active && detailGeneration.current === token) setDetailError(errorText(error)); })
-      .finally(() => { if (active && detailGeneration.current === token) setDetailLoading(false); });
-    return () => { active = false; };
+    }).catch(error => { if (active && !controller.signal.aborted && detailGeneration.current === token) setDetailError(errorText(error)); })
+      .finally(() => { if (active && !controller.signal.aborted && detailGeneration.current === token) setDetailLoading(false); });
+    return () => { active = false; controller.abort(); };
   }, [client, runId, selected, detailRetry]);
 
   function closeDetail() {
@@ -128,17 +140,27 @@ export default function PatternExplorer({ client = unavailablePatternClient }: {
     setRecoveryNotice(''); recovered.current = false; setApplied(value); setPage(0);
   }
   function changePage(value: number) { generation.current++; closeDetail(); setList(null); setPage(value); }
+  function changeRunPage(value: number) {
+    runsGeneration.current++; changeRun(''); setRuns([]); setRunTotal(null); setRunPage(value);
+  }
   const next = list?.resultState === 'READY' && list.filteredTotal !== null
     && BigInt(list.filteredTotal) > BigInt(page + 1) * BigInt(20) && page < 2147483647;
   return <Stack>
     <Title order={2}>Khám phá Pattern</Title>
     {runsLoading && <Text role="status">Đang tải danh sách run…</Text>}
     {runsError && <Alert color="red">{runsError}<Button onClick={() => setRunsRetry(x => x + 1)}>Thử lại kết nối</Button></Alert>}
-    <label>Mining run <select aria-label="Mining run" value={runId} disabled={runsLoading || !!runsError}
+    <label>Mining run <select aria-label="Mining run" value={runId} disabled={runsLoading || !!runsError || !runs.length}
       onChange={e => changeRun(e.target.value)}>
       <option value="">Chọn run</option>{runs.map(r => <option key={r.runId} value={r.runId}>{r.label}</option>)}
     </select></label>
-    {!runId && !runsError && !runsLoading && <Text>{runs.length ? 'Chọn một run để xem Pattern.' : 'Chưa có mining run.'}</Text>}
+    {!runId && !runsError && !runsLoading && <Text>{runTotal === '0' ? 'Chưa có mining run.'
+      : runs.length ? 'Chọn một run để xem Pattern.' : 'Trang run hiện tại không có dữ liệu.'}</Text>}
+    {!runsError && !runsLoading && <>
+      <Text>Tổng mining run: {runTotal ?? 'Chưa khả dụng'}</Text>
+      <Group><Button disabled={runPage === 0} onClick={() => changeRunPage(runPage - 1)}>Run trước</Button>
+        <Text>Trang run {runPage + 1}</Text><Button disabled={runTotal === null || BigInt(runTotal) <= BigInt(runPage + 1) * BigInt(20) || runPage >= 2147483647}
+          onClick={() => changeRunPage(runPage + 1)}>Run sau</Button></Group>
+    </>}
     {runId && <>
       <PatternFiltersPanel key={runId} client={client} runId={runId} capability={capability} serverError={filterError} onApply={applyFilters}/>
       <Text>Bộ lọc đã áp dụng — item: {applied.itemIds?.join(', ') || 'Tất cả'};

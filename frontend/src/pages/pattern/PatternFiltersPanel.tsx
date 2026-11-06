@@ -50,21 +50,22 @@ export default function PatternFiltersPanel({ client, runId, capability, serverE
   }, [capability.enabled]);
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     const token = ++generation.current;
     setData(null); setError('');
     if (Array.from(query.trim()).length > 100) { setError('Từ khóa tối đa 100 ký tự.'); setLoading(false); return; }
     setLoading(true);
-    client.dictionary(runId, query, page, 20).then(value => {
-      if (!active || generation.current !== token) return;
+    client.dictionary(runId, query, page, 20, { signal: controller.signal }).then(value => {
+      if (!active || controller.signal.aborted || generation.current !== token) return;
       if (value.runId !== runId || value.page !== page || value.size !== 20) throw new Error('Mismatched dictionary');
       if (value.matchedTotal !== null && !/^\d+$/.test(value.matchedTotal)) throw new Error('Invalid dictionary count');
       setData(value);
     }).catch(reason => {
-      if (!active || generation.current !== token) return;
+      if (!active || controller.signal.aborted || generation.current !== token) return;
       setError(reason instanceof PatternClientError && reason.status === 403 ? 'Không có quyền đọc dictionary.'
         : reason instanceof PatternClientError && reason.status === 401 ? 'Vui lòng đăng nhập lại.' : 'Không tải được dictionary.');
-    }).finally(() => { if (active && generation.current === token) setLoading(false); });
-    return () => { active = false; };
+    }).finally(() => { if (active && !controller.signal.aborted && generation.current === token) setLoading(false); });
+    return () => { active = false; controller.abort(); };
   }, [client, runId, query, page, retry]);
   function apply() {
     try { const value = validateFilters(selected.map(item => String(item.itemId)), bounds, capability.enabled);

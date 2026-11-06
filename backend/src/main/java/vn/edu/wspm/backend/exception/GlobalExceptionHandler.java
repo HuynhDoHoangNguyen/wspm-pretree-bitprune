@@ -57,6 +57,16 @@ public class GlobalExceptionHandler {
     private ApplicationException translate(
             Exception exception, HttpServletRequest request, HttpServletResponse response) {
         if (exception instanceof ApplicationException known) return known;
+        if (exception instanceof vn.edu.wspm.backend.services.combo.admin.ComboReadException combo)
+            return new ApplicationException(ErrorCode.valueOf(combo.code().name()));
+        if (exception instanceof vn.edu.wspm.backend.services.pattern.PatternReadException pattern) {
+            ErrorCode code = ErrorCode.valueOf(pattern.getCode().name());
+            // Preserve the shared FieldErrorDetail[] contract; only validated integer IDs are exposed.
+            var details = pattern.getOffendingItemIds().stream()
+                    .map(id -> new FieldErrorDetail("offendingItemIds", "ITEM_NOT_IN_RUN_DICTIONARY", id.toString()))
+                    .toList();
+            return new ApplicationException(code, code.message(), details);
+        }
         if (exception instanceof MaxUploadSizeExceededException) {
             return new ApplicationException(ErrorCode.PAYLOAD_TOO_LARGE,
                     "Upload exceeds configured file or request limits.");

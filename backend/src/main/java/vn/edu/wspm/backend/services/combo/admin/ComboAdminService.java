@@ -16,7 +16,12 @@ public class ComboAdminService {
     private static final Logger log=LoggerFactory.getLogger(ComboAdminService.class);
     private final ComboAdminReader reader;
     private final ComboReviewReadiness readiness=new ComboReviewReadiness();
-    public ComboAdminService(ComboAdminReader reader) { this.reader=reader; }
+    private final java.util.function.Function<ComboAdminReader.Bundle,Assessment> assessment;
+    @org.springframework.beans.factory.annotation.Autowired
+    public ComboAdminService(ComboAdminReader reader) { this.reader=reader;this.assessment=readiness::assess; }
+    public ComboAdminService(ComboAdminReader reader,java.util.function.Function<ComboAdminReader.Bundle,Assessment> assessment) {
+        this.reader=reader;this.assessment=assessment;
+    }
     public Page list(String batchId,String status,String kind,Integer page,Integer size) {
         if(batchId!=null) validateId(batchId);
         if(status!=null && !Set.of("DRAFT","APPROVED","REJECTED","PUBLISHED","ARCHIVED").contains(status)) throw new ComboReadException(INVALID_COMBO_STATUS);
@@ -28,7 +33,7 @@ public class ComboAdminService {
             var snapshot=reader.list(filters,(long)p*s,s);
             if(!snapshot.batchExists()) throw new ComboReadException(BATCH_NOT_FOUND);
             var result=new Page(p,s,snapshot.scopeTotal(),snapshot.filteredTotal(),filters,
-                    snapshot.bundles().stream().map(b->new Summary(b.row(),readiness.assess(b))).toList());
+                    snapshot.bundles().stream().map(b->new Summary(b.row(),assessment.apply(b))).toList());
             log.debug("Combo list read: page={}, size={}, rows={}",p,s,result.items().size());return result;
         } catch(DataAccessException ex) { log.error("Combo list database read failed",ex);throw ex; }
     }
@@ -39,7 +44,7 @@ public class ComboAdminService {
             var sets=new TreeMap<Long,List<Item>>();
             bundle.items().stream().sorted(Comparator.comparingLong(Item::itemsetOrder).thenComparingLong(Item::itemOrder))
                     .forEach(i->sets.computeIfAbsent(i.itemsetOrder(),unused->new ArrayList<>()).add(i));
-            var detail=new Detail(bundle.row(),sets.entrySet().stream().map(e->new Itemset(e.getKey(),e.getValue())).toList(),bundle.sources(),readiness.assess(bundle));
+            var detail=new Detail(bundle.row(),sets.entrySet().stream().map(e->new Itemset(e.getKey(),e.getValue())).toList(),bundle.sources(),assessment.apply(bundle));
             log.debug("Combo detail read: itemsets={}, sources={}",detail.itemsets().size(),detail.sources().size());return detail;
         } catch(DataAccessException ex) { log.error("Combo detail database read failed",ex);throw ex; }
     }

@@ -1,4 +1,4 @@
-// Local boundary over IMP-11 nested DTOs. No HTTP shape/path is assumed.
+// Combo Admin HTTP domain boundary; shared transport owns authentication/envelopes.
 export type Decision = 'APPROVE' | 'REJECT';
 export interface ComboFilters { batchId?: string; status?: string; comboKind?: string }
 export interface Audit { reviewedBy: string | null; reviewerDisplayName: string | null; reviewedAt: string | null; reviewNote: string | null }
@@ -22,18 +22,20 @@ export interface ComboDetail extends ComboSummary {
     metrics: Metrics; weightedSupport: number | null; patternWeightPolicy: string }[];
   // Future verified adapter extension. Not supplied by the internal IMP-11 reader today.
   reviewToken?: string;
+  notePolicy?: { confirmed: boolean; rejectRequired: boolean; maxCodePoints: number };
 }
 export interface ReviewCommand { decision: Decision; reviewNote: string | null; expectedReviewToken: string }
 export interface ReviewResult { outcome: string; currentStatus: string | null; storedAudit: Audit | null; issues: string[] }
 export interface ComboClient {
   readonly reviewReady: boolean;
   readonly notePolicy?: { confirmed: boolean; rejectRequired: boolean; maxCodePoints: number };
-  list(filters: ComboFilters, page: number, size: number): Promise<ComboPage>;
-  detail(comboId: string): Promise<ComboDetail>;
-  review(comboId: string, command: ReviewCommand): Promise<ReviewResult>;
+  list(filters: ComboFilters, page: number, size: number, options?: { signal?: AbortSignal }): Promise<ComboPage>;
+  detail(comboId: string, options?: { signal?: AbortSignal }): Promise<ComboDetail>;
+  review(comboId: string, command: ReviewCommand, options?: { signal?: AbortSignal }): Promise<ReviewResult>;
 }
 export class ComboClientError extends Error {
-  constructor(public readonly status: number, public readonly code: string) {
+  constructor(public readonly status: number, public readonly code: string, public readonly requestId?: string | null,
+    public readonly details?: unknown, public readonly path?: string | null) {
     super(code); Object.setPrototypeOf(this, ComboClientError.prototype);
   }
 }

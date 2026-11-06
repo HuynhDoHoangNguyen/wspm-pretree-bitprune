@@ -19,6 +19,7 @@ export type WdmErrorResponse = ApiErrorResponse;
 
 export interface WdmAuthAdapter {
   getAccessToken: () => string | null | undefined;
+  /** Read at request start; the shared session aborts/replaces this signal on identity invalidation. */
   getSessionSignal?: () => AbortSignal;
   onUnauthorized?: () => void;
   onForbidden?: () => void;

@@ -1,5 +1,7 @@
 // Exact IMP-02/03 boundary. No runtime fixture or unprotected HTTP fallback.
 export interface RunOption { runId: string; label: string }
+export interface RunPage { page: number; size: number; total: string; items: RunOption[] }
+export interface PatternRequestOptions { signal?: AbortSignal }
 export interface PatternSummary {
   patternId: string; runId: string; canonicalPattern: string; supportAbs: string;
   supportRatio: number | null; weightedSupport: number | null; patternWeight: number | null;
@@ -29,14 +31,19 @@ export interface PatternDetail extends PatternSummary {
   }[] }[];
 }
 export interface PatternClient {
-  runs(): Promise<RunOption[]>;
-  list(runId: string, page: number, size: number, filters?: PatternFilters): Promise<PatternPage>;
-  dictionary(runId: string, query: string, page: number, size: number): Promise<DictionaryPage>;
-  detail(runId: string, patternId: string): Promise<PatternDetail>;
+  runs(page: number, size: number, options?: PatternRequestOptions): Promise<RunPage>;
+  list(runId: string, page: number, size: number, filters?: PatternFilters, options?: PatternRequestOptions): Promise<PatternPage>;
+  dictionary(runId: string, query: string, page: number, size: number, options?: PatternRequestOptions): Promise<DictionaryPage>;
+  detail(runId: string, patternId: string, options?: PatternRequestOptions): Promise<PatternDetail>;
 }
 export class PatternClientError extends Error {
-  constructor(public readonly status: number, public readonly code: string) {
-    super(code);
+  constructor(public readonly status: number, public readonly code: string,
+    public readonly requestId: string | null = null,
+    public readonly offendingItemIds: string[] = [],
+    public readonly kind: 'http' | 'network' | 'response' | 'aborted' = 'http',
+    public readonly details: { field: string; code: string; message: string }[] = [],
+    message = code, public readonly path: string | null = null) {
+    super(message);
     Object.setPrototypeOf(this, PatternClientError.prototype);
   }
 }

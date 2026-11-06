@@ -44,8 +44,13 @@ public final class DraftBatchWrite {
     public record Validation(boolean valid,List<String> errors,Plan plan) {
         public Validation { errors=List.copyOf(errors); }
     }
-    /** Always BLOCKED or INVALID in IMP-10; never claims INSERTED/REUSED without storage evidence. */
-    public record WriteResult(String status,List<String> errors,Plan proposedPlan) {
+    public record Receipt(String batchId,Map<StructureKey,String> comboIds,Instant createdAt,
+                          String contentDigest,String evidenceDigest) {
+        public Receipt {comboIds=Map.copyOf(comboIds);}
+    }
+    /** Receipt only accompanies a verified INSERTED/NO_OP outcome. Other outcomes never imply commit. */
+    public record WriteResult(String status,List<String> errors,Plan proposedPlan,Receipt receipt) {
         public WriteResult { errors=List.copyOf(errors); }
+        public WriteResult(String status,List<String> errors,Plan proposedPlan){this(status,errors,proposedPlan,null);}
     }
 }

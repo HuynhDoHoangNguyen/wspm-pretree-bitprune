@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Group, Paper, Stack, Table, Text, Title } from '@mantine/core';
-import { Audit, ComboClient, ComboClientError, ComboDetail, ComboFilters, ComboPage, Decision, unavailableComboClient } from './ComboClient';
+import { Audit, ComboClient, ComboClientError, ComboDetail, ComboFilters, ComboPage, Decision } from './ComboClient';
+import { comboHttpClient } from './ComboHttpClient';
 
 const statuses: Record<string, string> = { DRAFT: 'Bản nháp', APPROVED: 'Đã duyệt nội bộ', REJECTED: 'Đã từ chối', PUBLISHED: 'Đã công bố', ARCHIVED: 'Đã lưu trữ' };
 const kinds = ['SAME_ORDER_BUNDLE', 'SEQUENTIAL_CROSS_SELL', 'MIXED_SEQUENCE'];
@@ -25,7 +26,7 @@ function ReviewAudit({ audit }: { audit: Audit }) {
   return <div><Text>Người review: {audit.reviewerDisplayName ?? audit.reviewedBy ?? 'Chưa có'}{audit.reviewerDisplayName && audit.reviewedBy ? ` (${audit.reviewedBy})` : ''}</Text>
     <Text>Thời điểm review (UTC): {audit.reviewedAt ?? 'Chưa có'}</Text><Text style={{ whiteSpace: 'pre-wrap' }}>Ghi chú: {audit.reviewNote ?? 'Không có'}</Text></div>;
 }
-export default function ComboAdmin({ client = unavailableComboClient }: { client?: ComboClient }) {
+export default function ComboAdmin({ client = comboHttpClient }: { client?: ComboClient }) {
   const [draft, setDraft] = useState<ComboFilters>({});
   const [query, setQuery] = useState({ filters: {} as ComboFilters, page: 0 });
   const [revision, setRevision] = useState(0);
@@ -40,45 +41,50 @@ export default function ComboAdmin({ client = unavailableComboClient }: { client
   const [reconciling, setReconciling] = useState(false);
   const listGeneration = useRef(0), detailGeneration = useRef(0), sendGeneration = useRef(0);
   const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const selectedRef = useRef(selected); selectedRef.current = selected;
+  const submitting = useRef(false), reviewAbort = useRef<AbortController | null>(null);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; reviewAbort.current?.abort(); }; }, []);
   const invalidate = () => { listGeneration.current++; detailGeneration.current++; setRevision(v => v + 1); };
   const changeQuery = (filters: ComboFilters, page: number) => {
+    sendGeneration.current++; reviewAbort.current?.abort(); submitting.current = false; setSending(false); setSavedAudit(null);
     listGeneration.current++; detailGeneration.current++; setSelected(null); setDetail(null); setDecision(null);
     setNote(''); setQuery({ filters, page });
   };
   useEffect(() => {
-    const generation = ++listGeneration.current; let active = true;
+    const generation = ++listGeneration.current; let active = true; const controller = new AbortController();
     setLoading(true); setData(null); setError('');
-    client.list(query.filters, query.page, 20).then(result => {
+    client.list(query.filters, query.page, 20, { signal: controller.signal }).then(result => {
       if (!active || generation !== listGeneration.current) return;
       const total = count(result.filteredTotal); count(result.scopeTotal);
       const last = total === BigInt(0) ? BigInt(0) : (total - BigInt(1)) / BigInt(20);
-      if (BigInt(query.page) > last) { setQuery(q => ({ ...q, page: Number(last) })); return; }
-      if (query.page > 0 && result.items.length === 0) { setQuery(q => ({ ...q, page: 0 })); return; }
+      if (BigInt(query.page) > last) { changeQuery(query.filters, Number(last)); return; }
+      if (query.page > 0 && result.items.length === 0) { changeQuery(query.filters, 0); return; }
+      if (selectedRef.current && !result.items.some(i => i.data.comboId === selectedRef.current)) { detailGeneration.current++; setSelected(null); setDetail(null); setDecision(null); }
       setData(result);
     }).catch(e => { if (active && generation === listGeneration.current) setError(failure(e)); })
       .finally(() => { if (active && generation === listGeneration.current) setLoading(false); });
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, [client, query, revision]);
   useEffect(() => {
-    const generation = ++detailGeneration.current; let active = true;
+    const generation = ++detailGeneration.current; let active = true; const controller = new AbortController();
     setDetail(null); setDetailError(''); setDecision(null); setNote('');
     if (!selected) { setDetailLoading(false); return; }
     setDetailLoading(true);
-    client.detail(selected).then(result => {
+    client.detail(selected, { signal: controller.signal }).then(result => {
       if (!active || generation !== detailGeneration.current) return;
       if (result.data.comboId !== selected) throw new Error('DETAIL_CONTEXT_MISMATCH');
       setDetail(result); setReconciling(false);
     }).catch(e => { if (active && generation === detailGeneration.current) setDetailError(failure(e)); })
       .finally(() => { if (active && generation === detailGeneration.current) setDetailLoading(false); });
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, [client, selected, revision]);
+  const notePolicy = detail?.notePolicy ?? client.notePolicy;
   const canReview = (action: Decision) => !!(detail && detail.data.comboStatus === 'DRAFT' && client.reviewReady
-    && client.notePolicy?.confirmed && detail.reviewToken?.trim() && detail.assessment.allowedActions?.includes(action)
+    && notePolicy?.confirmed && detail.reviewToken?.trim() && detail.assessment.allowedActions?.includes(action)
     && detail.assessment.blockingIssues.length === 0 && !sending && !reconciling && !detailLoading);
   const submit = async () => {
-    if (!decision || !detail || !canReview(decision)) return;
-    const policy = client.notePolicy, token = detail.reviewToken;
+    if (submitting.current || !decision || !detail || !canReview(decision)) return;
+    const policy = notePolicy, token = detail.reviewToken;
     if (!policy?.confirmed || !token) return;
     const normalized = note.trim() || null;
     if (decision === 'REJECT' && policy.rejectRequired && !normalized) { setNotice('Cần ghi chú từ chối.'); return; }
@@ -86,9 +92,10 @@ export default function ComboAdmin({ client = unavailableComboClient }: { client
       setNotice('Ghi chú không hợp lệ hoặc vượt giới hạn.'); return;
     }
     const generation = ++sendGeneration.current;
+    submitting.current = true; const controller = new AbortController(); reviewAbort.current = controller;
     setSending(true); setNotice(''); setSavedAudit(null);
     try {
-      const result = await client.review(detail.data.comboId, { decision, reviewNote: normalized, expectedReviewToken: token });
+      const result = await client.review(detail.data.comboId, { decision, reviewNote: normalized, expectedReviewToken: token }, { signal: controller.signal });
       if (!mounted.current || generation !== sendGeneration.current) return;
       if (result.outcome === 'APPLIED' || result.outcome === 'ALREADY_DECIDED') {
         setNotice(result.outcome === 'APPLIED' ? 'Vừa xử lý thành công.' : 'Đã có quyết định này; giữ audit đã lưu.');
@@ -100,9 +107,9 @@ export default function ComboAdmin({ client = unavailableComboClient }: { client
       } else { setNotice(`Chưa ghi quyết định: ${result.outcome}. ${result.issues.join(', ')}`); }
     } catch (e) {
       if (!mounted.current || generation !== sendGeneration.current) return;
-      setNotice(failure(e) + ' Đang đọc lại trước khi thử lại.'); setReconciling(true); invalidate();
+      setNotice(e instanceof ComboClientError && e.status === 409 ? 'Quyết định hoặc dữ liệu đã thay đổi. Đang tải lại.' : failure(e) + ' Đang đọc lại trước khi thử lại.'); setReconciling(true); invalidate();
     } finally {
-      if (mounted.current && generation === sendGeneration.current) { setSending(false); setDecision(null); }
+      if (mounted.current && generation === sendGeneration.current) { submitting.current = false; setSending(false); setDecision(null); }
     }
   };
   return <Stack><Title order={2}>Quản lý Combo</Title>
@@ -123,12 +130,12 @@ export default function ComboAdmin({ client = unavailableComboClient }: { client
     {data && <><Text>Trong phạm vi: {data.scopeTotal}; Khớp bộ lọc: {data.filteredTotal}</Text>
       {data.items.length === 0 ? <Text>{count(data.scopeTotal) === BigInt(0) ? 'Chưa có Combo trong phạm vi đã chọn.' : 'Không có Combo khớp bộ lọc.'}</Text> :
         <Table><thead><tr><th>Combo</th><th>Trạng thái Combo</th><th>Batch</th><th>Audit</th></tr></thead><tbody>{data.items.map(s => <tr key={s.data.comboId}>
-          <td><Button variant="subtle" onClick={() => { if (selected === s.data.comboId) { invalidate(); return; } detailGeneration.current++; setSelected(s.data.comboId); setDetail(null); }}>{s.data.name} ({s.data.comboId})</Button></td>
+          <td><Button variant="subtle" disabled={sending} onClick={() => { if (selected === s.data.comboId) { invalidate(); return; } detailGeneration.current++; setSelected(s.data.comboId); setDetail(null); }}>{s.data.name} ({s.data.comboId})</Button></td>
           <td>{statusLabel(s.data.comboStatus)}</td><td>{s.data.batchId}: {batchLabel(s.data.batchStatus)}</td><td><ReviewAudit audit={s.data.review}/></td>
         </tr>)}</tbody></Table>}
       <Group><Button disabled={query.page === 0} onClick={() => changeQuery(query.filters, query.page - 1)}>Trang trước</Button><Text>Trang {query.page + 1}</Text>
         <Button disabled={query.page >= 2147483647 || BigInt(query.page + 1) * BigInt(20) >= count(data.filteredTotal)} onClick={() => changeQuery(query.filters, query.page + 1)}>Trang sau</Button></Group></>}
-    {selected && <Paper withBorder p="md"><Group><Title order={3}>Chi tiết Combo {selected}</Title><Button onClick={() => { detailGeneration.current++; setSelected(null); setDetail(null); }}>Đóng chi tiết</Button></Group>
+    {selected && <Paper withBorder p="md"><Group><Title order={3}>Chi tiết Combo {selected}</Title><Button disabled={sending} onClick={() => { detailGeneration.current++; setSelected(null); setDetail(null); }}>Đóng chi tiết</Button></Group>
       {detailLoading && <Text>Đang tải chi tiết…</Text>}{detailError && <Alert role="alert">{detailError}<Button onClick={invalidate}>Thử lại chi tiết</Button></Alert>}
       {detail && <Stack><Text>{statusLabel(detail.data.comboStatus)}; {batchLabel(detail.data.batchStatus)}; Run: {detail.data.runId}</Text>
         <ReviewAudit audit={detail.data.review}/><Text>Loại Combo: {detail.data.comboKind}</Text><Text>Support: {detail.data.metrics.supportAbs}; Weight: {detail.data.metrics.patternWeight ?? 'Không khả dụng'}</Text>

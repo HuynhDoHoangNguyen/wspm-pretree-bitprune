@@ -2,7 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import ComboAdmin from './ComboAdmin';
-import { ComboClient, ComboClientError, ComboDetail, ComboPage, ReviewResult } from './ComboClient';
+import { ComboClient, ComboClientError, ComboDetail, ComboPage, ReviewResult, unavailableComboClient } from './ComboClient';
 
 const audit = { reviewedBy: 'winner-id', reviewerDisplayName: null, reviewedAt: '2026-11-05T02:00:00.000000Z', reviewNote: 'Saved reason' };
 const detail: ComboDetail = {
@@ -28,18 +28,18 @@ async function approve() {
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Xác nhận quyết định' })); });
 }
 test('runtime unavailable has no fixture fallback', async () => {
-  render(<ComboAdmin/>);expect(await screen.findByText(/Chưa thể kết nối: API Combo/)).toBeInTheDocument();
+  render(<ComboAdmin client={unavailableComboClient}/>);expect(await screen.findByText(/Chưa thể kết nối: API Combo/)).toBeInTheDocument();
   expect(screen.queryByText('Demo (C1)')).not.toBeInTheDocument();
 });
 test('three filters, exact totals, paging and separate statuses', async () => {
   const api = client();render(<ComboAdmin client={api}/>);await screen.findByRole('button', { name: 'Demo (C1)' });
   expect(screen.getByText(/9007199254740993/)).toBeInTheDocument();expect(screen.getByRole('cell', { name: 'Bản nháp' })).toBeInTheDocument();expect(screen.getByText(/Batch đang kích hoạt/)).toBeInTheDocument();
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Trang sau' })); });expect(api.list).toHaveBeenLastCalledWith({}, 1, 20);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Trang sau' })); });expect(api.list).toHaveBeenLastCalledWith({}, 1, 20, expect.any(Object));
   fireEvent.change(screen.getByLabelText('Batch ID'), { target: { value: 'B1' } });
   fireEvent.change(screen.getByLabelText('Trạng thái Combo'), { target: { value: 'DRAFT' } });
   fireEvent.change(screen.getByLabelText('Loại Combo'), { target: { value: 'SAME_ORDER_BUNDLE' } });
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Áp dụng bộ lọc' })); });
-  expect(api.list).toHaveBeenLastCalledWith({ batchId: 'B1', status: 'DRAFT', comboKind: 'SAME_ORDER_BUNDLE' }, 0, 20);
+  expect(api.list).toHaveBeenLastCalledWith({ batchId: 'B1', status: 'DRAFT', comboKind: 'SAME_ORDER_BUNDLE' }, 0, 20, expect.any(Object));
 });
 test.each([['0', '0', 'Chưa có Combo trong phạm vi đã chọn.'], ['4', '0', 'Không có Combo khớp bộ lọc.']])('empty states %s/%s', async (scope, filtered, message) => {
   const api = client();api.list.mockResolvedValue({ ...page(), scopeTotal: scope, filteredTotal: filtered, items: [] });render(<ComboAdmin client={api}/>);
@@ -65,7 +65,7 @@ test.each(['actions', 'token', 'api', 'policy'])('review disabled when missing %
 test.each(['APPLIED', 'ALREADY_DECIDED', 'BLOCKED', 'READY_TO_APPLY'])('outcome %s never invents local audit or status', async outcome => {
   const api = client();api.review.mockResolvedValue({ outcome, currentStatus: 'APPROVED', storedAudit: audit, issues: [] });
   render(<ComboAdmin client={api}/>);await open();await approve();
-  expect(api.review).toHaveBeenCalledWith('C1', { decision: 'APPROVE', reviewNote: null, expectedReviewToken: 'server-fixture-token' });
+  expect(api.review).toHaveBeenCalledWith('C1', { decision: 'APPROVE', reviewNote: null, expectedReviewToken: 'server-fixture-token' }, expect.any(Object));
   expect(Object.keys(api.review.mock.calls[0][1]).sort()).toEqual(['decision', 'expectedReviewToken', 'reviewNote']);
   if (outcome === 'APPLIED') expect(await screen.findByText('Vừa xử lý thành công.')).toBeInTheDocument();
   else expect(screen.queryByText('Vừa xử lý thành công.')).not.toBeInTheDocument();
@@ -89,8 +89,9 @@ test.each(['CONFLICT', 'STALE_REVIEW_DATA'])('conflict %s reloads and recovers l
   api.list.mockImplementation((f, p) => Promise.resolve({ ...page(p, '0'), appliedFilters: f, items: [] }));
   api.detail.mockResolvedValue({ ...detail, data: { ...detail.data, comboStatus: 'APPROVED', review: audit }, assessment: { ...detail.assessment, allowedActions: [] } });
   api.review.mockResolvedValue({ outcome: outcome === 'CONFLICT' ? outcome : 'BLOCKED', currentStatus: 'APPROVED', storedAudit: audit, issues: outcome === 'CONFLICT' ? [] : [outcome] });
-  await approve();await waitFor(() => expect(api.list).toHaveBeenLastCalledWith({ status: 'DRAFT' }, 0, 20));expect(await screen.findByText('Trang 1')).toBeInTheDocument();
-  expect(api.detail).toHaveBeenCalledTimes(2);
+  await approve();await waitFor(() => expect(api.list).toHaveBeenLastCalledWith({ status: 'DRAFT' }, 0, 20, expect.any(Object)));expect(await screen.findByText('Trang 1')).toBeInTheDocument();
+  expect(api.detail.mock.calls.length).toBeLessThanOrEqual(2);
+  expect(screen.queryByRole('heading', { name: 'Chi tiết Combo C1' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Demo (C1)' })).not.toBeInTheDocument();
 });
 test.each(['UNKNOWN', 'network'])('%s forces readback before resubmit', async outcome => {
@@ -114,7 +115,7 @@ test('pending review refreshes current filters and disables double submit', asyn
   fireEvent.change(screen.getByLabelText('Batch ID'), { target: { value: 'CURRENT' } });
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Áp dụng bộ lọc' })); });
   await act(async () => { finish({ outcome: 'APPLIED', currentStatus: 'APPROVED', storedAudit: audit, issues: [] }); });
-  expect(api.list).toHaveBeenLastCalledWith({ batchId: 'CURRENT' }, 0, 20);expect(api.review).toHaveBeenCalledTimes(1);
+  expect(api.list).toHaveBeenLastCalledWith({ batchId: 'CURRENT' }, 0, 20, expect.any(Object));expect(api.review).toHaveBeenCalledTimes(1);
 });
 test('late detail is discarded after filter change closes it', async () => {
   const api = client();let finish!: (d: ComboDetail) => void;api.detail.mockImplementationOnce(() => new Promise(r => { finish = r; }));
@@ -128,4 +129,28 @@ test('raw unknown status is displayed and never treated as draft', async () => {
   api.list.mockResolvedValue({ ...page(), items: [unknown] });api.detail.mockResolvedValue(unknown);
   render(<ComboAdmin client={api}/>);await open();expect(screen.getAllByText(/Không xác định: PENDING/).length).toBeGreaterThan(0);
   expect(screen.getByRole('button', { name: 'Duyệt' })).toBeDisabled();
+});
+
+test('successful review removes stale selection when the row leaves DRAFT filter', async () => {
+  const api = client();render(<ComboAdmin client={api}/>);await screen.findByRole('button', { name: 'Demo (C1)' });
+  fireEvent.change(screen.getByLabelText('Trạng thái Combo'), { target: { value: 'DRAFT' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Áp dụng bộ lọc' })); });await open();
+  api.list.mockResolvedValue({ ...page(0, '0'), appliedFilters: { status: 'DRAFT' }, items: [] });
+  api.review.mockResolvedValue({ outcome: 'APPLIED', currentStatus: 'APPROVED', storedAudit: audit, issues: [] });
+  await approve();await screen.findByText('Không có Combo khớp bộ lọc.');
+  expect(screen.queryByRole('heading', { name: 'Chi tiết Combo C1' })).not.toBeInTheDocument();
+  expect(screen.getByText(/Người review: winner-id/)).toBeInTheDocument();
+});
+test('HTTP stale conflict reloads once without automatic resubmit', async () => {
+  const api = client();render(<ComboAdmin client={api}/>);await open();api.review.mockRejectedValue(new ComboClientError(409, 'STALE_REVIEW_DATA'));
+  await approve();expect(await screen.findByText(/Quyết định hoặc dữ liệu đã thay đổi/)).toBeInTheDocument();
+  expect(api.review).toHaveBeenCalledTimes(1);await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(2));
+});
+test('request signals abort when filters change and unmount, including pending review', async () => {
+  const api = client();let finish!: (r: ReviewResult) => void;api.review.mockImplementation(() => new Promise(r => { finish = r; }));
+  const mounted = render(<ComboAdmin client={api}/>);await open();await approve();
+  const sendSignal = api.review.mock.calls[0][2]?.signal;const listSignal = api.list.mock.calls[0][3]?.signal;
+  mounted.unmount();expect(sendSignal?.aborted).toBe(true);expect(listSignal?.aborted).toBe(true);
+  await act(async () => { finish({ outcome: 'APPLIED', currentStatus: 'APPROVED', storedAudit: audit, issues: [] }); });
+  expect(api.list).toHaveBeenCalledTimes(1);
 });

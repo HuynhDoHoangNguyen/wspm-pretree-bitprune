@@ -36,7 +36,12 @@ public class JdbcComboAdminReader implements ComboAdminReader {
         transaction.setReadOnly(true);
     }
     @Override public Snapshot list(Filters filters,long offset,int size) {
-        return transaction.execute(tx->jdbc.execute((ConnectionCallback<Snapshot>)c->{
+        return transaction.execute(tx->listCurrent(filters,offset,size));
+    }
+    /** Internal orchestration only; reuse the caller's established read/write transaction. */
+    public Snapshot listCurrent(Filters filters,long offset,int size) {
+        requireTransaction();
+        return jdbc.execute((ConnectionCallback<Snapshot>)c->{
             if(filters.batchId()!=null) {
                 try(var q=c.prepareStatement("SELECT 1 FROM COMBO_BATCH WHERE batch_id=?")) {
                     q.setString(1,filters.batchId());try(var rs=q.executeQuery()) {
@@ -58,16 +63,24 @@ public class JdbcComboAdminReader implements ComboAdminReader {
             }
             var bundles=new ArrayList<Bundle>();for(var row:rows) bundles.add(bundle(c,row));
             return new Snapshot(true,scopeTotal,filteredTotal,bundles);
-        }));
+        });
     }
     @Override public Bundle detail(String comboId) {
-        return transaction.execute(tx->jdbc.execute((ConnectionCallback<Bundle>)c->{
+        return transaction.execute(tx->detailCurrent(comboId));
+    }
+    public Bundle detailCurrent(String comboId) {
+        requireTransaction();
+        return jdbc.execute((ConnectionCallback<Bundle>)c->{
             Row row;
             try(var q=c.prepareStatement(PROJECTION+" WHERE c.combo_id=?")) {
                 q.setString(1,comboId);try(var rs=q.executeQuery()) { if(!rs.next()) return null;row=row(rs); }
             }
             return bundle(c,row);
-        }));
+        });
+    }
+    private static void requireTransaction() {
+        if(!org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+            throw new IllegalStateException("COMBO_TRANSACTION_REQUIRED");
     }
     private Bundle bundle(Connection c,Row row) throws SQLException {
         var items=new ArrayList<Item>();
