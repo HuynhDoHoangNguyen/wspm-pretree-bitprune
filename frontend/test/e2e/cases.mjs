@@ -128,11 +128,11 @@ export async function runCases({ browser, httpsOrigin: origin, sql, jwtSecret })
       await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
     }
     await signIn('e2e.admin');
-    await page.waitForURL(origin + '/admin/datasets');
+    await page.waitForURL(origin + '/admin');
     await page.getByRole('link', { name: 'Về cửa hàng', exact: true }).click();
     await page.waitForURL(origin + '/');
     await page.getByRole('link', { name: 'Trang quản trị', exact: true }).click();
-    await page.getByRole('heading', { name: 'Dữ liệu khai phá', exact: true }).waitFor();
+    await page.getByRole('heading', { name: 'Từ dữ liệu đơn hàng đến combo sản phẩm', exact: true }).waitFor();
     await page.getByTitle('Đăng xuất', { exact: true }).click(); await page.waitForURL(origin + '/');
     await signIn('e2e.customer'); await page.waitForURL(origin + '/');
     assert.equal(await page.getByRole('link', { name: 'Trang quản trị', exact: true }).count(), 0);
@@ -178,6 +178,7 @@ export async function runCases({ browser, httpsOrigin: origin, sql, jwtSecret })
     await page.getByLabel('Tên tài khoản', { exact: false }).fill('e2e.admin');
     await page.getByLabel(/^Mật khẩu/).fill(password);
     await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+    await page.getByRole('link', { name: 'Bắt đầu với dữ liệu', exact: true }).click();
     await page.getByRole('heading', { name: 'Dữ liệu khai phá', exact: true }).waitFor();
     const client = await harness(ctx);
     const promise = client.waitForEvent('download'); await client.getByRole('button', { name: 'Download fixture CSV' }).click();
@@ -300,7 +301,7 @@ export async function runCases({ browser, httpsOrigin: origin, sql, jwtSecret })
     await page.getByLabel('Tên tài khoản', { exact: false }).fill('e2e.admin');
     await page.getByLabel(/^Mật khẩu/).fill(password);
     await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
-    await page.getByRole('heading', { name: 'Dữ liệu khai phá', exact: true }).waitFor();
+    await page.getByRole('heading', { name: 'Từ dữ liệu đơn hàng đến combo sản phẩm', exact: true }).waitFor();
     await page.getByTitle('Đăng xuất', { exact: true }).click();
     await page.waitForURL(origin + '/');
   });

@@ -67,7 +67,7 @@ it('renders real forms without unsolicited API calls or unsupported pipeline act
   render(page());
   expect(screen.getByRole('heading', { level: 2, name: 'Dữ liệu khai phá' })).toBeInTheDocument();
   expect(screen.getByText(/giờ Việt Nam/)).toHaveTextContent('UTC+07');
-  expect(within(uploadForm()).getByRole('button')).toBeDisabled();
+  expect(within(uploadForm()).getByRole('button', { name: /Upload CSV|Đang upload/ })).toBeDisabled();
   expect(screen.queryByText('Chức năng đang được chuẩn bị')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Validate|Convert|Run/ })).not.toBeInTheDocument();
   expect(fetchMock).not.toHaveBeenCalled();
@@ -126,7 +126,7 @@ it('uploads once, waits for actual completion and shows the real PENDING receipt
   let finish!: (response: Response) => void;
   fetchMock.mockReturnValue(new Promise(resolve => { finish = resolve; }));
   render(page()); const file = choose(); fireEvent.submit(uploadForm()); fireEvent.submit(uploadForm());
-  expect(within(uploadForm()).getByRole('button')).toBeDisabled();
+  expect(within(uploadForm()).getByRole('button', { name: /Upload CSV|Đang upload/ })).toBeDisabled();
   expect(screen.queryByText('Đã tạo snapshot')).not.toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/admin/dataset-snapshots');
@@ -134,11 +134,13 @@ it('uploads once, waits for actual completion and shows the real PENDING receipt
   expect(fetchMock.mock.calls[0][1].body.get('file').size).toBe(file.size);
   expect(fetchMock.mock.calls[0][1].headers.has('Content-Type')).toBe(false);
   await act(async () => { finish(success()); });
-  expect(await screen.findByRole('status')).toHaveTextContent(id);
-  expect(screen.getByRole('status')).toHaveTextContent('PENDING — Chưa kiểm tra dữ liệu');
-  expect(screen.getByRole('status')).toHaveTextContent('Chưa chuyển đổi sequence');
+  expect(await screen.findByRole('status')).toHaveTextContent('Đã lưu dữ liệu thành công');
+  const receipt = screen.getByRole('region', { name: 'Snapshot đã tạo' });
+  expect(receipt).toHaveTextContent(id);
+  expect(receipt).toHaveTextContent('Chờ kiểm tra dữ liệu');
+  expect(screen.getByRole('link', { name: 'Tiếp tục kiểm tra dữ liệu' })).toHaveAttribute('href', '/admin/datasets/' + id + '?tab=validation');
   expect(screen.getByRole('link', { name: 'Xem chi tiết snapshot' })).toHaveAttribute('href', '/admin/datasets/' + id);
-  expect(within(uploadForm()).getByRole('button')).toBeDisabled();
+  expect(within(uploadForm()).getByRole('button', { name: /Upload CSV|Đang upload/ })).toBeDisabled();
   expect((screen.getByLabelText('Tệp CSV') as HTMLInputElement).value).toBe('');
   expect(URL.createObjectURL).not.toHaveBeenCalled();
 });
@@ -150,6 +152,20 @@ it('rejects empty and non-CSV files before POST', () => {
   choose(new File(['not csv'], 'orders.exe')); fireEvent.submit(uploadForm());
   expect(screen.getByRole('alert')).toHaveTextContent('phần mở rộng .csv');
   expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it('allows clearing the selected file with the remove button', () => {
+  render(page());
+  expect(screen.getByText('Chọn tệp CSV…')).toBeInTheDocument();
+  choose(new File(['line1,line2'], 'my-data.csv', { type: 'text/csv' }));
+  expect(screen.getByText('my-data.csv')).toBeInTheDocument();
+  expect(within(uploadForm()).getByRole('button', { name: /Upload CSV|Đang upload/ })).toBeEnabled();
+
+  fireEvent.click(screen.getByLabelText('Bỏ chọn tệp'));
+  expect(screen.queryByText('my-data.csv')).not.toBeInTheDocument();
+  expect(screen.getByText('Chọn tệp CSV…')).toBeInTheDocument();
+  expect(within(uploadForm()).getByRole('button', { name: /Upload CSV|Đang upload/ })).toBeDisabled();
+  expect((screen.getByLabelText('Tệp CSV') as HTMLInputElement).value).toBe('');
 });
 
 it.each([400, 401, 403, 413, 415, 503])('shows upload HTTP %s safely with request ID and no replay', async status => {

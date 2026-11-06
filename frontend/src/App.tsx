@@ -14,7 +14,6 @@ import MiningRunHistory from 'pages/mining-run/MiningRunHistory';
 import MiningMonitoringPage from 'pages/mining-monitoring/MiningMonitoringPage';
 import MiningComparisonPage from 'pages/mining-comparison/MiningComparisonPage';
 import { CustomerComboListPage, CustomerComboDetailPage } from 'pages/customer-combos/CustomerComboPages';
-import AdminDashboard from 'pages/AdminDashboard';
 import { createDataMiningRoutes } from 'pages/admin/data-mining/routes';
 import DataMiningGuard from 'pages/admin/data-mining/DataMiningGuard';
 import { AuthRoutes } from 'auth/AuthBoundary';
@@ -248,7 +247,6 @@ function App() {
                     </Route>
                     <Route path="/admin" element={<Admin/>}>
                       <Route path="/admin/*" element={<AdminError/>}/>
-                      <Route index element={<AdminDashboard/>}/>
                       {/* TV3 owns history at this URL; retain the other shared dataset/pattern routes. */}
                       {createDataMiningRoutes().filter(route => route.props.path !== ManagerPath.MINING_RUNS)}
                       <Route path={ManagerPath.MINING_RUNS} element={

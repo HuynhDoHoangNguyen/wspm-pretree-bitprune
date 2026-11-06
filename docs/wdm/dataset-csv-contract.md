@@ -1237,3 +1237,2177 @@ No algorithm, threshold, schema, CSV validation/conversion or commerce API featu
 was changed. Filesystem/MySQL non-atomicity, buffered-download memory limits,
 cross-browser/production/100 MiB concurrency capacity and hostile OS races remain
 the documented limitations, not new performance or deployment claims.
+
+## WDM-02.1 — CSV structural parser (2026-11-05)
+
+`services/dataset/csv/OrderCsvParser` is a standalone Java reader for CSV v1.
+It takes an InputStream and a Consumer of immutable ParsedCsvRecord values and
+returns the number of data records after successfully reaching EOF. The caller
+owns/closes the stream. The parser has no Spring, storage, database or HTTP
+dependency and does not change acquisition, raw bytes, checksums or snapshot
+status. Integration with validation/report persistence belongs to later WDM-02
+tasks. It must eventually receive integrity-verified raw content through the
+existing storage boundary, not an arbitrary client path.
+
+Structural acceptance is distinct from business validity. All fields remain
+strings; empty/whitespace-only values, lengths, typed formats, monetary rules,
+catalog references, order conflicts and duplicate identities are deferred to
+WDM-02.2/02.3. A successfully parsed business-invalid.csv is intentional, not a
+VALID snapshot or permission to convert/mine it. No rows are deduplicated,
+reordered, cleaned, expanded by quantity or silently skipped.
+
+### Explicit parser engineering decisions
+
+These are application implementation choices, not paper-derived mining rules:
+
+- Decode UTF-8 with REPORT rather than replacement. Remove at most one leading
+  UTF-8 BOM; reject a double leading BOM. Preserve U+FEFF inside data fields.
+- Compare the 13 decoded header names case-sensitively and in contract order.
+  CSV-quoted header names are allowed if their decoded values match exactly;
+  header whitespace is not trimmed. Wrong width is a column-count error; a
+  13-field header with wrong names/order is a header-mismatch error.
+- Accept CRLF and LF, including mixed record separators. Preserve embedded
+  CR/LF/CRLF in quoted fields. Reject bare CR outside quoted fields.
+- Quotes may open only at field start; double quotes escape a quote inside a
+  quoted field. After a closing quote only an escaped quote, comma, record
+  separator or EOF is allowed. Do not accept spaces after a closing quote.
+- Accept a complete last record without a trailing newline. A final record
+  separator does not create an extra record. Blank physical records outside
+  quoted fields are not ignored: they fail the 13-field width check.
+- Header-only content is structurally readable with zero data records; empty
+  or BOM-only content fails with a missing-header error. Downstream policy for
+  zero usable orders is not decided by this task.
+- Fail on the first structural error. The Consumer may already have received a
+  provisional prefix. Callers must stage/discard effects until parse returns
+  normally; a prefix is never a successful complete dataset. Do not write final
+  artifacts or mark VALID from individual callbacks. Consumer failures and
+  source I/O failures propagate; source I/O failure is not mislabeled bad CSV.
+- Each invocation has independent cursor state. The parser holds one record at
+  a time plus bounded decoder buffering. A positive maxRecordCharacters is
+  mandatory at construction: this is a caller-selected resource budget, not
+  a new CSV-v1 business limit. Count UTF-16 code units including delimiters,
+  quotes and record terminators, excluding the optional leading BOM. Budget
+  rejection must not be presented as evidence that CSV syntax is malformed.
+  No application-wide default/configuration is introduced here. A caller that
+  collects every emitted record still incurs whole-dataset memory usage.
+
+### Diagnostics and traceability
+
+Records carry a 1-based logical recordNumber (header = 1, first data record = 2)
+and inclusive physical startLine/endLine. CRLF counts as one line break, also
+inside quoted fields. CsvStructureException carries only a fixed code and these
+positions, without raw fields, values, paths or a decoder exception cause.
+
+Codes: CSV_INVALID_UTF8, CSV_INVALID_BOM, CSV_MISSING_HEADER,
+CSV_HEADER_MISMATCH, CSV_UNCLOSED_QUOTE, CSV_INVALID_QUOTE,
+CSV_INVALID_RECORD_SEPARATOR, CSV_COLUMN_COUNT_MISMATCH,
+CSV_RECORD_LIMIT_EXCEEDED. These are parser diagnostics, not new public HTTP
+error codes or a persisted validation-report schema. Decoder read-ahead means
+INVALID_UTF8 positions describe the parser cursor when decoding failed, not an
+exact offending byte/record location; consumers must retain this distinction.
+
+### Verification and task boundary
+
+Unit tests cover the maintained valid/header-only/business-invalid fixtures,
+writer-to-parser field round-trip, Unicode/BOM/quoting/newlines, malformed UTF-8,
+header/width failures, physical positions, immutable output, fail-fast prefix,
+stream ownership, consumer/I/O failures and explicit record-budget boundaries.
+No fixture or live database is seeded or rewritten by the parser tests.
+Verification performed on 2026-11-05:
+
+| Check | Result |
+|---|---|
+| Initial focused OrderCsvParserTest | 34/34 PASS |
+| Final focused OrderCsvParserTest, including single-byte stream and quote-at-EOF cases | 36/36 PASS, no skips |
+| Selected backend regression | 122/122 PASS, no skips within selection; includes initial 34 parser cases |
+| Mining-core regression in that selected reactor run | 1182/1182 PASS, no skips |
+| Existing offline CSV fixture checker | 6/6 PASS |
+| Diff whitespace check | PASS |
+| Full DB-backed backend regression / smoke / browser | NOT VERIFIED this task |
+
+Commands from repository root (quote Maven properties in PowerShell):
+
+```powershell
+mvn -pl backend -am '-Dtest=OrderCsvParserTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+mvn -pl backend -am '-Dtest=*,!BackendApplicationTests,!AuthSessionIntegrationTest,!WdmAuthorizationIntegrationTest,!RegistrationIntegrationTest,!OrderExportRepositoryTest,!OrderExportAvailabilityTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+python backend/src/test/resources/wdm/csv-v1/verify_contract.py
+git diff --check
+```
+
+The unrestricted reactor invocation was interrupted during mining-core before
+backend execution: BackendApplicationTests uses the default application DB,
+which must not be migrated/accessed as an incidental parser check. Docker was
+unavailable (Docker Desktop Linux engine pipe not present), so the selected run
+explicitly excluded that smoke class and the five MySQL/Testcontainers classes
+listed in the command. These exclusions are NOT VERIFIED, not successful or
+JUnit-skipped tests. No development DB or owner service was changed. The final
+two test-only additions were verified in the final focused run; production
+parser source was unchanged after the selected regression. The fixture checker
+is contract evidence, not HTTP/DB integration evidence. Surefire reports remain
+in the owning modules' ignored target directories; no clean/delete was run.
+
+Owner accepted WDM-02.1 in chat on 2026-11-05 and requested planning WDM-02.2.
+The checklist marks 02.1 complete; this does not close WDM-02 as a whole or
+BLK-02, nor verify the excluded DB/smoke/browser checks. No migration, dependency, frontend, Auth, threshold, algorithm or
+scientific benchmark change is included.
+
+## WDM-02.2 — Row business validation (2026-11-05)
+
+Implementation is limited to row-level rules and a read-only catalog lookup.
+OrderCsvBusinessValidator consumes an accepted ParsedCsvRecord and a set of
+exact existing product IDs. It returns an immutable Result: either a typed
+ValidatedOrderRow and no issues, or no typed row and a nonempty immutable issue
+list. A caller must provide the complete lookup result for the IDs it validates;
+an empty set means no matching products, not an unavailable lookup. Lookup/I/O
+failure must propagate as an operational failure, not become PRODUCT_NOT_FOUND.
+Passing a record with other than 13 fields is programmer misuse and throws;
+structure parsing remains the responsibility of WDM-02.1.
+
+### Implemented row rules
+
+- Every field is required. Empty or whitespace-only means all code points
+  satisfy Character.isWhitespace or Character.isSpaceChar; NBSP/figure/narrow
+  spaces are included. Zero-width space is not silently stripped or classified
+  as blank. Values are never trimmed, case-folded or Unicode-normalized.
+- Opaque-text limits are 40/80/40/80/200 Unicode code points for order_id,
+  customer_code, product_id, sku_snapshot, product_name_snapshot respectively.
+  Combining marks count separately. This explicitly matches code-point-oriented
+  fixture lengths rather than Java UTF-16 string length.
+- order_item_id uses positive ASCII decimal digits with no sign/leading zeros,
+  at most 18446744073709551615. quantity has the same lexical rule and is at most
+  4294967295. Oversized integers are compared as digit strings before allocation;
+  accepted values use BigInteger and long respectively. Zero is an invalid
+  positive-integer representation; canonical numbers beyond the maximum are
+  VALUE_OUT_OF_RANGE.
+- ordered_at must match the four-digit-year CSV-v1 UTC timestamp with exactly
+  six fractional digits and uppercase Z. Strict calendar parsing rejects invalid
+  dates, 24:00 and leap-second normalization. No API offset normalization, host
+  timezone, future-date restriction or acquisition-window filter is applied.
+- status is exactly COMPLETED. currency_code is three uppercase ASCII letters;
+  this task does not introduce an ISO currency whitelist or exchange rates.
+- Each monetary field matches `(0|[1-9][0-9]{0,16})\.[0-9]{2}`. No signs,
+  grouping, exponents, extra scale or rounding are accepted. BigDecimal computes
+  gross = price * quantity without restricting the intermediate to DECIMAL(19,2).
+  When all four numeric inputs are valid, check discount <= gross and compare
+  stored line_total exactly with gross - discount. Report both relationship
+  failures if both fail; do not replace the stored total. If any of these typed
+  inputs is invalid, do not emit arithmetic relationship errors.
+- product_id must match a catalog ID exactly. Current product status, price,
+  SKU/name and customer existence are not extra eligibility conditions. No live
+  ORDER/ORDER_ITEM lookup is required for imported source IDs.
+
+### Diagnostics and product lookup
+
+BusinessValidationIssue contains only code, fixed field name and the source
+recordNumber/startLine/endLine. Issues are ordered by CSV column, independently
+of validation pass; required/length failure suppresses dependent field checks.
+These codes are internal row diagnostics, not new HTTP response codes or a
+persisted report schema:
+
+FIELD_REQUIRED, FIELD_TOO_LONG, INVALID_INTEGER_FORMAT, VALUE_OUT_OF_RANGE,
+STATUS_NOT_COMPLETED, INVALID_TIMESTAMP, INVALID_MONEY_FORMAT,
+DISCOUNT_EXCEEDS_GROSS, LINE_TOTAL_MISMATCH, INVALID_CURRENCY_CODE,
+PRODUCT_NOT_FOUND.
+
+ProductReferenceLookup separates catalog access from the pure validator.
+RepositoryProductReferenceLookup is a Spring read-only transactional adapter
+using ProductRepository.findReferenceCandidates, an ID-only JPQL projection.
+It sorts requested distinct IDs, executes queries in chunks of at most 256 IDs,
+and intersects returned IDs using exact Java string matching. Case/accent/space
+equivalence under database collation must not validate a different CSV ID. The
+immutable result iterates in sorted request order. Empty requests do not query.
+There is no per-row catalog query, full catalog/entity load or product-status
+filter. Failures propagate without being relabeled or automatically retried.
+Only safe aggregate counts are logged at DEBUG; no row/ID/value is logged.
+The 256-ID chunk is an engineering query budget, not a data eligibility limit.
+
+This lookup checks the catalog at execution time. It does not establish a
+catalog version or a consistent view across a future entire validation job;
+WDM-02.5 owns orchestration, transaction scope and repeat-operation policy.
+The parser's provisional-prefix contract still applies: individually valid
+rows must not be persisted/used as a successful dataset before parsing reaches
+EOF normally. Query chunking bounds individual queries, not the caller's total
+requested-ID set. Large-job buffering/caching is not implemented by this task.
+
+### Scope and verification boundary
+
+Tests compose the real parser with this validator: valid.csv yields five valid
+rows; empty.csv yields none; business-invalid.csv yields PRODUCT_NOT_FOUND for
+the unknown product and four row-valid records. The latter still include an
+order-level conflict and repeated line identity, deliberately left to WDM-02.3.
+No order is dropped, merged or marked globally valid here. Cleaning, report/API,
+snapshot status, UI and conversion gates remain WDM-02.3 through 02.7.
+
+ProductReferenceLookupIntegrationTest uses its own MySQL 8.4 container, only the
+three catalog CREATE definitions from V2, actual JPQL and a Spring transactional
+lookup bean. It tests case/accent-insensitive collation candidates and existing
+DISCONTINUED/DRAFT products without overwriting historical data. It is explicitly
+disabled without Docker, and skipped checks must be reported as NOT VERIFIED.
+It never loads application/.env datasource settings or executes migrations on
+the development database. The standalone adapter tests use mocks and are unit
+tests, not proof of MySQL or Spring transaction integration.
+
+The Unicode blank predicate, code-point lengths, diagnostic/result model and
+query chunking are documented engineering choices under the authorized plan;
+the business rules come from the accepted CSV-v1 application contract. They
+are not mining-paper formulas. No accepted parser source, mining behavior,
+schema, dependency, Auth, frontend or upload lifecycle is changed.
+
+### Verification evidence and remaining checks
+
+| Check on 2026-11-05 | Result |
+|---|---|
+| Business validator unit tests, including parser/fixture composition | 65/65 PASS |
+| Repository lookup unit tests (mock repository) | 4/4 PASS |
+| Accepted structural parser regression | 36/36 PASS |
+| Focused selection including MySQL integration | 105 PASS, 2 SKIPPED, no failures/errors |
+| Selected backend regression | 193 PASS, 2 SKIPPED, no failures/errors |
+| Mining-core regression in the selected reactor run | 1182/1182 PASS, no skips |
+| Existing offline fixture checker | 6/6 PASS |
+| Diff whitespace check | PASS |
+| MySQL JPQL/collation/read-only transaction runtime | NOT VERIFIED: 2 tests skipped because Docker engine is unavailable |
+| Full DB-backed backend suite / browser | NOT VERIFIED this task |
+
+Commands from repository root:
+
+```powershell
+mvn -pl backend -am '-Dtest=OrderCsvBusinessValidatorTest,RepositoryProductReferenceLookupTest,ProductReferenceLookupIntegrationTest,OrderCsvParserTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+mvn -pl backend -am '-Dtest=*,!BackendApplicationTests,!AuthSessionIntegrationTest,!WdmAuthorizationIntegrationTest,!RegistrationIntegrationTest,!OrderExportRepositoryTest,!OrderExportAvailabilityTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+python backend/src/test/resources/wdm/csv-v1/verify_contract.py
+git diff --check
+```
+
+The selected regression explicitly excludes the default-datasource smoke class
+and five existing MySQL classes shown in the command. These are exclusions,
+not successful tests. The new ProductReferenceLookupIntegrationTest is included
+but its two tests are JUnit-skipped without Docker. Docker Desktop's Linux
+engine pipe was unavailable; no development DB connection, migration or owner
+service restart was used as a substitute. Surefire reports are retained under
+backend/target/surefire-reports and mining-core/target/surefire-reports. Existing
+Mockito dynamic-agent warnings remain; no test dependencies were changed.
+
+Initial implementation and unit/selected regression checks were complete; task
+status at that point was PARTIAL pending MySQL verification (superseded by the
+follow-up below). Owner acceptance is not recorded, WDM-02.2 remains unchecked,
+and BLK-02 is not closed. No WDM-02.3
+implementation, cleanup deletion, stage, commit or push is included.
+
+### Follow-up — MySQL integration verified (2026-11-05)
+
+After the owner enabled Docker and requested the targeted run,
+ProductReferenceLookupIntegrationTest completed with **2 tests, 0 failures,
+0 errors, 0 skipped**; Maven BUILD SUCCESS, exit 0. Runtime: Docker 29.7.2,
+MySQL 8.4.13 from mysql:8.4, isolated database wdm_business_test on an ephemeral
+host port. This supersedes only the previous NOT VERIFIED status for this
+class; previous skipped-run counts and broader-suite exclusions remain
+historical evidence, not retroactively changed totals.
+
+```powershell
+mvn -pl backend -am '-Dtest=ProductReferenceLookupIntegrationTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+```
+
+The real JPQL query returned case/accent-insensitive candidates and the Spring
+transactional adapter rejected non-exact IDs. Exact existing DISCONTINUED/DRAFT
+product IDs were accepted while historical name/amount stayed unchanged. Only
+the three catalog definitions from V2 and synthetic fixture rows were created
+inside the test container; no development DB or owner service was accessed.
+No production/test source changes were required. The run did not rerun all
+mining-core/backend tests or browser tests; the earlier selection evidence
+remains applicable without a new full-suite claim.
+
+Evidence: backend/target/surefire-reports/TEST-vn.edu.wspm.backend.services.dataset.csv.ProductReferenceLookupIntegrationTest.xml
+and its corresponding text report. **Current WDM-02.2 status: TECHNICAL PASS /
+OWNER ACCEPTED (2026-11-05).** Owner accepted WDM-02.2 in chat after the MySQL
+follow-up and requested planning WDM-02.3. The checklist marks 02.2 complete;
+BLK-02 remains open for order consistency and the remaining WDM-02 work.
+
+## WDM-02.3 — Order consistency (2026-11-05)
+
+The owner accepted the Order Consistency plan and authorized this task separately.
+OrderConsistencyChecker is a pure Java checker for one complete snapshot. It
+does not modify the accepted parser/business validator, query a database, clean
+rows, create artifacts, expose an endpoint or mark a snapshot valid.
+
+### Input and preservation of business errors
+
+OrderConsistencyInput pairs an original ParsedCsvRecord with that same record's
+trusted WDM-02.2 Result. Callers must not pair stale or unrelated results, forge
+diagnostics or discard business-invalid rows. The handoff rejects non-data
+records, wrong field counts, invalid position ranges and mismatched result/issue
+positions. It checks metadata correspondence, not cryptographic/content identity;
+same-position content substitution remains caller misuse. No catalog lookup or
+duplicate copy of the business-validation formulas is performed by the checker.
+
+All inputs, including rows without usable keys, remain in the immutable result.
+A field is comparable/indexable only when its matching business result has no
+issue for that field. Thus an unknown product or bad monetary row can still
+contribute valid order/line identity and common metadata. Invalid IDs are not
+indexed; invalid field values never become evidence of a content/common-field
+conflict. Existing 02.2 issues remain attached unchanged to their original row.
+
+Canonical CSV-v1 integer, timestamp and money spellings make exact string
+comparison equivalent for accepted values here. This preserves large unsigned
+line identities without floating point or alternate conversion/rounding rules.
+Opaque IDs/text use exact Java string equality, without trimming, case folding,
+Unicode normalization or a database collation.
+
+### Findings and internal links
+
+| Finding | Rule |
+|---|---|
+| ORDER_FIELD_CONFLICT | Same usable order_id, distinct comparable customer_code, ordered_at or currency_code values; one finding per field |
+| DUPLICATE_LINE_ID | A usable order_item_id occurs more than once anywhere in the snapshot, including identical repetitions |
+| LINE_ID_ORDER_CONFLICT | One repeated line ID has more than one usable order_id |
+| LINE_ID_CONTENT_CONFLICT | A repeated line ID has distinct comparable values in a payload field other than order_id/order_item_id; one finding per field |
+
+Every valid status is already COMPLETED under 02.2; invalid statuses keep their
+business errors rather than generating a different status policy. Same product
+on different line IDs is not a duplicate. Equal timestamps on different orders
+do not merge orders. No match depends on adjacent rows in the CSV.
+
+A repeated group always receives DUPLICATE_LINE_ID. Cross-order and payload
+findings may additionally apply; order_id differences use LINE_ID_ORDER_CONFLICT
+rather than a second payload finding. Absence of a payload finding does not prove
+all rows identical when some fields are business-invalid. Findings list all
+comparable source positions for the field; duplicate findings list all repeated
+positions. Invalid-field rows remain in the result even when omitted from that
+specific finding's evidence. No pairwise expansion of group findings is used.
+
+OrderConsistencyIssue exposes only fixed code/field and numeric source positions,
+never raw values or order/customer IDs. The internal Result retains source rows
+and affectedOrderIds to support 02.4. This set includes every usable order ID
+involved in a consistency finding, not all orders with 02.2 business errors and
+not a rejection list. The cleaning stage must combine retained business errors,
+consistency findings and its own accepted policy. These internal objects must
+not be exposed directly as HTTP DTOs. Their toString summaries exclude raw data.
+
+Rows and position lists are sorted by source recordNumber; duplicate record
+numbers are rejected as caller misuse. Findings are ordered by their first
+contributing record number, code declaration order, then CSV column order.
+Affected order IDs iterate in deterministic Java string sort order. Lists and
+sets are defensively copied/unmodifiable. Reordering an input collection does
+not change the result for the same source-numbered records. Group indexes and
+retained rows use memory proportional to input size; no large-job capacity or
+performance claim is made. Callers must supply the complete parsed snapshot,
+after parser EOF succeeds; hasConsistencyIssues is not a dataset-valid predicate.
+
+### Scope and evidence boundary
+
+Conflict/duplicate categories, internal handoff/result models and deterministic
+group reporting are documented engineering choices under the accepted plan.
+The underlying contract/fixtures require reporting contradictory order metadata
+and repeated line identity. CT-04's order-level integrity policy is preserved:
+this task identifies affected groups but does not execute discard or merging.
+Those decisions/operations remain WDM-02.4. Report persistence/API, UI and the
+conversion gate remain WDM-02.5 through 02.7; BLK-02 is not closed here.
+
+Tests exercise nonadjacent conflicts, all common/payload fields, identical
+repetitions, global cross-order identity, unsigned IDs, invalid-field evidence,
+source/metadata preservation, immutable/safe diagnostics, and real parser →
+business-validator → checker fixture composition. valid.csv has five retained
+rows and no consistency findings. business-invalid.csv retains all five rows,
+the unknown-product business error, one customer_code ORDER_FIELD_CONFLICT
+(records 3/4) and one DUPLICATE_LINE_ID (records 5/6). No fixture is cleaned or
+changed, and no database is needed by the checker itself.
+
+Verification performed on 2026-11-05:
+
+| Check | Result |
+|---|---|
+| Initial focused checker + business + parser selection | 131/131 PASS (30 + 65 + 36), no skips |
+| Final OrderConsistencyCheckerTest, including large unsigned identity case | 31/31 PASS in selected regression |
+| Selected backend regression | 226/226 PASS, no failures/errors/skips |
+| ProductReferenceLookupIntegrationTest in that selection | 2/2 PASS on isolated MySQL 8.4.13, no skips |
+| Mining-core regression in the selected reactor run | 1182/1182 PASS, no skips |
+| Existing offline fixture checker | 6/6 PASS |
+| Diff whitespace check | PASS |
+| Full DB-backed backend suite / browser | NOT VERIFIED this task |
+
+```powershell
+mvn -pl backend -am '-Dtest=OrderConsistencyCheckerTest,OrderCsvBusinessValidatorTest,OrderCsvParserTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+mvn -pl backend -am '-Dtest=*,!BackendApplicationTests,!AuthSessionIntegrationTest,!WdmAuthorizationIntegrationTest,!RegistrationIntegrationTest,!OrderExportRepositoryTest,!OrderExportAvailabilityTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+python backend/src/test/resources/wdm/csv-v1/verify_contract.py
+git diff --check
+```
+
+The selected command explicitly excludes the default-datasource smoke test and
+five existing DB integration classes. Those are exclusions, not successful or
+JUnit-skipped tests. The relevant product lookup integration is included and
+actually ran after Docker was available. No development DB or owner service
+was used, stopped or migrated. Evidence is retained in the owning modules'
+ignored target/surefire-reports directories, including
+TEST-vn.edu.wspm.backend.services.dataset.csv.OrderConsistencyCheckerTest.xml.
+No clean/delete, new dependency, stage, commit or push was performed.
+
+**Current WDM-02.3 status: IMPLEMENTED / TECHNICAL PASS / OWNER ACCEPTED
+(2026-11-05).** Owner accepted the implementation result in chat and requested
+planning WDM-02.4. The checklist marks 02.3 complete. Cleaning implementation
+has not been started; BLK-02 remains open for the remaining WDM-02 work.
+
+## WDM-02.4 — Cleaning pipeline (2026-11-05)
+
+The owner accepted the cleaning plan/policy and authorized implementation in
+chat. **Policy version: WDM_ORDER_CLEANING_V1.** The policy is an explicit
+application data decision, not a mining-paper formula or change to the accepted
+engines. It resolves the cleaning/deduplication choices previously reserved by
+CSV v1 for this task; export/upload still preserve original lines and bytes.
+
+OrderCleaningPipeline consumes a complete, matching OrderConsistencyChecker
+Result after parsing reaches EOF normally. It reuses the accepted checker to
+verify that the supplied findings/links match its rows, rejecting stale/omitted
+findings as caller misuse. This does not prove that an entire file was supplied,
+validate a substituted same-position business result, recheck catalog existence
+or replace storage integrity verification. Those remain upstream handoff/job
+responsibilities. The parser, business validator and checker sources are unchanged.
+
+### Approved policy and processing order
+
+1. If any row lacks a usable order_id under 02.2 (including an overlong ID),
+   block the entire cleaning result. Return no clean orders or partially
+   processed rejection list. Every row receives BLOCKED: the unassignable rows
+   have UNATTRIBUTABLE_ORDER_ID, all other rows SNAPSHOT_BLOCKED. Preserve the
+   complete original findings/business errors in source.
+2. Otherwise, index all orders before selecting any representatives. Every
+   02.2 business-invalid row rejects its entire order (BUSINESS_RULE_FAILURE),
+   including valid lines and exact duplicate copies from that order.
+3. ORDER_FIELD_CONFLICT rejects its order. LINE_ID_ORDER_CONFLICT and
+   LINE_ID_CONTENT_CONFLICT reject all involved orders. Whole-order rejection
+   reasons accumulate in fixed enum order; a later conflict can reject an order
+   seen earlier. Never interpret affectedOrderIds or DUPLICATE_LINE_ID alone
+   as a rejection list.
+4. For surviving orders, collapse only repetitions of the same line ID whose
+   entire 13-field source payload matches exactly and whose rows are all
+   business-valid. Retain the lowest source recordNumber, preserve all source
+   positions and point each duplicate disposition to that representative.
+   Never sum the same line's quantity or money again. Any unexpected retained
+   payload mismatch fails closed as a handoff error.
+5. Different line IDs remain separate even when product_id is the same. Build
+   ProductGroup views referencing those unchanged lines. Different historical
+   prices, SKU/name, quantities, discounts and totals are retained; do not invent
+   an aggregate unit price or choose one historical text for other lines.
+
+The pipeline never repairs values, changes customer identity, recomputes stored
+line amounts, invents temporal order or introduces mining item IDs/SPMF. Input
+and output are in-memory commercial-data models only; no file/DB write or
+snapshot status transition is performed. Raw bytes/checksums remain untouched.
+
+### Output, accounting and readiness
+
+OrderCleaningResult retains policyVersion, outcome, clean orders, rejected-order
+summaries, one disposition per input record, and the original consistency result.
+The four internal outcomes are READY (some usable orders), EMPTY_INPUT,
+EMPTY_AFTER_CLEANING and BLOCKED_UNATTRIBUTABLE_ORDER. The latter three expose no
+clean orders. hasUsableOrders is cleaning readiness only, not a persisted VALID
+state or authorization to run mining. Subsequent report/conversion gates must
+handle empty/blocked results explicitly.
+
+Disposition actions partition every source record exactly once:
+
+- KEPT: representative source line, representative position points to itself.
+- DEDUPLICATED: identical repeat, representative points to its retained line;
+  reason IDENTICAL_LINE_REPETITION. The retained line's origins include both
+  itself and all repeats, without creating extra retained commercial lines.
+- REJECTED_ORDER: every source row in a rejected order, including duplicates;
+  no representative. Reasons describe the whole rejected order; original row
+  errors and consistency evidence remain available through source.
+- BLOCKED: no row was cleaned because an order cannot safely be identified;
+  no representative or partial usable data is returned.
+
+CleanedOrder stores order/customer/time/currency metadata, unique retained lines
+and product-group views. Each line retains its unchanged ValidatedOrderRow and
+all source positions. Collections are defensively copied/unmodifiable. Internal
+models contain commercial data and must not be returned directly as HTTP DTOs;
+their toString summaries expose only counts, fixed reasons and numeric positions.
+
+Orders/rejection summaries follow first source occurrence, unique lines follow
+their representative source position, product groups follow first retained line,
+and dispositions are globally sorted by source recordNumber. No chronology sort
+is introduced: WDM-03 owns conversion/sequence ordering. Shuffling an input
+collection with the same source positions does not alter the result. Re-cleaning
+only retained lines produces no further drops/deduplication; previous discarded
+origins are not reconstructed from that reduced input. Whole-snapshot indexes,
+retained evidence and the checker verification require memory for the supplied
+dataset; no capacity/performance claim is made.
+
+### Fixture expectations and task boundary
+
+valid.csv yields three clean orders, five retained lines; the first order has
+two distinct line IDs grouped under one product. empty.csv yields EMPTY_INPUT.
+business-invalid.csv rejects order-unknown and order-conflict (three source
+rows total), retains one line for order-duplicate (record 5), and records record
+6 as DEDUPLICATED. Thus KEPT=1, REJECTED_ORDER=3, DEDUPLICATED=1, BLOCKED=0;
+all five original rows and their errors/findings remain available for reporting.
+
+The whole-order rejection principle is CT-04. The exact duplicate, product-view,
+unassignable-key and empty-result policies are owner-approved application
+decisions; concrete result models, fixed reason order and checker handoff
+verification are engineering details recorded for reproducibility. WDM-02.5
+still owns report persistence/API and lifecycle; UI/gates remain 02.6/02.7.
+BLK-02 is not closed by this task alone. No source research formula, mining
+threshold, algorithm, schema, dependency, Auth or frontend change is included.
+
+Verification performed on 2026-11-05:
+
+| Check | Result |
+|---|---|
+| OrderCleaningPipelineTest | 32/32 PASS |
+| Focused cleaning + consistency + business + parser selection | 164/164 PASS, no skips |
+| Selected backend regression | 258/258 PASS, no failures/errors/skips |
+| ProductReferenceLookupIntegrationTest in that selection | 2/2 PASS on isolated MySQL 8.4.13 |
+| Mining-core regression in the selected reactor run | 1182/1182 PASS, no skips |
+| Existing offline fixture checker | 6/6 PASS |
+| Diff whitespace check | PASS |
+| Full DB-backed backend suite / browser | NOT VERIFIED this task |
+
+```powershell
+mvn -pl backend -am '-Dtest=OrderCleaningPipelineTest,OrderConsistencyCheckerTest,OrderCsvBusinessValidatorTest,OrderCsvParserTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+mvn -pl backend -am '-Dtest=*,!BackendApplicationTests,!AuthSessionIntegrationTest,!WdmAuthorizationIntegrationTest,!RegistrationIntegrationTest,!OrderExportRepositoryTest,!OrderExportAvailabilityTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+python backend/src/test/resources/wdm/csv-v1/verify_contract.py
+git diff --check
+```
+
+The regression excludes the default-datasource smoke class and five existing
+DB integration classes explicitly listed above. Exclusions are not successful
+or JUnit-skipped tests. Product lookup integration is included and actually ran
+on its disposable MySQL container. No development DB or owner service was used,
+stopped or migrated. Surefire evidence remains in the owning modules' ignored
+target/surefire-reports directories, including
+TEST-vn.edu.wspm.backend.services.dataset.csv.OrderCleaningPipelineTest.xml.
+
+**Current WDM-02.4 status: IMPLEMENTED / TECHNICAL PASS / OWNER ACCEPTED
+(2026-11-05).** Owner accepted the implementation in chat and requested planning
+WDM-02.5. The checklist marks 02.4 complete. WDM-02.5 has not been started;
+no clean/delete, source refactor, dependency change, stage, commit or push is included.
+
+## WDM-02.5 — Persisted validation report and APIs (2026-11-05)
+
+Owner approved the plan and authorized implementation. ValidationReportEngine
+connects the unchanged accepted 02.1–02.4 stages after RawSnapshotStorage verifies
+the original bytes. Version WDM_VALIDATION_REPORT_V1 binds snapshotId, rawSha256,
+rawSizeBytes, CSV contract and cleaning policy WDM_ORDER_CLEANING_V1. completedAt
+is server UTC report-generation completion, not a precise DB commit timestamp.
+
+### Status, counters and lineage
+
+| Outcome | Persisted validation_status |
+|---|---|
+| Cleaning READY, at least one usable order | VALID, including a cleaned subset of dirty raw input |
+| EMPTY_INPUT / EMPTY_AFTER_CLEANING / BLOCKED_UNATTRIBUTABLE_ORDER | INVALID |
+| Structural CSV error | INVALID, countsComplete=false, no manifest |
+| Storage/checksum/catalog/budget/DB failure | Operational error; no fabricated INVALID report |
+
+VALID means a usable cleaned subset, not that every raw record is valid.
+business-invalid.csv therefore produces VALID with keptRecords=1,
+rejectedRecords=3 and deduplicatedRecords=1 while preserving original diagnostics.
+No raw file, sequence/mapping artifact or sequence statistics are modified.
+
+Counts are decimal integer strings. After structural failure, parsedRecords is
+only the complete prefix emitted by the parser; inputRecords/inputOrders and
+uncomputed cleaning counters are null, never invented zeros/totals. No partial
+manifest is persisted. Invalid UTF-8 positions have DECODER_CURSOR accuracy,
+not an exact offending byte/record guarantee. With complete parsing, knownOrders
+counts usable keys; inputOrders is null if a key is unusable, and rejectedOrders
+is null for blocked cleaning. businessInvalidRecords counts rows, issueCount
+counts diagnostic entries; one grouped issue can reference many records.
+
+Diagnostics contain only stage/code/fixed field/numeric source positions. Sort
+is first source record (empty-position summaries last), stage, code, then field.
+The private manifest retains every complete source record's disposition,
+representative and reasons. WDM-03 can use retained representatives from the
+checksum-bound raw without repeating live catalog decisions; it must still
+verify raw integrity and supported report/policy versions before conversion.
+
+### Persistence, repeat operations and concurrency
+
+Existing V2 conversion_report_json gains a validation namespace while preserving
+all other JSON members/provenance. SnapshotValidationRepository is separate
+from acquisition-only persistence. There is no migration, new table/artifact,
+VALIDATING status, job or worker. Short REQUIRES_NEW publication locks the row
+with NOWAIT hint and a five-second transaction timeout, verifies PENDING and
+unchanged raw reference/hash/root JSON/no conversion artifacts, and flushes
+report/status together. Computation and raw I/O occur outside that transaction.
+
+Per-instance same-snapshot exclusion returns 409 when busy; a bounded semaphore
+limits concurrent computations. Different instances may compute concurrently;
+only the first publication wins. A completed winner is verified/replayed rather
+than overwritten. Stale metadata/state yields 409. NOWAIT/DB failure may return
+503; no distributed exactly-once execution or transparent retry is claimed.
+A real ambiguous commit can have succeeded despite a 503: read status before
+retrying. A crash before publication leaves PENDING.
+
+Replay verifies stored snapshot/hash/size/version/policy/status bindings, skips
+file/catalog work, and never revalidates automatically when catalog changes.
+It is historical evidence, not a fresh attestation of physical raw bytes.
+No force/overwrite mode is added; use a new upload for new validation. Reports
+can be read/replayed after conversion without mutating or rerunning validation.
+Unsupported legacy/state/version or mismatched report returns 409.
+
+### API and budgets
+
+POST/GET `/api/v1/admin/dataset-snapshots/{snapshotId}/validation` use the existing
+ApiResponse envelope, request correlation, Cache-Control: no-store and WDM
+shared-Auth ADMIN guard. POST accepts no body/query and returns 200 after commit,
+even for INVALID data. GET returns summary plus a diagnostic page; no completed
+report returns 409 INVALID_RESOURCE_STATE. That ErrorCode now implements the
+409 convention already defined by the WDM technical contract. Malformed/missing
+snapshot IDs use existing 400/404 conventions.
+
+GET accepts only canonical nonnegative page and size=1..100 (default 20).
+Unknown/repeated/out-of-range query parameters fail 400. A page beyond the end
+is empty with exact totals. ValidationResponse hides the internal manifest,
+storage paths, raw values and catalog/customer IDs.
+
+Defaults under wdm.validation map to WDM_VALIDATION_* environment variables:
+
+| Setting | Default |
+|---|---|
+| max-record-characters | 16384 UTF-16 units, including syntax/terminators |
+| max-rows | 100000 complete records |
+| max-raw-bytes | 16777216 (16 MiB), separate from upload transport limit |
+| max-report-bytes | 8388608 (8 MiB), entire application-serialized root JSON |
+| max-duration-millis | 30000; positive and at most 300000 |
+| max-concurrent | 2 per instance |
+
+Budget/capacity rejection is 503, not INVALID data. Diagnostics/manifest are
+never silently truncated. JSON size is measured into a bounded byte-counting
+sink before creating the persistence Map, without an unlimited JSON byte array.
+Exact byte boundaries are tested. The raw and pipeline object graphs remain
+buffered up to their input budgets; no high-volume capacity claim is made.
+
+Time/interruption checks are cooperative at stages, parser callbacks, validation
+rows and JSON writes, with a final check before publication. They cannot forcibly
+interrupt already-blocked filesystem/JDBC calls and are not a hard HTTP deadline.
+The publication transaction has its own timeout. No performance claim is made.
+
+### Verification evidence
+
+| Check on 2026-11-05 | Result |
+|---|---|
+| Final new engine/service/MVC/MySQL tests | 26/26 PASS (8 + 8 + 4 + 6), no skips |
+| Broad backend regression before final byte-counting refinement | 379/379 PASS; excludes only BackendApplicationTests and OrderExportAvailabilityTest |
+| Final selected backend regression after refinement + two boundary/interruption tests | 284/284 PASS, no failures/errors/skips |
+| Mining-core regression | 1182/1182 PASS, no skips |
+| Existing offline fixture checker | 6/6 PASS |
+| Diff whitespace check | PASS |
+| Default-datasource smoke/availability, full unrestricted suite, browser/UI | NOT VERIFIED this task |
+
+```powershell
+mvn -pl backend -am '-Dtest=ValidationReportEngineTest,SnapshotValidationServiceTest,SnapshotValidationControllerTest,SnapshotValidationIntegrationTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+mvn -pl backend -am '-Dtest=*,!BackendApplicationTests,!OrderExportAvailabilityTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+mvn -pl backend -am '-Dtest=*,!BackendApplicationTests,!AuthSessionIntegrationTest,!WdmAuthorizationIntegrationTest,!RegistrationIntegrationTest,!OrderExportRepositoryTest,!OrderExportAvailabilityTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+python backend/src/test/resources/wdm/csv-v1/verify_contract.py
+git diff --check
+```
+
+The broad selection exercised full application wiring and existing isolated
+Auth/repository MySQL tests. Its final local refinement only replaced JSON size
+measurement; final focused and selected runs verify that version. Excluded
+classes are not successful or JUnit-skipped tests. Compile-only success and the
+initial test-stubbing failure are not acceptance evidence.
+
+SnapshotValidationIntegrationTest uses real storage/catalog/JPA/transactions on
+isolated MySQL 8.4.13, with four exact V2 table definitions and synthetic data.
+It verifies readback/provenance, INVALID structural/empty reports, checksum
+tampering/retry, actual pre-commit failure preserving both PENDING and absence
+of report, competing instances, and stale-state rejection. The fault explicitly
+rolls back before raising its synthetic commit error, not a proof about rollback
+of ambiguous real network commits. No development DB, Flyway migration or owner
+service was used/stopped/restarted. Current-task test containers/temp storage
+are disposed by Testcontainers/JUnit; Surefire evidence remains under ignored
+target/surefire-reports, including the four new test-class reports.
+
+MVC tests use a mock service/test authorizer: they verify ADMIN guard ordering
+and HTTP/JSON behavior, not shared-Auth browser E2E. No existing parser/business/
+checker/cleaning source, mining formula, schema, dependency, Auth implementation
+or frontend is changed. Architecture text is updated for the new backend API.
+WDM-02.6 UI and 02.7 conversion gates remain unimplemented; BLK-02 stays open.
+
+**Current WDM-02.5 status: IMPLEMENTED / TECHNICAL PASS / OWNER ACCEPTED
+(2026-11-05).** Owner accepted the result in chat and requested planning WDM-02.6.
+Checklist marks 02.5 complete; UI implementation has not started. No stage/commit/push.
+
+## WDM-02.6 — Validation Admin UI (2026-11-05)
+
+Owner accepted the plan and authorized implementation. SnapshotValidationPanel
+extends the existing `/admin/datasets/:snapshotId` page; no extra route or backend
+change is included. The panel reuses verified shared identity, WDM API client,
+ADMIN guard, request correlation and session cancellation. No token persistence,
+decoded-only identity, Auth flow or automatic request replay is introduced.
+
+### Public API and rendering contract
+
+validation.ts uses POST with undefined body (no JSON Content-Type/body/query)
+and GET with page/size (20 per page). validation-response.ts verifies requested
+snapshot/page/size, supported report/CSV/policy versions, SHA/size/time shape,
+status/outcome/count-completeness agreement, decimal string/null counters,
+diagnostic fields and safe-integer positions. Unknown response properties such
+as manifest/private paths are projected away. Unknown safe diagnostic codes get
+a fallback description; unsupported versions/stages or malformed data fail
+closed. Counts stay strings, including values beyond JavaScript's safe range;
+page navigation compares decimal totals without imprecise count conversion.
+
+VALID is labeled as a usable cleaned subset with an explicit explanation that
+raw may still contain rejected orders/duplicates. INVALID describes structural,
+empty or unassignable-order outcomes. Null is Chưa xác định, not zero; when
+countsComplete=false the displayed parsed count is explicitly a prefix, not a
+dataset total. UTC completion text retains source microseconds. Report/policy
+version and checksum identify the data previously validated, without claiming
+a fresh physical-file/catalog verification on a report read.
+
+The diagnostic table exposes stage, fixed code/explanation, field and original
+record/physical-line ranges. Server paging is separate from local position-group
+paging (five positions at a time), with explicit total/displayed ranges. Decoder
+cursor accuracy is explained, not represented as an exact offending byte/row.
+No raw values, full server error message or internal manifest is rendered.
+
+### Request lifecycle
+
+- PENDING does not auto-POST. A start button is offered for a snapshot with raw
+  availability, supported CSV contract and no conversion, while backend remains
+  authoritative. Legacy/unavailable state is explained; stored reports may
+  still be read without opening raw.
+- VALID/INVALID metadata triggers GET on mount. Report binding must match the
+  current snapshot's raw SHA/size. Repeated reads/page changes never run POST.
+- A ref lock blocks duplicate clicks immediately; busy controls are disabled.
+  Successful POST refreshes metadata without unmounting/losing the report. GET
+  recovery also refreshes metadata when its status differs from the report.
+  Metadata refresh failure has a separate warning and retains the report.
+- Network/protocol/409/503 after POST requires explicit GET status recovery,
+  not automatic POST retry. Network/503 GET failures do not clear the recovery
+  requirement. HTTP 409 clears that local requirement because no readable completed
+  report is available, but
+  does not prove server work has stopped. A later POST is a deliberate user action.
+- AbortController, immutable binding and identity/session checks prevent stale
+  requests/results from replacing another snapshot/user's view. Browser abort,
+  navigation and logout are not advertised as cancelling server computation.
+- Errors use fixed safe UI messages and a request ID when available, not raw
+  server text/details. Auth denial remains owned by the shared Auth boundary.
+
+The UI displays established backend data only; it does not calculate cleaning,
+support, weights, thresholds or sequence/mining output. Internal backend statuses
+and accepted 02.1–02.5 rules remain unchanged. No dependency/env/schema changes.
+
+### Verification evidence
+
+| Check on 2026-11-05 | Result |
+|---|---|
+| Focused API/reader + panel + snapshot-detail tests | 61/61 PASS |
+| Final frontend regression | 244 PASS, 2 existing live opt-in SKIPPED |
+| TypeScript noEmit / focused ESLint | PASS / PASS, no new focused warnings |
+| Normal production build | PASS; inherited non-WDM hook/non-null warnings and Browserslist notice remain |
+| Dataset + Validation real Edge/HTTPS/API/MySQL gate | 10/10 PASS, exit 0 (7 previous Dataset + 3 validation cases) |
+| Node browser-case syntax / diff whitespace | PASS / PASS |
+| Backend package with skipTests | PASS preparation only, not unit-test evidence |
+| Backend/Maven unit regression / separate Auth browser / CRA dev proxy | NOT VERIFIED this task; no backend source changed |
+
+Browser evidence: `.agent-workspace/phase-wdm/WDM-01.8-UTjVX4/RESULT.json`, with
+safe case summaries and SERVER.log in that ignored run directory. Edge version
+156.0.4314.58; real shared Auth, current production UI/backend build, isolated
+MySQL 8.4 and HTTPS reverse proxy. No application test hook/harness is injected.
+The runner uses its existing 4096-byte upload fixture limit, not a capacity test.
+
+The new browser cases prove a single bodyless POST despite duplicate clicks,
+atomic committed validation/report readback, updated metadata, GET-only reload,
+and unchanged raw bytes/hash. A test deliberately loses the browser response
+after the real server committed a dirty-input report; UI disables another POST,
+recovers with GET, displays 1 kept/3 rejected/1 deduplicated and refreshes metadata.
+Other real POSTs produce INVALID for bad UTF-8, header-only and unassignable
+order input, preserving null counts and decoder cursor wording. Existing seven
+Dataset/Auth-boundary/export/upload/raw/cancellation cases remain green.
+
+Commands: from frontend, `npm test -- --watchAll=false --runInBand`,
+`npx tsc --noEmit`, focused `npx eslint` on the changed API/UI/test files and
+`npm run build`; from root, package current backend with
+`mvn -pl backend -am package '-DskipTests'`, then
+`npm --prefix frontend/test/e2e run test:dataset`. The package operation is not
+a new test run. Initial fixture/matcher/lint failures were corrected in tests,
+without weakening envelope validation or backend semantics.
+
+Task file inventory: created validation-response.ts, validation.ts,
+validation-test-data.ts (maintained synthetic test fixture only), validation.test.ts,
+useSnapshotValidation.ts, SnapshotValidationPanel.tsx and its test. Modified API
+index, snapshot detail and its test, dataset browser cases, frontend README,
+browser README, ARCHITECTURE, this contract and ignored WDM checklist. No source
+deletions; pre-existing backend changes and staged frontend/.env were preserved.
+Browser/process/container/temp resources created by the runner were cleaned by
+its owned-resource checks; existing service/container and older evidence remain.
+
+**Current WDM-02.6 status: IMPLEMENTED / TECHNICAL PASS / OWNER ACCEPTED
+(2026-11-05).** Owner accepted the result in chat and requested planning WDM-02.7.
+Checkbox marks 02.6 complete. Conversion gate is not implemented; BLK-02 remains
+open, no stage/commit/push.
+
+## WDM-02.7 — Validation Gate
+
+Implementation scope approved by the owner: read-only conversion admission,
+not conversion execution, SPMF serialization or a new UI conversion action.
+
+### Admission contract
+
+POST `/api/v1/admin/dataset-snapshots/{id}/conversion` is ADMIN-only through
+shared Auth. It accepts no body or query parameters. Anonymous/customer requests
+return 401/403 before input validation or snapshot/file access. Admin malformed
+UUID/body/query returns 400, missing snapshot 404, ineligible snapshot 409
+`INVALID_RESOURCE_STATE`, and operational/storage/capacity failure sanitized 503.
+
+`ConversionValidationGate.prepare` requires all of:
+
+- CSV/DATABASE acquisition using `wdm-order-csv-v1`; VALID snapshot and a matching
+  completed `WDM_VALIDATION_REPORT_V1` / `WDM_ORDER_CLEANING_V1` report bound to
+  snapshot ID, raw SHA-256 and canonical raw-size metadata.
+- READY, countsComplete, at least one kept record/order, supported counts and
+  a full manifest matching every actual logical record and physical line span.
+- Exact partition into kept, rejected whole orders and identical-line dedup;
+  dedup references an earlier retained representative with identical 13 fields.
+  Count/diagnostic positions, action/reason codes and kept-order consistency
+  are cross-checked. BLOCKED or partial-order retention cannot pass.
+- NOT_STARTED / NOT_COMPUTED state, sequence_count acquisition placeholder 0,
+  and no sequence/mapping artifact references or checksums.
+- Raw bytes verified by the existing private storage's size/checksum/path rules;
+  record/raw/time/concurrency budgets are enforced, with a fresh repository read
+  after verification rejecting changes in relevant state/report/binding.
+
+The gate trusts reports published through the private validation pipeline; it
+does not authenticate an adversarial, fully forged private database or rerun
+current product-catalog/business validation. Frozen cleaning decisions remain
+authoritative. `StoredValidationReport` extracts the existing 02.5 binding reader
+without changing validation endpoints; its regression tests remain green.
+
+The internal immutable `VerifiedConversionInput` contains defensive copies of
+the verified raw bytes, the frozen report and ordered retained source records.
+It exposes no storage path and is never serialized by the endpoint. It proves
+eligibility at verification time, **not an execution reservation**. WDM-03 must
+atomically claim/recheck state and consume this verified input rather than
+reopening raw paths or assuming a previous HTTP admission reserves conversion.
+
+After successful admission the endpoint deliberately returns 503
+`SERVICE_UNAVAILABLE`, message `Conversion is not available yet.` No fake success,
+queue, status write, statistics or conversion artifacts are created. A raw-integrity
+failure instead returns the generic admission failure message. Successful
+conversion/SPMF is **NOT VERIFIED — WDM-03**, outside this gate's acceptance.
+
+### Verification and task scope
+
+Focused backend run: 59/59 PASS (34 gate unit cases, 4 standalone MVC cases,
+5 complete-application/disposable-MySQL gate cases, 16 existing validation
+service/engine cases). Positive integration cases use actual acquisition ->
+validation -> admission for both clean input and dirty input retaining one row.
+Negative integration cases cover pending/invalid, a VALID column without report,
+stale binding, conversion already started, same-size raw tamper and a state
+change during verified file reading. Repeated admission leaves JSON/status/raw
+unchanged and creates no additional artifacts.
+
+Selected backend regression: 327 PASS; mining-core regression: 1182 PASS, no
+failures/errors/skips. Command from repository root:
+
+```powershell
+mvn -pl backend -am '-Dtest=*,!BackendApplicationTests,!AuthSessionIntegrationTest,!WdmAuthorizationIntegrationTest,!RegistrationIntegrationTest,!OrderExportRepositoryTest,!OrderExportAvailabilityTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+```
+
+The default-datasource application/export availability tests were deliberately
+excluded. Separate existing Auth/session/registration/export-repository integration
+suites were not rerun; real shared Auth is exercised by Dataset browser cases.
+No development database is used by gate integration tests. Packaging with
+skipTests is preparation only. Logs remain ignored local evidence at
+`.agent-workspace/phase-wdm/WDM-02.7-regression.log` and `WDM-02.7-package.log`.
+
+Task file inventory: created StoredValidationReport, ConversionValidationGate,
+ConversionManifestVerifier, VerifiedConversionInput, ConversionAdmissionController
+and three gate unit/MVC/MySQL test files. Modified SnapshotValidationService,
+dataset browser cases, browser README, ARCHITECTURE, this contract and ignored
+WDM checklist. No source deletions, schema/dependency/env/frontend-runtime or
+mining changes. Existing dirty changes and staged frontend/.env are preserved;
+no stage/commit/push. WDM-02.7 checkbox remains pending owner acceptance.
+
+Real Edge 156.0.4314.58 / HTTPS / shared Auth / isolated MySQL browser gate:
+**12/12 PASS, exit 0** (7 Dataset regressions + 3 Validation UI cases + 2 gate
+API cases). Evidence: `.agent-workspace/phase-wdm/WDM-01.8-KpadnX/RESULT.json`.
+The positive gate API path uses actual acquisition and published validation;
+repeated eligible POSTs return explicit converter-unavailable 503, without state
+changes or new artifacts. Negative paths verify 401/403 before malformed lookup,
+400/404, PENDING/INVALID/forged-status 409 and same-size raw-tamper sanitized 503.
+This is gate admission evidence, not successful conversion or SPMF evidence.
+Existing UI build was reused because this task changes no frontend runtime code;
+the backend jar was freshly packaged. Node case syntax and diff whitespace checks
+PASS. Runner-owned browser/process/container/temp resources were cleaned; owner
+services/storage/container and earlier evidence were preserved. No pending source
+cleanup. New logs and RESULT.json are retained as acceptance evidence.
+
+**Current WDM-02.7 status: IMPLEMENTED / TECHNICAL PASS / OWNER ACCEPTED
+(2026-11-05).** Owner explicitly accepted WDM-02.7 in chat. WDM-02.1–02.7 are
+accepted; the checklist marks the phase tasks complete. Conversion/SPMF execution
+remains WDM-03. BLK-02 closure remains pending separate owner review; unrelated
+BLK-03–06 and R6 are unchanged. WDM-03 has not been started.
+
+## WDM-03.1 — Global product/item mapping (2026-11-06)
+
+Policy version: `GLOBAL_PRODUCT_ITEM_INT_V1`. The owner authorized implementation
+of the mapping plan. Owner acceptance of the implementation is recorded separately.
+
+### Identity and reproducibility contract
+
+- V2 `ITEM_MAPPING` is the global, append-only product/item dictionary. Its
+  product PK/FK and unique positive item ID remain unchanged. Exact `product_id`
+  is identity; SKU, historical product name, quantity, price, status and line ID
+  do not participate. CSV values are never trimmed, case-folded or normalized.
+- Web mapping uses `1..2147483647`, the intersection of V2's positive UNSIGNED
+  IDs and mining-core's Java `int`. Core continues to allow zero; its parser and
+  algorithms are unchanged. JDBC reads UNSIGNED values as `long` before narrowing.
+  An existing global maximum above the core range fails closed (409), even if
+  the requested subset would otherwise fit. No overflow, wraparound or repair.
+- Input is exclusively `VerifiedConversionInput.keptRecords()` from the accepted
+  gate. Rejected and deduplicated source rows are not reconsidered. The mapper
+  neither reruns cleaning nor accepts a public request's arbitrary product list.
+  Test fixtures may construct this package-local handoff directly; those fixtures
+  are not gate evidence. A separate actual pipeline test covers acquisition,
+  validation, gate and mapping together.
+- Existing mappings are reused. New distinct product IDs are sorted with Java
+  `String.compareTo` (UTF-16 lexicographic, no locale/collation) within each batch,
+  then allocated above the observed global maximum. IDs may have gaps in a
+  snapshot; they are not renumbered per snapshot. Quantity does not create IDs.
+- Catalog and mapping lookup must return the exact requested product string.
+  Collation-only aliases (case, accent/normalization or trailing-space matches)
+  are rejected as incompatible state, not silently merged. Product removal or
+  incompatibility after validation fails the mapping transaction; current product
+  status/price/name is not an added eligibility test.
+- Output `ProductItemDictionary` is a defensive, immutable bijection, both
+  directions ordered by ascending numeric item ID, and contains only products
+  in the kept set. Empty kept input returns an empty dictionary without DB work;
+  this is not permission to convert an empty/invalid snapshot.
+- Stable IDs mean reuse of committed mappings in the same mapping history.
+  Independently provisioned databases or concurrent new-product batches can
+  assign different IDs. Reproducibility therefore requires WDM-03.5's frozen
+  snapshot dictionary/checksum, not reconstruction from current catalog order.
+- No update/delete operation is provided, IDs are not recycled, and mapped
+  products must not be physically deleted. The maximum-based allocator assumes
+  this append-only lifecycle; manual DB deletion/rewrite is outside that guarantee.
+
+### Transactions and failure boundary
+
+`ProductItemMappingStore` uses a fresh Spring `REQUIRES_NEW`, READ_COMMITTED
+transaction with a 10-second timeout for each complete batch. MySQL's product PK,
+item unique constraint, check and product FK remain final guards. A duplicate-key
+or concurrency/lock failure rolls back the whole attempt; the service retries
+from a fresh read/transaction, at most four attempts. This also handles an empty
+mapping table without relying on locking nonexistent rows or an in-process lock.
+Four failed attempts return SERVICE_UNAVAILABLE; non-contention database failures
+are not retried. Insufficient remaining IDs return SERVICE_UNAVAILABLE and roll
+back the whole batch. Incompatible catalog/mapping state returns INVALID_RESOURCE_STATE.
+Neither SQL text/details nor product data is exposed in application errors/logs.
+
+Committed global allocation survives caller rollback or later conversion failure:
+it establishes identity, not a completed snapshot. Future conversion orchestration
+must claim/recheck snapshot state before calling this writer. The existing gate
+remains read-only and the conversion endpoint still returns 503 for eligible input.
+No conversion status, raw bytes, SPMF, mapping file, statistics or snapshot checksum
+is written here. Mapping artifact serialization/storage belongs to WDM-03.5.
+
+### Source classification and verification boundary
+
+Repository-confirmed: V2 global PK/unique/FK/>0 constraints; data dictionary's
+stable non-recycled mapping plus snapshot dictionary; accepted Java-int item model;
+WDM-02.7 kept-record handoff. These are repository contracts, not a new paper claim.
+
+Implementation inference: positive core-compatible range, UTF-16 batch ordering,
+MAX-based allocation, fresh-transaction retries, immutable dictionary representation
+and fail-closed collation/range checks. No WSPM/PRISM formula, threshold, comparator,
+candidate generation or pruning is changed. R6, BLK-03–06 and exact-real equivalence
+are unchanged. End-to-end SPMF conversion and artifact persistence remain NOT VERIFIED.
+
+Verification results are recorded below after execution; this contract alone does
+not establish technical PASS or owner acceptance.
+
+### Verification
+
+Focused mapping plus actual application/gate integration: **27/27 PASS**, zero
+failures/errors/skips, Maven and shell exit 0. Breakdown: 10 service/dictionary
+unit tests, 11 mapping MySQL integration tests, 6 actual Spring application/gate
+integration tests (including the new acquisition -> validation -> gate -> mapping
+test). Mapping integration uses V2's 47 CREATE/ALTER statements in disposable
+MySQL 8.4, real Spring transaction proxies and forced concurrent MAX-read races.
+This is static-DDL compatibility, not a fresh Flyway migration execution. The full
+application integration additionally uses Hibernate `validate` against isolated V2.
+Initial mapping-only run was 19/19 PASS; final focused run added alias/core parser
+and actual pipeline coverage. Logs retain both checkpoints separately.
+
+```powershell
+mvn -pl backend -am '-Dtest=ProductItemMappingServiceTest,ProductItemMappingIntegrationTest,ConversionValidationGateIntegrationTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+mvn -pl backend -am '-Dtest=*,!BackendApplicationTests' '-Dsurefire.failIfNoSpecifiedTests=false' test
+```
+
+Evidence: `.agent-workspace/phase-wdm/WDM-03.1-focused.log`,
+`WDM-03.1-focused-final.log` and `WDM-03.1-regression.log`. The regression excludes
+only `BackendApplicationTests`, whose default datasource is environment-dependent;
+it does include the now-isolated `OrderExportAvailabilityTest`. No development DB,
+frontend browser, production capacity or complete conversion acceptance is inferred.
+
+Final selected regression: **backend 542/542 PASS; mining-core 1182/1182 PASS**,
+zero failures/errors/skips, Maven/shell exit 0. This run includes the final parser
+readback assertion for both 1 and Integer.MAX_VALUE, all 27 focused cases and the
+existing Auth/API/export/validation/snapshot coverage. `BackendApplicationTests`
+remains NOT VERIFIED for this task. No frontend unit/build/browser rerun was
+needed: frontend and HTTP conversion behavior are unchanged. `git diff --check`
+passed; tracked mining-core, frontend and migration diffs are empty.
+
+File scope: five new Java source/test files (dictionary, service, JDBC store,
+service tests and mapping integration tests), one existing gate integration test
+modified, ARCHITECTURE and this contract updated, plus the ignored local checklist.
+Three task-owned logs above are retained ignored as evidence, not disposable
+helpers. Testcontainers/JUnit cleaned their own test resources; final Docker
+inventory contains only the pre-existing `wspm-mysql`. Docker Desktop was started
+for isolated testing; no development database read/write, owner resource deletion,
+source deletion, stage/commit/push or automatic WDM-03.2 work was performed.
+
+**WDM-03.1: IMPLEMENTED / TECHNICAL PASS / OWNER ACCEPTED (2026-11-06).**
+Owner accepted WDM-03.1 in chat and requested planning WDM-03.2. The checklist now
+marks 03.1 complete. This acceptance update records the existing verification;
+it does not rerun tests or implement grouping. BLK-02 closure and BLK-03–06
+retain their independent status. Complete conversion/SPMF remains NOT VERIFIED.
+
+## WDM-03.2 — Customer/order grouping (2026-11-06)
+
+The owner accepted the proposed grouping plan and authorized implementation.
+Policy version: `CUSTOMER_ORDER_ITEMSET_V1`. Implementation acceptance remains
+separate from authorization and verification.
+
+### Membership and provenance contract
+
+- `CustomerGroupingService.group` accepts only `VerifiedConversionInput` and
+  its `ProductItemDictionary`. Production callers must obtain kept records from
+  the accepted gate and resolve their dictionary through WDM-03.1. Grouping does
+  no DB/catalog/file access, mapping allocation, cleaning replay or snapshot claim.
+- Group within this one input by exact `customer_code`, then exact `order_id`.
+  One customer group is the future source of one sequence; each distinct order
+  is the future source of one itemset. A global order index rejects one order ID
+  assigned to different customers. Values are not trimmed, folded or normalized.
+  Identity is the supplied pseudonymous customer code, not a reconstructed person.
+- All kept records of an order must agree on customer, ordered_at and currency.
+  Timestamps are decoded using the existing strict CSV-v1 UTC/microsecond format,
+  preserving all six fractional digits. No timestamp rounding, local timezone
+  conversion, time-window merging or inference of chronology is performed.
+  Different orders may have different currencies without splitting the customer.
+- Every order exposes ascending distinct numeric item IDs from the supplied
+  dictionary. Multiple kept lines with the same product, different historical
+  text/prices, or quantity greater than one contribute just one item to that
+  order's itemset membership. The same item remains present in other orders and
+  customers. No quantities/money are summed and no weights/supports are computed.
+- All kept source records are retained exactly once with their original immutable
+  13 fields and record/line positions. Different line IDs with the same product
+  remain distinct source records. Previously rejected/deduplicated rows are not
+  reintroduced. Repeated kept record numbers or line IDs are rejected as an
+  inconsistent internal handoff, not silently deduplicated again.
+- The dictionary's product set must equal the full kept product set: missing,
+  substituted or extra product keys fail closed. The service trusts the accepted
+  dictionary's ID assignments; it does not prove registry freshness or detect a
+  forged dictionary with the same keys and different IDs. Future orchestration
+  must carry the matching dictionary and snapshot proof together.
+- `GroupedDataset` contains immutable customer/order maps, immutable sorted item
+  lists and immutable retained-record lists. Map and record iteration preserve
+  encounter order only for traceability. For the same input this is deterministic;
+  shuffling rows preserves membership but can change encounter order. That order
+  is explicitly NOT chronology, SID assignment or a ready core sequence. Even
+  orders sharing one timestamp remain separate. WDM-03.3 establishes ordering.
+- Empty internal kept input with an empty dictionary produces an empty result;
+  a nonempty dictionary with empty input is rejected. This utility behavior does
+  not admit an empty snapshot: the actual gate still requires usable kept rows.
+- Inconsistent handoff data returns `INVALID_RESOURCE_STATE` with a fixed safe
+  message. Null top-level arguments are caller misuse. Logs contain counts and
+  fixed reason tokens only; nested result `toString` methods show counts, never
+  customer/order identifiers or source payloads. These models are internal, not
+  HTTP DTOs: explicit source-record access remains sensitive provenance data.
+
+### Scope and source classification
+
+Repository-confirmed: accepted checklist's one-customer/one-sequence and
+one-order/one-itemset policy, cleaning's retained distinct source lines and exact
+opaque IDs, WDM-03.1 dictionary and WDM-02.7 kept-record handoff. The research
+contract defines an itemset as a nonempty set with each item occurring at most
+once, and permits the same item in different itemsets. The commercial grouping
+policy is not claimed to be specified by the WSPM/PRISM papers.
+
+Implementation inference: immutable grouping models, encounter-order provenance,
+strict timestamp decoding, dictionary-key coverage and defensive handoff checks.
+No mining-core representation or algorithm, threshold, weight, support, temporal
+verification or pruning is changed. Grouping is not another cleaning stage.
+
+Only the grouping service/result/tests, existing pipeline integration test,
+ARCHITECTURE, this contract and ignored checklist are in task scope. Existing
+WDM-03.1 source/tests/evidence are retained. The old pipeline test's mapping count
+now asserts the target product's one global row, rather than assuming no other
+test has populated the shared fixture's registry.
+
+No schema/migration, endpoint, frontend, configuration, dependency or artifact
+change is made. The conversion endpoint's eligible response remains 503. Temporal
+ordering, core SequenceDatabase construction, SPMF serialization and artifact
+publication are NOT VERIFIED and remain WDM-03.3 onward. Existing R6, numeric
+policy and independent blockers keep their previous status.
+
+### Verification
+
+Verification evidence is recorded after execution below. Unit fixtures construct
+the package-local kept-record handoff directly; they are not business-validation
+or gate evidence. The actual pipeline integration uses acquisition, persisted
+validation, gate, mapping and grouping on isolated MySQL with real Spring wiring.
+
+Initial grouping-only checkpoint: **14/14 PASS**. Final focused command below:
+**43/43 PASS**, zero failures/errors/skips, Maven/shell exit 0. Breakdown:
+15 grouping unit tests (including supplementary Unicode code-point boundaries),
+10 mapping unit tests, 11 mapping MySQL integration tests, 7 actual application/gate
+integration tests. The new pipeline test exercises both existing clean and dirty
+CSV fixtures and compares exact customer/order/item membership plus all retained
+source records. It confirms unchanged mapping registry, snapshot state, raw bytes
+and raw-only artifact directory after grouping. V2 DDL compatibility and Hibernate
+validate run in disposable MySQL; no Flyway migration execution is claimed.
+
+```powershell
+mvn -pl backend -am '-Dtest=CustomerGroupingServiceTest,ConversionValidationGateIntegrationTest,ProductItemMappingServiceTest,ProductItemMappingIntegrationTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+mvn -pl backend -am '-Dtest=*,!BackendApplicationTests' '-Dsurefire.failIfNoSpecifiedTests=false' test
+```
+
+Evidence: `.agent-workspace/phase-wdm/WDM-03.2-focused.log`,
+`WDM-03.2-pipeline.log` and `WDM-03.2-regression.log`. The selected regression
+excludes only `BackendApplicationTests` because of its environment-default
+datasource. Actual API/Auth/export/validation tests use their isolated fixtures.
+Frontend/browser and complete temporal/SPMF conversion remain NOT VERIFIED.
+
+Final selected regression: **backend 558/558 PASS; mining-core 1182/1182 PASS**,
+zero failures/errors/skips, Maven/shell exit 0. The run includes all 43 focused
+cases and existing Auth, authorization, API/export, CSV/cleaning/validation and
+snapshot tests. `BackendApplicationTests` remains NOT VERIFIED in this task;
+no development datasource was used. Frontend/runtime HTTP behavior is unchanged,
+so no frontend unit/build/browser gate was rerun. `git diff --check` and whitespace
+checks on the new Java files PASS; mining-core/frontend/migration diffs are empty.
+
+Task file inventory: three new Java files (`GroupedDataset`,
+`CustomerGroupingService`, `CustomerGroupingServiceTest`); four existing files
+modified (gate integration test, ARCHITECTURE, this contract, ignored checklist).
+All WDM-03.1 changes and evidence that predate this task are preserved. Three
+task-owned logs above remain ignored acceptance evidence, not disposable helpers.
+No source/evidence file was deleted and no cleanup is pending. Testcontainers/JUnit
+cleaned their own resources; final Docker inventory contains only pre-existing
+`wspm-mysql`. No dev DB access, owner-resource cleanup, stage/commit/push or
+automatic WDM-03.3 implementation was performed.
+
+**WDM-03.2: IMPLEMENTED / TECHNICAL PASS / OWNER ACCEPTED (2026-11-06).**
+Owner accepted WDM-03.2 in chat and requested planning WDM-03.3 only. Checklist
+03.2 is now checked; no tests were rerun or temporal implementation performed
+by this acceptance update. R6 and independent
+blockers keep their previous status; temporal ordering, SPMF and artifact publication
+remain later-task obligations.
+
+## WDM-03.3 — Temporal ordering (2026-11-06)
+
+The owner accepted the temporal-ordering plan and authorized implementation.
+Policy version: `CUSTOMER_ORDER_TIME_CODEPOINT_V1`. Authorization is not owner
+acceptance of the resulting implementation.
+
+### Ordering and preservation contract
+
+- `TemporalOrderingService.order` consumes the accepted `GroupedDataset` and
+  produces immutable `OrderedDataset` lists. Customer codes are sorted ascending
+  by exact Unicode code-point order. Within each customer, orders are sorted by
+  `orderedAt` (`Instant`) ascending, then exact opaque `order_id` by code points.
+- No trim, case folding, Unicode normalization, locale-dependent collation or
+  numeric interpretation of string IDs. Thus `order-10` precedes `order-2` at
+  equal timestamps. The explicit comparator iterates code points (including
+  supplementary characters); Java UTF-16 `String.compareTo` is not substituted.
+  A string prefix sorts before its extension. U+E000 precedes U+10000, unlike
+  UTF-16 natural ordering. This commercial string comparator is separate from
+  WDM-03.1's documented UTF-16 ordering when assigning previously unseen IDs.
+- Compare the existing `Instant` values without rounding or timezone conversion;
+  all CSV-v1 microsecond precision survives. Equal timestamp orders remain separate
+  itemsets-to-be. The ID tie-break is a reproducibility policy, not evidence of
+  actual sub-microsecond purchase chronology. Order dates never move a customer
+  before another customer; the outer customer comparator alone determines that.
+- Each output order is the same immutable `GroupedOrder` object as the input:
+  metadata, ascending distinct item IDs, currency and all retained source records
+  and positions are unchanged. Source-record encounter order is not resorted.
+  No merging, regrouping, quantity/money aggregation, weight/support computation,
+  dictionary allocation, cleaning replay, catalog lookup or source-row repair.
+- The service rejects inconsistent structural handoffs: blank/mismatched customer
+  and order map keys, empty customer groups or itemsets/source-record lists,
+  repeated global order identity and item lists that are not strictly ascending
+  positive Java-int IDs. It checks the structure required for ordering, not every
+  business/source-field invariant already established by the gate and grouping.
+  The caller must carry the matching snapshot/dictionary/grouping lineage.
+- Empty grouped utility input gives an empty ordered list; this does not bypass
+  the gate's empty-input rejection. Null top-level input is caller misuse. Other
+  structural rejection uses INVALID_RESOURCE_STATE with a fixed safe message.
+  Logs contain counts/fixed reason tokens; model toString methods redact identity.
+- Sorting uses new local lists and does not mutate grouping maps/lists. Identical
+  customer/order/item membership and timestamps lead to identical ordered
+  customer/order/item structure even if raw rows or grouping-map encounter order
+  change. Raw source provenance can retain a different encounter order after a
+  row permutation; it is deliberately not normalized to manufacture byte equality.
+
+### Scope and fidelity
+
+Repository-confirmed: existing accepted CSV canonical customer/time/order-ID
+ordering and Unicode code-point policy, one-customer/one-sequence and
+one-order/one-itemset commercial policy, and WDM-03.2's immutable membership view.
+This is application preprocessing; it does not redefine core item comparison,
+sequence matching, temporal verification or the WSPM/PRISM algorithms.
+
+Implementation inference: ordered result types, comparator implementation,
+structural guards and retaining original immutable grouped-order objects. The
+commercial timestamp/ID tie-break is not claimed to come from the WSPM papers.
+R6, numeric acceptance policy and independent blockers retain their prior status.
+
+Three new Java files (ordered model, service and unit test) plus the existing
+pipeline integration test, ARCHITECTURE, this contract and ignored checklist are
+the task scope. Prior WDM-03.1/03.2 source/tests/evidence remain unchanged except
+the planned additions in shared docs/integration test. No schema, config,
+dependency, frontend or HTTP change. Eligible conversion still returns 503.
+No SID allocation, core SequenceDatabase, SPMF serialization or artifact publication
+is performed; complete conversion remains NOT VERIFIED and belongs to later tasks.
+
+### Verification
+
+Ordering-only unit checkpoint: **12/12 PASS**, zero failures/errors/skips,
+Maven/shell exit 0. Tests cover year/day/second/microsecond ordering, equal-time
+opaque-ID prefix ordering, case/accent/normalization distinctions and supplementary
+Unicode ordering, independent customer ordering, retained-order object identity,
+immutable output, source encounter-order preservation and structural rejection.
+Eight fixed-seed raw-row shuffles through actual grouping yield the expected
+ordered customer/order/item structure while preserving all source records.
+
+Unit fixtures construct internal grouping objects directly; they are not gate
+evidence. A separate actual acquisition/validation/gate/mapping/grouping/ordering
+integration case uses clean CSV, business-invalid CSV and an inline shuffled
+microsecond/tie fixture with the real Spring application and disposable MySQL.
+The final focused and selected regression results are recorded after execution.
+
+```powershell
+mvn -pl backend -am '-Dtest=TemporalOrderingServiceTest,CustomerGroupingServiceTest,ConversionValidationGateIntegrationTest,ProductItemMappingServiceTest,ProductItemMappingIntegrationTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+mvn -pl backend -am '-Dtest=*,!BackendApplicationTests' '-Dsurefire.failIfNoSpecifiedTests=false' test
+```
+
+Final focused pipeline: **56/56 PASS**, zero failures/errors/skips, Maven/shell
+exit 0. Breakdown: 12 ordering + 15 grouping + 10 mapping unit tests, 11 mapping
+MySQL integration tests, 8 actual application/gate integration tests. The new
+pipeline case runs the original clean/dirty fixtures and a shuffled inline CSV,
+asserting expected customer/order identity lists, microsecond values, distinct
+tied orders, original grouped-order object identity and the complete retained-row
+set/count. Mapping registry, snapshot state, raw bytes and raw-only artifact
+directory remain unchanged by ordering. V2 DDL compatibility and Hibernate validate
+run on disposable MySQL; this is not a fresh Flyway migration execution.
+
+Evidence: `.agent-workspace/phase-wdm/WDM-03.3-focused.log`,
+`WDM-03.3-pipeline.log` and `WDM-03.3-regression.log`. Selected regression excludes
+only `BackendApplicationTests` because of its environment-default datasource.
+Frontend/browser, production capacity and complete SPMF conversion remain NOT VERIFIED.
+
+Final selected regression: **backend 571/571 PASS; mining-core 1182/1182 PASS**,
+zero failures/errors/skips, Maven/shell exit 0. All 56 focused cases and existing
+Auth, authorization, API/export, CSV/validation/cleaning and snapshot tests pass.
+`BackendApplicationTests` remains NOT VERIFIED in this task. No development DB
+was used. Frontend/browser was not rerun because no frontend or runtime HTTP
+contract changed. `git diff --check` and whitespace checks on new Java files PASS;
+mining-core/frontend/migration diffs are empty.
+
+Task file inventory: three new Java files (`OrderedDataset`,
+`TemporalOrderingService`, `TemporalOrderingServiceTest`); four existing files
+modified (gate integration test, ARCHITECTURE, this contract, ignored checklist).
+All pre-existing WDM-03.1/03.2 source/test/evidence changes remain preserved.
+The three task-owned logs above remain ignored acceptance evidence, not disposable
+helpers. Zero files deleted; no cleanup pending. Testcontainers/JUnit cleaned
+owned resources; final Docker inventory contains only pre-existing `wspm-mysql`.
+No owner-resource cleanup, dev DB access, stage/commit/push or automatic WDM-03.4
+implementation was performed.
+
+**WDM-03.3: IMPLEMENTED / TECHNICAL PASS / OWNER ACCEPTED (2026-11-06).**
+Owner accepted WDM-03.3 in chat and authorized WDM-03.4. Checklist 03.3 is checked;
+this acceptance records the existing evidence without rerunning 03.3 tests.
+R6, numeric policy
+and independent blockers retain their prior status. SIDs/core sequence creation,
+SPMF serialization, artifact publication and complete conversion remain later work.
+
+## WDM-03.4 — SPMF serialization (2026-11-06)
+
+The owner accepted WDM-03.3 and authorized the WDM-03.4 serializer work.
+Policy version: `ORDERED_CUSTOMER_SPMF_UTF8_LF_V1`. Owner acceptance of this
+implementation is separate from authorization and verification.
+
+### Canonical bytes and semantic boundary
+
+- `SpmfDatasetSerializer.serialize` consumes the accepted `OrderedDataset` and
+  returns a new caller-owned byte array. It operates entirely in memory, with
+  no DB/catalog/file access, resource claim, status update, statistics persistence
+  or conversion HTTP integration. Supported production input is the matching
+  verified/grouper/temporal-ordering handoff from WDM-02.7 and WDM-03.1–03.3.
+- One ordered customer produces one sequence, on one line. Each ordered order
+  produces one nonempty itemset. All item IDs in an order are emitted exactly
+  once in the supplied ascending numeric order, then `-1`; after the last order,
+  emit `-2` and one LF byte. Customer/order boundaries are never merged or split.
+  Repeated items in different orders or different customers are preserved.
+- Canonical format: decimal integers without signs/leading zeros for item IDs,
+  one ASCII space between tokens, no trailing space before LF, no blank lines,
+  header, comments, BOM or carriage returns; exactly one final LF for nonempty
+  output. Bytes are ASCII-compatible UTF-8 independent of host newline/locale.
+  Example for two customers, the first with two orders:
+
+  ```text
+  1 2 -1 3 -1 -2
+  2 12 -1 -2
+  ```
+
+- Web item IDs remain `1..2147483647`. Zero, negative/reserved delimiter IDs,
+  duplicate or descending items within an itemset are rejected, not normalized
+  or repaired. This does not change mining-core's accepted ability to parse zero.
+  Empty customer sequences/itemsets and blank/repeated customer or global order
+  identities are also rejected with INVALID_RESOURCE_STATE and a fixed safe
+  message. A failed call exposes no partially built byte array.
+- The service preserves supplied customer/order list order; it does not sort or
+  revalidate chronology, timestamp/ID tie-breaks or Unicode customer ordering.
+  Those belong to the accepted temporal-ordering boundary. A manually forged
+  OrderedDataset is not proof that the previous stages ran; callers must carry
+  the matching handoff. The serializer checks the structural/ID conditions
+  needed for its sequence/itemset encoding and leaves source-field validation
+  and lineage binding with the prior stages.
+- Source-record payloads, quantity, money, historical text and currency do not
+  become tokens. Grouped/ordered models and retained source records are not
+  mutated. Private IDs/text do not appear in serialization logs or errors; logs
+  contain counts, byte size and fixed rejection tokens only.
+- Empty internal ordered utility input produces zero bytes, which the accepted
+  parser interprets as an empty database. This does not admit an empty snapshot
+  through the gate or define R6/zero-effective-threshold mining behavior.
+- The existing SpmfSequenceParser reads emitted bytes with UTF-8 and assigns
+  one-based SIDs in sequence order. Customer position i therefore corresponds to
+  parser SID i+1. Customer/product identities remain in the preprocessing/mapping
+  handoff, not in SPMF. No separate SID mapping artifact is introduced in this task.
+- Serialization does not execute the parser/miner at runtime or change Prime-block
+  encoding. Parser round-trip is verification evidence at test time. No pattern,
+  support, threshold, weight or pruning behavior is changed.
+
+### Scope and fidelity
+
+Repository-confirmed: existing SPMF parser's `-1`/`-2`, positive Java-int
+compatibility, ordered sequence/itemset boundaries and one-based SIDs, accepted
+commercial customer/order/item mapping contracts. The core model/parser also
+retain their independent zero-item policy. The distinction between one itemset,
+two ordered itemsets and two sequences is preserved in full readback tests.
+
+Implementation inference: UTF-8 without BOM, ASCII decimal tokens, single-space/LF
+canonical bytes, per-call byte ownership, in-memory byte buffer and fixed safe
+structural rejection. These are serialization/reproducibility choices, not new
+WSPM/PRISM paper claims. No benchmarks or production memory/capacity claims.
+
+Task scope: the serializer and its new test, additions to the existing actual
+pipeline integration test, ARCHITECTURE, this contract and ignored checklist.
+The existing ordering pipeline case now additionally checks exact SPMF bytes and
+complete parser readback for all three fixtures; original chronology, source-row,
+mapping/snapshot/raw/artifact assertions are preserved. Prior accepted runtime
+source/tests/evidence otherwise remain unchanged.
+
+No schema/migration, dependency/configuration, frontend, endpoint, artifact path,
+checksum or storage publication is added. The eligible conversion endpoint still
+returns 503. WDM-03.5 owns SPMF/mapping artifact storage and checksums; full published
+conversion/API/UI/E2E remains NOT VERIFIED. R6 and independent blockers are unchanged.
+
+### Verification
+
+Serializer-only unit checkpoint: **13/13 PASS**, zero failures/errors/skips,
+Maven/shell exit 0. Tests assert literal canonical bytes and use the unchanged
+core parser to compare every SID, sequence position, itemset boundary and exact
+item ID. Cases include max int, repeated cross-itemset items, `<(ab)>`
+versus `<(a)(b)>` versus separate sequences, no payload/identity leakage,
+caller-owned byte arrays, immutable source and invalid/empty handoff behavior.
+Eight fixed-seed raw-row shuffles through actual grouping/ordering produce
+identical expected bytes and complete parser readback. Unit handoff fixtures
+are not actual snapshot admission evidence; the separate Spring/MySQL pipeline
+verification is recorded below after execution.
+
+```powershell
+mvn -pl backend -am '-Dtest=SpmfDatasetSerializerTest,TemporalOrderingServiceTest,CustomerGroupingServiceTest,ConversionValidationGateIntegrationTest,ProductItemMappingServiceTest,ProductItemMappingIntegrationTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+mvn -pl backend -am '-Dtest=*,!BackendApplicationTests' '-Dsurefire.failIfNoSpecifiedTests=false' test
+```
+
+Final focused pipeline: **69/69 PASS**, zero failures/errors/skips, Maven/shell
+exit 0. Breakdown: 13 serializer + 12 ordering + 15 grouping + 10 mapping unit,
+11 mapping MySQL integration and 8 actual application/gate integration tests.
+The expanded actual pipeline test verifies expected literal byte strings for
+clean, dirty and shuffled microsecond/tied-ID CSV with real shared application
+wiring, acquisition, persisted validation, gate, mapping, grouping and ordering.
+Core parser readback compares every SID and every itemset's full numeric item list.
+All prior chronology and retained-source assertions still pass; registry/snapshot/
+raw bytes and raw-only artifact directory remain unchanged after serialization.
+This is V2 DDL compatibility/Hibernate validate on isolated MySQL, not a fresh
+Flyway upgrade, public conversion endpoint or full-system browser/E2E gate.
+
+Evidence: `.agent-workspace/phase-wdm/WDM-03.4-focused.log`,
+`WDM-03.4-pipeline.log` and `WDM-03.4-regression.log`. Selected regression excludes
+only `BackendApplicationTests` because of its environment-default datasource.
+Frontend/browser, artifact publication, public conversion and production capacity
+remain NOT VERIFIED in this task; WDM-03.8's final round-trip E2E is not closed here.
+
+Final selected regression: **backend 584/584 PASS; mining-core 1182/1182 PASS**,
+zero failures/errors/skips, Maven/shell exit 0. All 69 focused cases and existing
+Auth, authorization, API/export, CSV/validation/cleaning and snapshot tests pass.
+`BackendApplicationTests` remains NOT VERIFIED for this task; no development DB
+was used. Frontend/browser was not rerun because frontend and HTTP behavior are
+unchanged. `git diff --check` and new-Java whitespace checks PASS; migration,
+mining-core and frontend diffs are empty.
+
+Task inventory: two new Java files (`SpmfDatasetSerializer`,
+`SpmfDatasetSerializerTest`); four existing files modified (gate integration test,
+ARCHITECTURE, this contract, ignored checklist, including WDM-03.3 acceptance).
+All earlier accepted WDM runtime source/tests/evidence remain preserved. Three
+task-owned evidence logs above are retained ignored; no disposable helper or
+pending cleanup, zero files deleted. Testcontainers/JUnit cleaned their own
+resources; final Docker inventory contains only pre-existing `wspm-mysql`.
+No owner-resource cleanup, dev DB access, stage/commit/push or automatic WDM-03.5
+work was performed.
+
+**WDM-03.4: IMPLEMENTED / TECHNICAL PASS / OWNER ACCEPTED (2026-11-06).**
+Owner accepted WDM-03.4 in chat and requested planning WDM-03.5 only. Checklist
+03.4 is now checked; no tests were rerun or artifact code implemented by this
+acceptance update. R6 and independent
+blockers retain their prior status. Artifact persistence/checksums, conversion
+orchestration/API/UI and WDM-03.8 final E2E remain later-task obligations.
+
+## WDM-03.5 — Conversion artifact publication (2026-11-06)
+
+Owner accepted the proposed artifact plan and authorized implementation. The
+internal service is implemented independently of WDM-03.6 HTTP execution/download
+and WDM-03.7 UI. No migration or mining-core change is made.
+
+### Artifact identity, dictionary and statistics
+
+`ConversionArtifactStorage` shares the private snapshot root. References are
+server-generated canonical UUID paths:
+
+```text
+<snapshotId>/conversions/<attemptId>/sequences.spmf
+<snapshotId>/conversions/<attemptId>/mapping.json
+```
+
+Each attempt directory/file is exclusively created, never overwritten. SPMF bytes
+are the accepted WDM-03.4 output. Mapping is deterministic UTF-8 JSON with one final
+LF, formatVersion `CONVERSION_ARTIFACT_V1`, mapping policy
+`GLOBAL_PRODUCT_ITEM_INT_V1` and an `items` array of `{itemId,productId}` entries
+in numeric item-ID order. Identity is preserved exactly, including JSON escapes;
+no current product display name/price/status is frozen into this dictionary.
+Only products retained by cleaning are included. Decode rejects unsupported policy,
+duplicate/invalid mappings or noncanonical bytes by reconstructing canonical JSON.
+
+SHA-256 is lowercase hex over exact bytes, including final LF. File contents and
+sizes are read back and verified after closing/forcing file channels; descriptor
+hashes must match the persisted bytes. The unchanged core parser reconstructs
+the database, and every SID/itemset/item is compared to the ordered input before
+publication. The frozen mapping's exact item set must match the parsed item set.
+No count-only round-trip acceptance.
+
+Statistics are measured from the readback SequenceDatabase and stored in existing
+V2 columns: sequence_count; single/multi-itemset sequence counts; itemset_count;
+distinct_item_count; total_item_occurrences; min/max/average sequence length.
+Length is total items across a sequence's itemsets, not order count, source-line
+count or quantity. Cross-order item repetitions count separately. Average is
+`(double) total_item_occurrences / sequence_count`, a descriptive DOUBLE metric,
+not a mining weight/threshold/comparator. Empty databases are not publishable.
+
+### Claim, binding and lifecycle
+
+The gate remains read-only. Its internal proof now includes exact source type and
+raw reference in addition to frozen report/bytes/kept records; older package-local
+three-argument test fixtures remain unbound and cannot claim publication.
+
+`SnapshotConversionRepository` uses short REQUIRES_NEW transactions. Claim locks
+the snapshot row, compares the full typed validation report and source/raw binding,
+requires VALID/READY supported policies, NOT_STARTED/NOT_COMPUTED, zero acquisition
+placeholder count, null artifact/statistics fields and no referencing MINING_RUN.
+It commits RUNNING plus a server-generated attempt UUID before any mapping or file
+work. The JSON operation stores artifact version, stage policy versions, UTC start
+time and a SHA-256 binding over the typed validation report. Existing validation
+and acquisition provenance are preserved. No transaction spans pipeline/file I/O.
+
+The service reuses accepted mapping/grouping/ordering/SPMF stages. It consumes the
+verified kept records without rereading raw for parsing or rerunning business/catalog
+validation. Raw integrity is checked again before publication. After verified file
+readback, publication locks the row again and checks the same attempt, complete
+validation/source binding, unpublished fields and absence of runs. Both file
+references/hashes, all statistics, operation sizes/completion time and
+SUCCEEDED/COMPUTED are written in one DB transaction. V2 constraints remain intact.
+
+```text
+NOT_STARTED -> RUNNING -> SUCCEEDED  (statisticsStatus = COMPUTED)
+                      -> FAILED     (statisticsStatus = NOT_COMPUTED)
+```
+
+Validation status remains VALID on conversion failure: an unavailable disk or DB
+does not redefine the input's validation result. Global mapping committed by
+WDM-03.1 remains allocated even if conversion fails. FAILED and abandoned RUNNING
+are not automatically retried, reclaimed or overwritten in this task.
+
+### Failure and repeat semantics
+
+- Before publication starts, a work failure records FAILED only for the owning
+  still-unpublished claim. Only after that succeeds may the service discard its
+  current storage receipt. Failure while writing a new attempt cleans its own
+  partial files. Cleanup verifies directory/file identity, never recurses or
+  deletes shared parents/raw.csv/other attempts; unexpected entries are retained.
+- If recording FAILED is uncertain, retain the files and claim for reconciliation.
+  If claim commit itself is uncertain, no artifact work begins and no blind retry
+  is attempted. Once publication has been invoked, any error conservatively retains
+  files even if the DB reports rollback. A connection error may follow an actual
+  successful commit; deleting those files could break published references.
+- A later call on SUCCEEDED verifies supported operation policies, validation
+  digest/binding, exact canonical references, artifact sizes/hashes, raw integrity,
+  frozen dictionary/SPMF item consistency and DB statistics. A fresh DB reread must
+  still match before returning. It does not call live product mapping/catalog or
+  allocate another attempt. Missing/tampered/incompatible data fails closed,
+  without repairing files or downgrading/replacing published metadata.
+- Filesystem and MySQL do not share an atomic transaction. RUNNING leftovers,
+  retained files from uncertain publication and manual recovery are observable
+  reconciliation states; no automatic recovery worker is introduced. File forcing
+  is not a claim of distributed atomicity or hardware/power-loss durability.
+
+### Boundaries, budgets and public projection
+
+`WDM_CONVERSION_MAX_ARTIFACT_BYTES` / `wdm.conversion.max-artifact-bytes` defaults
+to 67108864 bytes per file; startup rejects nonpositive or array-incompatible
+limits. Storage checks canonical references, ancestors, file type/size, no-follow
+reads and checksum with bounded buffering. It assumes the same trusted private OS
+root as raw storage; it is not an isolation boundary against a privileged local
+actor changing filesystem objects during I/O. No public path/name is accepted.
+Parser token/width and derived occurrence limits reuse validation's max-row budget.
+Mapping entry count/identity and file byte budgets bound supported input. The
+service also reuses validation max-concurrent for a local permit limit and duration
+for cooperative stage checkpoints, not hard preemption of blocking filesystem/DB I/O.
+Replay verification is subject to current resource limits; no production capacity
+or cross-process global semaphore guarantee is claimed.
+
+SnapshotResponseMapper now recognizes NOT_STARTED/RUNNING/SUCCEEDED/FAILED.
+Public JSON shape remains unchanged: no operation metadata, attempt paths or
+validation manifest is exposed. Computed sequence count remains an exact string
+under the existing statistics projection. Existing unknown-state tests now use a
+truly unsupported FUTURE_STATE; explicit whitelist/privacy tests cover all four
+recognized states. The controller still returns 503 for eligible unconverted input;
+converted/in-progress/ineligible inputs remain denied by its existing admission gate.
+No new start/query/download route or UI is introduced.
+
+### Research fidelity and verification
+
+Repository-confirmed: existing V2 artifact/statistic fields and immutable snapshot
+lifecycle after a referencing run; accepted raw/validation binding, mapping and
+SPMF/sequence contracts. Implementation inference: versioned dictionary JSON,
+attempt layout, validation-report digest, claim/publication state machine,
+storage ownership receipts, descriptive statistics, budgets and conservative
+failure/reconciliation policy. These are application/reproducibility decisions,
+not WSPM/PRISM paper rules. No mining weights, support, thresholds, candidate space,
+pruning or core representations change. R6, exact-real equivalence and independent
+blocker closure remain unchanged; no performance/heap claims are made.
+
+Initial codec/storage/mapper unit run: 16/16 PASS. Initial pipeline run: 70 tests,
+69 passed and one test-setup error creating a rollback-injection trigger because
+the disposable MySQL user lacked the required binary-log trust setting. The test
+container alone now starts with log-bin-trust-function-creators=1; production
+configuration/schema is unchanged. The first log is retained, not overwritten.
+Follow-up focused pipeline: 71/71 PASS, no failures/errors/skips, Maven/shell exit 0.
+That run includes actual publication, competing claims, source binding mutation,
+raw tamper before publication, known work failures, a real MySQL trigger-induced
+publication rollback and a simulated lost acknowledgment after an actual commit.
+The simulation is not a physical network-outage/power-loss experiment.
+
+The final regression additionally covers a 4/3 average-length DOUBLE readback and
+the final UUID/cooperative-budget checks. Results follow after execution.
+
+```powershell
+mvn -pl backend -am '-Dtest=ConversionValidationGateIntegrationTest,ConversionValidationGateTest,ConversionArtifactCodecTest,ConversionArtifactStorageTest,SnapshotResponseMapperTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+mvn -pl backend -am '-Dtest=*,!BackendApplicationTests' '-Dsurefire.failIfNoSpecifiedTests=false' test
+```
+
+Task evidence under ignored `.agent-workspace/phase-wdm/`: WDM-03.5-compile.log
+(compile only, not test evidence), WDM-03.5-focused.log, WDM-03.5-pipeline.log
+(initial trigger setup error), WDM-03.5-pipeline-final.log (71 PASS) and
+WDM-03.5-regression.log. BackendApplicationTests is excluded because of its
+environment-default datasource. All DB/file writes here are in disposable test
+fixtures; no development DB or owner artifact is changed. Public conversion
+execution/download/UI, recovery workflow, production durability/capacity and the
+WDM-03.8 final browser/round-trip E2E remain NOT VERIFIED.
+
+Final selected regression: **backend 610/610 PASS; mining-core 1182/1182 PASS**,
+zero failures/errors/skips, Maven/shell exit 0. This includes the final 22 actual
+Spring/application/gate/DB tests, 34 admission unit cases, codec/storage/mapper
+tests and all prior Auth/API/export/validation/mining regressions. The final suite
+proves 4/3 average length survives MySQL DOUBLE readback using exact current Java
+arithmetic, without epsilon or mining comparator changes. Fresh UUID/limit checks
+are exercised by this final build; all previous focused cases still pass.
+
+`git diff --check` and new-source whitespace checks PASS. No migration/Flyway
+runtime, mining-core or frontend change. The schema checks use isolated V2 DDL and
+Hibernate validate, not a new migration execution. BackendApplicationTests remains
+NOT VERIFIED; frontend/browser was not rerun because no frontend runtime changed.
+API start/query/download and UI are deliberately not implemented by this task.
+
+Task inventory: seven new Java files (immutable artifact result, codec, storage,
+claim/publication repository, orchestration service, codec unit test, storage unit
+test). Eleven existing files modified: gate, verified proof, snapshot mapper,
+application.yaml; gate unit/integration and mapper tests; README, ARCHITECTURE,
+this contract and ignored checklist. The configuration/proof/mapper scope expansions
+were announced and implement the accepted binding, bounded-storage and status plan.
+All earlier WDM source/tests/evidence remain preserved. Zero files deleted and
+no disposable helper/pending cleanup. Five task-owned logs above remain ignored
+acceptance evidence, including the initial trigger setup error. Testcontainers/
+JUnit cleaned owned processes/containers/temp resources; final Docker inventory
+contains only pre-existing wspm-mysql. No dev DB access, owner-resource deletion,
+stage/commit/push or automatic WDM-03.6 implementation was performed.
+
+**WDM-03.5: IMPLEMENTED / TECHNICAL PASS / OWNER ACCEPTED (2026-11-06).**
+Owner accepted WDM-03.5 in chat and requested planning WDM-03.6 only. Checklist
+03.5 is now checked; no tests were rerun or API execution/download code added by
+this acceptance update. R6, exact-real numeric
+equivalence and independent blockers keep their prior status. RUNNING/uncertain
+outcomes still require explicit reconciliation; no background recovery is claimed.
+
+## WDM-03.6 — Conversion API (2026-11-06)
+
+Owner accepted the API plan and authorized implementation. This supersedes the
+historical gate-only 503 for eligible POST; prior WDM-02.7 evidence remains a
+historical checkpoint. WDM-03.5 publication/reconciliation rules are preserved.
+
+### Routes and request/response contract
+
+Base: `/api/v1/admin/dataset-snapshots/{snapshotId}`.
+
+| Method/path | Behavior |
+|---|---|
+| POST `/conversion` | Synchronous execution/idempotent verified repeat; 200 on confirmed success |
+| GET `/conversion` | Read-only state or fully verified completed result |
+| GET `/artifacts/sequence` | Verified SPMF bytes, text/plain;charset=UTF-8 attachment |
+| GET `/artifacts/mapping` | Verified mapping JSON bytes, application/json attachment |
+
+All require the existing shared ADMIN identity/session guard before body/query,
+UUID or resource lookup. Missing/invalid/revoked credentials return 401; eligible
+CUSTOMER returns 403. All four routes reject body/query input (including `force`,
+filesystem paths or token query parameters). POST retains the existing negative
+request-shape detail message. GET/download have a fixed safe read-shape message.
+No algorithm/config/dataset parameters, asynchronous 202, force/retry/recovery or
+overwrite interface is added. POST RUNNING/FAILED/ineligible input returns 409;
+POST SUCCEEDED verifies existing output without new allocation. Unknown snapshot
+is 404, malformed canonical UUID is 400. Read/download before successful conversion
+returns 409; GET status may show NOT_STARTED/RUNNING/FAILED with null result fields.
+
+JSON uses the unchanged ApiResponse success envelope and shared API error shape,
+server request ID and no-store. Explicit ConversionResponse includes snapshotId,
+conversionStatus/statisticsStatus, UTC startedAt/completedAt/failedAt, whitelisted
+failureCode (`CONVERSION_FAILED` only), supported artifactVersion, statistics and
+two artifact descriptors. Integer counts/sizes/lengths are exact decimal strings;
+average length is a finite descriptive JSON number. Artifact descriptors contain
+sha256, sizeBytes and protected relative API downloadUrl only. No storage path,
+attempt ID, validation digest/manifest or arbitrary operation/report JSON is
+serialized. Pending states have no statistics or download links. The snapshot
+detail endpoint's existing JSON shape is unchanged.
+
+Attachments use `snapshot-<UUID>.spmf` and `snapshot-<UUID>-mapping.json`, exact
+verified Content-Length, Cache-Control:no-store and X-Content-Type-Options:nosniff.
+File bodies are direct bytes, not an ApiResponse envelope; in particular the JSON
+mapping download is the frozen dictionary document. Errors are sanitized JSON with
+no attachment header or partially committed file body. Unexpected/missing/tampered
+published files return 503; inconsistent publication metadata returns 409. Reads
+never downgrade SUCCEEDED or repair/rewrite artifacts. URLs remain authenticated,
+not public/static storage paths.
+
+### Read boundary and preservation of accepted conversion
+
+`ConversionReadService` has no dependency on execution/mapping/grouping services.
+It uses read-only repository reads, raw/artifact integrity, codec/parser/statistic
+verification and a fresh metadata reread. It extracts the former private completed
+read routine from SnapshotConversionService and retains all WDM-03.5 checks, adding
+supported operation/timestamp projection. Pending state reads check their null/
+zero unpublished shape, supported binding/policies, UUID and safe timestamps/code;
+they perform no artifact I/O. Unsupported/corrupt metadata is not presented as a
+valid pending or computed result.
+
+VerifiedBundle owns immutable response/result plus defensive copies of the verified
+file bytes. Downloads use those bytes directly after verification, never reopen
+the path. GETs do not claim, publish, fail, allocate mapping, create files or call
+convert(). Local permit and cooperative checkpoints reuse validation resource
+limits. POST still uses the accepted conversion service; its confirmation/repeat
+checks now use the same read boundary. The controller additionally verifies before
+projecting a successful POST response. Snapshot/raw/artifact state remains unchanged
+by reads; shared Auth lifecycle behavior is preserved.
+
+The class name ConversionAdmissionController is retained to avoid an unrelated
+source rename/deletion; it now owns the four actual routes. No schema, migration,
+dependency, artifact format, mining-core or frontend application change is made.
+Conversion UI remains WDM-03.7 and final cross-module/browser round-trip gate remains
+WDM-03.8. No new FAILED retry, RUNNING takeover or background recovery is introduced.
+
+### Verification and scope
+
+Initial controller unit checkpoint: 9/9 PASS. Focused reader/mapper/controller plus
+accepted DB pipeline: 40/40 PASS. Real shared JWT/ADMIN HTTP matrix and pipeline:
+77/77 PASS, zero failures/errors/skips, Maven/shell exit 0. The latter includes new
+actual HTTP upload -> validation -> conversion -> GET -> two downloads -> repeat,
+full core-parser readback, private-field absence, hash/length/header checks, invalid
+input/unknown ID, anonymous/customer and logout denial, published-file tamper and
+unchanged publication metadata. Existing conversion rollback/concurrency/binding
+tests pass after read extraction; pending RUNNING/FAILED projections are checked
+on their real DB states. The Auth fixture deletes its own ITEM_MAPPING rows before
+PRODUCT to isolate the new conversion tests; no development DB is involved.
+
+Dataset test source replaces only the historical temporary 503 success assertion
+with actual conversion/API verification. Earlier pre-claim raw tamper and all
+negative security/admission cases are retained. Fresh browser evidence and final
+regression results follow after execution. The frontend runtime is unchanged;
+the browser still uses the real built login/Dataset application plus authenticated
+API requests, not a new conversion UI or injected application hooks.
+
+```powershell
+mvn -pl backend -am '-Dtest=ConversionAdmissionControllerTest,ConversionReadServiceTest,ConversionResponseMapperTest,ConversionValidationGateIntegrationTest,WdmAuthorizationIntegrationTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+mvn -pl backend -am '-Dtest=*,!BackendApplicationTests' '-Dsurefire.failIfNoSpecifiedTests=false' test
+```
+
+Evidence under ignored `.agent-workspace/phase-wdm/`: WDM-03.6-focused.log,
+WDM-03.6-pipeline.log, WDM-03.6-http.log and WDM-03.6-regression.log. The default-
+datasource BackendApplicationTests is excluded. Repository-confirmed: accepted
+Auth/API, UUID, artifact and readback contracts. Implementation inference: route/
+DTO/header choices, public safe projection and shared read-service extraction.
+These are application boundary decisions; no mining formulas or output semantics
+change. R6, exact-real equivalence and independent blocker status are unchanged.
+
+Final selected regression: **backend 626/626 PASS; mining-core 1182/1182 PASS**,
+zero failures/errors/skips, Maven/shell exit 0. This includes the final constructor/
+verifier extraction, HTTP/MVC/reader/mapper checks, all accepted conversion failure/
+concurrency tests and existing Auth/API/export/validation/mining suites. Only
+BackendApplicationTests is excluded (environment-default datasource); no dev DB
+was used. Backend package with skipTests PASS is preparation, not test evidence.
+Frontend runtime/package/lock files are unchanged, so the existing accepted UI
+build was reused without another frontend unit/build run.
+
+Fresh Edge 156.0.4314.58 / HTTPS reverse proxy / shared Auth / isolated MySQL
+Dataset gate: **12/12 PASS**, exit 0. Safe result:
+`.agent-workspace/phase-wdm/WDM-01.8-IYAfld/RESULT.json`; launcher log:
+`WDM-03.6-dataset-browser.log`. Packaging evidence: `WDM-03.6-package.log`.
+Commands were `mvn -pl backend -am '-DskipTests' package` then
+`npm --prefix frontend/test/e2e run test:dataset`. Browser results confirm the
+actual registered/admin login, protected UI export/upload/validation and real
+authenticated conversion API/SQL/file behavior. Expected one customer/three-order
+SPMF bytes and frozen mapping match downloaded bytes and SHA-256; same-size
+artifact tamper denies reads/downloads/repeat without repair; the original
+pre-claim raw-tamper check remains on a separately acquired/validated snapshot.
+No conversion UI interaction is claimed. WDM-03.7 and WDM-03.8 remain open.
+
+`git diff --check`, new-production-Java whitespace checks and Node syntax PASS.
+Schema/migration, mining-core, frontend runtime/package/lock diffs remain empty.
+Separate Auth browser gate was not rerun: shared Auth/runtime/runner setup did
+not change; real Auth HTTP regression and the combined Dataset gate ran instead.
+This is isolated V2 DDL/Hibernate validation, not a new Flyway upgrade execution,
+production deployment, physical outage, cross-browser or capacity certification.
+
+Task inventory: five new Java files (ConversionResponse, ConversionResponseMapper,
+ConversionReadService and their two unit test files). Eleven existing files
+modified: conversion controller/service, controller test, gate integration test,
+real Auth HTTP integration fixture/test, Dataset browser cases; README,
+ARCHITECTURE, E2E README, this contract and ignored checklist. No pre-existing
+file was deleted/renamed; all earlier WDM changes/evidence remain preserved.
+Six task-owned top-level logs plus the runner's unique evidence directory are
+retained ignored, with no disposable helper/pending cleanup. Runners cleaned only
+their owned browser/process/container/temp resources; final Docker inventory
+contains only pre-existing wspm-mysql. No owner resource deletion, dev DB access,
+stage/commit/push or automatic WDM-03.7 implementation was performed.
+
+**WDM-03.6: IMPLEMENTED / TECHNICAL PASS / OWNER ACCEPTED (2026-11-06).**
+Owner accepted WDM-03.6 in chat and requested planning WDM-03.7 only. Checklist
+03.6 is checked; no tests were rerun or UI code implemented by this acceptance
+update. Recovery/takeover/retry
+policy, R6, exact-real numeric equivalence and independent blocker states are
+unchanged. UI, final WDM-03.8 E2E and production deployment/capacity remain later work.
+
+## WDM-03.7 — Conversion Admin UI (2026-11-06)
+
+**IMPLEMENTED / TECHNICAL PASS / OWNER ACCEPTED (2026-11-06).** The owner authorized
+implementation after accepting WDM-03.6. This section supersedes the earlier UI
+limitation; it does not accept or automatically implement WDM-03.8.
+
+The existing `/admin/datasets/:snapshotId` page now owns the validation-to-
+conversion binding. Its conversion panel accepts a report only for the current
+snapshot ID and immutable raw SHA-256/size, with VALID/READY/countsComplete and
+current VALID metadata. Conversion availability remains authoritative on the
+backend. The initial/reloaded page only GETs conversion status; it never POSTs
+automatically. An immediate active-request lock plus a consumed-POST guard
+exclude duplicate submission and replay after an uncertain result. Successful
+POST is reconciled through verified GET, followed by snapshot metadata refresh.
+An uncertain POST also attempts GET, retaining a safe error/request ID when
+reconciliation fails. RUNNING is read sequentially every two seconds, with a
+60-second polling budget before manual refresh. FAILED exposes the fixed safe
+failure code and no retry. Unmount, snapshot binding changes and Auth changes
+abort client waiting and suppress stale preview/download/state updates. They do
+not cancel server work or implement recovery/takeover.
+
+The runtime decoder validates all four status shapes, supported artifact version,
+timestamps, canonical decimal strings, SHA-256 shape and exact public artifact
+paths. It projects only public fields. Snapshot detail now recognizes all four
+conversion states; initial upload receipt decoding remains strictly NOT_STARTED.
+POST accepts only a SUCCEEDED response, while GET accepts all four valid states.
+RUNNING/POST have a waiting spinner without a fabricated progress percentage.
+The client always constructs authenticated artifact requests from the canonical
+UUID/API root instead of following response-provided URLs. Endpoint decoder
+failures retain the transport request ID. Download validates the MIME, exact
+snapshot filename and byte size; mapping JSON is handled separately from CSV.
+Downloads reuse the existing Blob URL creation/revocation helper.
+
+SUCCEEDED displays the nine established server statistics. Counts, sizes and
+sequence lengths remain decimal strings, including values beyond Number's safe
+integer range. Average length remains the finite server number. UI explains that
+sequence length counts items, not orders or quantity. It displays server SHA-256
+and size without claiming browser checksum verification or computing mining
+statistics in TypeScript.
+
+SPMF preview is explicit and only enabled for artifacts <=1 MiB. The transport
+rejects a declared length over the cap before reading, reads a bounded stream
+when length is absent/false, and cancels it when accumulated bytes exceed the
+cap; it has no unbounded blob fallback for preview. The preview contains at most
+20 complete sequence lines and 4000 characters, preserving original delimiters
+and line endings. If a complete first sequence cannot fit, UI asks for download.
+Partial output is labeled and rendered as escaped React text. Large artifacts
+remain downloadable; no preview endpoint, HTML rendering, mining parser or
+product-name reconstruction was added.
+
+Verification evidence under ignored `.agent-workspace/phase-wdm/`:
+
+- `WDM-03.7-final2-regression.log`: complete frontend regression, 313 PASS /
+  2 skipped, 18 suites PASS / 2 skipped. The existing Auth/health live suites
+  require explicit environment variables and were not enabled; they are not
+  counted as passing. Earlier green regression logs are retained as evidence.
+- `WDM-03.7-final2-typecheck.log`: `tsc --noEmit -p tsconfig.json`, exit 0.
+  `WDM-03.7-final2-lint.log`: scoped ESLint exit 0, zero errors/warnings.
+- `WDM-03.7-final2-build.log`: production build exit 0; existing unrelated hook/non-null
+  warnings and outdated Browserslist notice remain. No dependencies were changed.
+- `WDM-03.7-final2-dataset-browser.log` and `WDM-01.8-iJlLsF/RESULT.json`: 15/15 PASS,
+  Edge 156.0.4314.58, HTTPS/Secure cookies, real shared Auth/backend and isolated
+  MySQL 8.4. All twelve previous Dataset/validation/conversion API cases remain.
+  Three new cases cover real validation/conversion UI, one bodyless POST despite
+  duplicate clicks, all displayed statistics, exact published preview bytes,
+  actual browser SPMF/mapping downloads checked against files/hash/size, SQL/raw
+  immutability and GET-only reload. A real committed POST response is deliberately
+  lost; UI recovers by GET without replay. Logout suppresses a delayed real
+  artifact download. Routing delays/aborts real responses, without a UI harness.
+  The final gate used the final production build; the earlier 15/15 green run
+  (`WDM-03.7-dataset-browser.log`, `WDM-01.8-3ANIZv/RESULT.json`) remains preserved.
+
+Stream overflow, >1 MiB preview refusal, escaping, character/sequence limits,
+RUNNING nonoverlap/deadline and stale response suppression are covered by focused
+frontend tests. The browser's existing small upload limit does not prove large-
+file/production capacity. Backend/core suites were not rerun because no backend,
+schema or mining source changed; the real HTTP/browser gate ran instead. Mining-
+core artifact parse/sequence round-trip remains **NOT VERIFIED — WDM-03.8**.
+Cross-browser, production deployment/capacity and recovery/takeover also remain
+NOT VERIFIED. R6 and exact-real numeric equivalence remain unresolved.
+
+Research fidelity: source-confirmed engineering behavior follows the accepted
+WDM-03.6 API/artifact contract; no mining semantics or research claims changed.
+The polling budget, preview presentation and client lifecycle are implementation
+choices from the accepted UI plan. No unspecified algorithm decision was made.
+
+Task inventory: seven new frontend files (conversion API/decoder/test fixture/API
+tests, panel, hook, panel tests); twelve existing files modified (ten frontend
+source/tests/docs, this contract and ignored checklist). No deletion or rename;
+all prior dirty WDM work and evidence remain. Eleven top-level logs and both runner
+evidence directories are retained as acceptance evidence, with no disposable
+helpers or pending cleanup. The runner cleaned only owned browser/process/
+container/temp resources; final Docker inventory retains pre-existing wspm-mysql.
+No dev DB access, stage/commit/push, owner-resource deletion or automatic next-task
+implementation. The owner subsequently accepted WDM-03.7 in chat and requested
+WDM-03.8 planning only. Its checklist is checked; this acceptance update does not
+rerun tests or implement WDM-03.8. All recorded verification evidence is retained.
+
+## WDM-03.8 — Round-trip E2E (2026-11-06)
+
+**IMPLEMENTED / TECHNICAL PASS / OWNER ACCEPTED (2026-11-06).** The owner accepted
+the plan, requested implementation and subsequently accepted the delivered result.
+The accepted plan below is retained for
+scope traceability; executed evidence follows. At planning time WDM-03.5–03.7 were
+accepted. Existing serializer tests already parsed generated bytes with mining-core,
+the artifact verifier checks persisted structures, and the browser gate verifies
+downloads for a one-product fixture. The remaining acceptance boundary is a rich
+independent oracle applied to actual authenticated HTTP and browser downloads.
+
+Use small shared synthetic CSV and expected-product-layout fixtures under the
+existing backend test resources. Cover multiple customers and products; one order
+with multiple products versus multiple ordered singleton itemsets; repeated
+products across orders; quantity >1 and repeated product rows within one order;
+exact duplicate-line cleaning and whole-order rejection; microsecond ordering,
+equal-time order-ID tie breaks and deterministic customer sequence order. Include
+a fixed shuffled-row variant and Unicode/opaque IDs where allowed by the accepted
+CSV contract. Document expected kept/rejected rows, nested product layouts and
+all nine statistics by hand. Expected construction must not invoke production
+grouping, ordering, serializer or statistics helpers. Mapping resolves product
+labels to their actual stable item IDs; tests must not assume registry starts at 1
+or that ID allocation is independent of other fixtures.
+
+Add real Auth/HTTP integration coverage on disposable MySQL using existing test
+infrastructure. Each positive snapshot must originate from upload/export, then
+actual validation and conversion, rather than snapshot SQL insertion or a forged
+validation result. Download both published artifacts through the public API,
+verify byte sizes/hashes/attachment headers, mapping bijection and registry
+identity, then parse the downloaded SPMF bytes using unchanged SpmfSequenceParser.
+Assert the full ordered SID -> itemsets -> item IDs structure and all expected
+statistics. One-based SIDs describe deterministic sequence order, not customer IDs
+embedded in SPMF. Check raw bytes/hash, persisted validation and metadata
+immutability outside the intended conversion publication. Reload/repeated
+SUCCEEDED requests must preserve the same attempt and files. Shuffled fixtures
+must yield the same canonical SPMF/mapping for an unchanged mapping registry.
+
+Extend the existing production Edge/HTTPS Dataset gate with the same fixture
+semantics. Exercise real file selection/upload, validation, conversion, stats and
+artifact downloads. Invoke a small maintained test-only Java verifier on the
+actual browser-downloaded SPMF file, using the built mining-core parser. Feed it a
+separate expected layout resolved from hand-authored product layouts plus the
+verified mapping; do not use the production SPMF output as its own oracle or add
+a JavaScript SPMF parser. The verifier may live under frontend/test/e2e/java and
+use Java 21 source launching with mining-core/target/classes, avoiding a new
+runtime endpoint or dependency. Its inputs and concise output contain synthetic
+test data only. Missing Java/core build or any structural mismatch must fail the
+gate. Deliberately wrong expectations with equal sequence/item totals must also
+fail, proving the verifier checks structure rather than counts alone.
+
+Preserve the fifteen existing browser cases and their authorization, lifecycle,
+pending/invalid and artifact/raw tamper coverage. Add only missing round-trip
+checks; no broad test refactor. Run focused parser/serializer/HTTP integration
+checks, the appropriate backend/mining-core regression, then relevant frontend
+tests/type/lint/build and the expanded browser gate. Record exact commands,
+results, exclusions and safe evidence in this contract/checklist. Packaging is
+preparation, not passing-test evidence. Use unique WDM-03.8 evidence paths and
+clean only the current runner's owned resources. Default-datasource tests or
+other checks not actually run remain NOT VERIFIED.
+
+Expected scope is backend test(s)/fixture resources, Dataset browser cases,
+test-only Java verifier and minimal runner wiring if required, plus existing
+documentation/checklist. No production algorithm/parser/threshold, schema,
+dependency upgrade or mining execution/benchmark is planned. A discovered runtime
+defect must be reported with a minimal regression and its scope impact before
+claiming acceptance; do not change frozen semantics to make a test pass.
+
+Source-confirmed: ordered sequence versus unordered itemset membership, repeated
+items across itemsets, and sequence length as total item occurrences, per the
+accepted research contract. Customer grouping, tie-breaking, mapping allocation
+and one-based parser SIDs are accepted engineering contracts, not paper-derived
+claims. The independent oracle/test-only verifier arrangement is implementation
+inference. R6, exact-real equivalence, production capacity, recovery/takeover and
+cross-browser certification remain outside this task. Do not automatically start
+WDM-04 after this gate.
+
+### Implementation and independent fixture oracle
+
+Added `ConversionRoundTripIntegrationTest` and three shared resources in
+`backend/src/test/resources/wdm/csv-v1/`: `round-trip.csv`,
+`round-trip-shuffled.csv`, `round-trip-expected.json`. These are newly authored
+synthetic fixtures, not acquired/paper datasets. UTF-8 CSV has the accepted 13
+columns, LF record boundaries, 12 data rows, 7 orders and 3 customer codes; raw
+contains 5 product IDs, including one missing catalog product. Cleaning keeps
+9 rows/6 orders, removes 2 rows as one rejected order and deduplicates one exact
+line. The surviving database contains 3 distinct mapped products. `rt-p4` is a
+real catalog product in the rejected order and must not acquire an item mapping.
+An unrelated existing mapping and an existing `rt-p2` mapping establish gaps and
+non-product-sorted IDs; no assertion assumes global IDs start at 1.
+
+The oracle fixes the product layout independently of production transforms:
+
+| SID | Customer code | Ordered product itemsets |
+|---|---|---|
+| 1 | `A` | `<(rt-p1 rt-p2)(rt-p3)(rt-p1)>` |
+| 2 | `C\uE000` (actual Unicode code point in CSV) | `<(rt-p1 rt-p2)>` |
+| 3 | `C` + U+1F600 | `<(rt-p1)(rt-p2)>` |
+
+Customer ordering is by the accepted Unicode code-point policy, not Java UTF-16
+code-unit order. SID 1 has order `o-early` at .000001, then `o-10` and `o-2` at
+.000002: preserving microseconds and lexical opaque-ID ties is observable. Two
+rows/quantity >1 for `rt-p1` in one order still produce a single item occurrence
+in that itemset. Repeated products across orders remain present. Identical
+historical SKU/name text across different product IDs must not merge identities.
+SID 2 and SID 3 explicitly distinguish one multi-item basket from two temporal
+singleton itemsets. Expected structures/counts/statistics are literal fixture
+data; production grouping/ordering/serializer/codec/statistic helpers do not
+construct the expected result.
+
+Expected statistics are 3 sequences (1 single-itemset / 2 multi-itemset), 6
+itemsets, 3 distinct items, 8 occurrences, min/max length 2/4 and average
+`2.6666666666666665` (8/3 as Java double). This is descriptive sequence length,
+not quantity, support or a new mining comparator policy. The shuffled file uses
+the same exact rows, without changing their IDs or data. Both sources are 1571
+bytes in this executed checkout. Source SHA-256:
+
+- `round-trip.csv`: `0f225544cd30576ae27a9a1e5880ee70591b6c30f44ad9eb655859cfbd987d68`
+- `round-trip-shuffled.csv`: `fb838520ec64e54e72e12e1df6b83667ef5a5be0515f6073260124b3bc93f449`
+- `round-trip-expected.json`: `80f85d5d6854c72451664f9fd1dd8f593c64fc5c0991831f6a2698626af1d304`
+
+### Executed HTTP and actual browser/core boundaries
+
+The new Spring/Testcontainers test provisions only synthetic Auth/catalog/registry
+data on disposable MySQL, registers/logs in through real shared Auth and acquires
+each snapshot through multipart HTTP upload. Validation and conversion POSTs and
+both downloads use the public API. It checks cleaning counts, nine statistics,
+mapping bijection/registry identity, exact attachment headers/hash/size, public
+URLs, full core parser readback, physical file bytes, raw/report preservation,
+metadata and idempotent repeated POST/GET without a second attempt. Original and
+shuffled inputs produce identical SPMF/mapping under the same registry.
+
+Dataset mode now has 16 cases, retaining all fifteen earlier security/lifecycle/
+validation/conversion cases. The added case selects each shared CSV with the real
+file picker, validates and converts through production UI, checks displayed
+counts/statistics, then obtains both actual browser download paths. Their bytes
+are checked against published storage and server hash/size/filename; mapping IDs
+are checked against SQL. `frontend/test/e2e/java/SpmfRoundTripVerifier.java` is
+source-launched by JDK 21 with the built mining-core classes, reading the actual
+download path using unchanged `SpmfSequenceParser`. A separate expected-layout
+file resolves only hand-authored product membership through verified mapping;
+Node does not parse SPMF or reconstruct customer/time order. The Java verifier
+compares every one-based SID, itemset position and item ID, not only counts.
+Three deliberately wrong layouts retain the same aggregate sequence/itemset/item
+totals (and nine statistics) but must exit 1: customer/SID exchange, temporal
+order exchange, and exchanged basket/temporal boundaries. All three are rejected.
+Missing Java/core classes or malformed inputs fail the verifier/gate. No test-only
+production route or new runtime dependency was added; runner wiring was already
+sufficient and remains unchanged.
+
+### Verification evidence
+
+All paths below are under ignored `.agent-workspace/phase-wdm/`:
+
+- `WDM-03.8-native-confirmed.log`: focused parser 15/15 and backend serializer/
+  HTTP 14/14 PASS, zero failures/errors/skips, explicit native Maven exit 0.
+  `WDM-03.8-focused-final.log` retains the earlier green run. Initial
+  `WDM-03.8-focused.log` failed because the newly authored test incorrectly
+  prepended `/api` twice to its expected download URL; that assertion was fixed
+  without a production change and is not used as passing evidence.
+- `WDM-03.8-regression.log`: selected reactor regression **mining-core 1182/1182,
+  backend 627/627 PASS**, zero failures/errors/skips, Maven BUILD SUCCESS. Only
+  `BackendApplicationTests` is excluded because it uses an environment-default
+  datasource; it remains NOT VERIFIED. Actual Auth/API/DB tests use isolation.
+- `WDM-03.8-frontend.log`: **313 PASS / 2 skipped**, 18 suites PASS / 2 skipped.
+  Existing Auth/health live tests need explicit environment variables and are
+  not counted as passing. No separate Auth browser harness gate was rerun.
+- `WDM-03.8-typecheck.log`, `WDM-03.8-lint.log`: tsc and scoped frontend ESLint
+  exit 0 with no output; Node syntax check also PASS. Java source compilation and
+  execution occur in the browser gate itself.
+- `WDM-03.8-build.log`: production build exit 0. Existing unrelated React hook/
+  non-null and outdated Browserslist notices remain. Production backend source
+  did not change, so the accepted backend jar was reused; mining-core classes
+  were prepared/verified by Maven. Packaging is not claimed as test evidence.
+- `WDM-03.8-dataset-browser.log`, `WDM-01.8-KFuv35/RESULT.json`: **16/16 PASS**,
+  native browser process exit 0, Edge 156.0.4314.58, Java 21.0.12.1, real shared
+  Auth/backend, HTTPS/Secure cookies and isolated MySQL 8.4. `roundTrip` records
+  both source hashes, identical canonical artifact hashes, full core readback,
+  all expected statistics and the three rejected wrong expectations. Original/
+  shuffled SPMF hash is `263c12ff158d1545d26b89781d841777b50f480659195daef01247528c9433c6`;
+  mapping hash is `8ff2ab50ac7d0bd8f8b3be3056bcc949567f5016bb6c679274184607cf4ffe5b`
+  for this browser registry. IDs/hashes can differ under another pre-existing
+  registry; stability is required within the same registry, not across arbitrary
+  database histories.
+
+Executed commands from repo root (lint/tsc use the existing frontend binaries):
+
+```powershell
+mvn -B -pl backend -am '-Dtest=ConversionRoundTripIntegrationTest,SpmfDatasetSerializerTest,SpmfSequenceParserTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+mvn -B -pl backend -am '-Dtest=*,!BackendApplicationTests' '-Dsurefire.failIfNoSpecifiedTests=false' test
+npm --prefix frontend test -- --watchAll=false --runInBand
+frontend/node_modules/.bin/tsc.cmd --noEmit -p frontend/tsconfig.json
+npm --prefix frontend run build
+node --check frontend/test/e2e/dataset-cases.mjs
+npm --prefix frontend/test/e2e run test:dataset
+```
+
+The earlier redirected Maven invocations reported Maven BUILD SUCCESS but their
+PowerShell wrapper returned 1 after promoting Mockito's existing stderr agent
+advisory to NativeCommandError. The final focused confirmation explicitly
+captures `$LASTEXITCODE`, records native Maven exit 0 and exits with it. No test
+or assertion was removed/skipped to address this wrapper behavior.
+
+### Acceptance, fidelity and task inventory
+
+Technical criteria PASS: authenticated HTTP and actual UI downloads parse through
+mining-core to the full independent expected structure; statistics/mapping match;
+wrong equal-count structures fail; shuffled inputs are deterministic; raw/report
+and repeat publication are preserved; existing security/lifecycle coverage stays
+green. The owner accepted WDM-03.8 in chat on 2026-11-06; its checklist is checked.
+This acceptance update changes only this contract and the ignored checklist.
+Existing verification evidence is preserved; tests were not rerun. Per the
+owner's instruction, no next-task plan or implementation is started. R6 and
+independent blocker states are unchanged.
+
+Source-confirmed research invariants are sequence order, itemset membership and
+the distinction `<(a)(b)> != <(ab)>`. Customer grouping, Unicode/opaque-ID ties,
+positive global mapping IDs, parser SID assignment and canonical serialization
+follow existing accepted engineering contracts. Synthetic fixtures, independent
+oracle and test-only verifier are implementation inference. No unspecified
+algorithm decision or production defect was discovered. No runtime source,
+parser/model, mining algorithm, threshold, schema, dependency or API changed.
+R6 and exact-real equivalence remain unresolved. Production capacity, recovery/
+takeover, physical outage, cross-browser certification, Flyway upgrade execution
+and independent blocker closure remain NOT VERIFIED/outside scope.
+
+Five new files: the HTTP integration test, three fixture resources and Java
+browser verifier. Four existing files modified: Dataset browser cases, E2E README,
+this contract and ignored checklist. All earlier dirty WDM work and evidence
+remain preserved. No deletion/rename or stage/commit/push. Nine top-level task
+logs and the unique runner evidence directory are retained as acceptance evidence.
+Temporary expected-layout/download/storage resources were owned by this run;
+runner/JUnit/Testcontainers cleaned their own resources only. No disposable
+helper, dev DB access, owner resource deletion or pending cleanup.
+
+## Post-WDM-03.8 UI/UX refresh (2026-11-06)
+
+The owner authorized implementation of four presentation improvements. Technical
+verification is complete; visual acceptance remains with the owner. This is a
+frontend task and does not change the accepted WDM-03.1--03.8 contracts or start
+WDM-04.
+
+Delivered behavior:
+
+- Upload success has a separate receipt with readable filename/status, copyable
+  snapshot ID and a direct next-step link to validation.
+- Admin and customer accounts share a responsive identity layout with login,
+  email verification, account state and role labels.
+- `/admin` is a real seven-step guide. Current data preparation steps are linked;
+  mining, patterns and combo creation are explicitly unavailable. Admin login,
+  navigation and authenticated entry points now land on this guide. Admin sign-in
+  preselects this route before awaiting identity because authentication replaces
+  the login form; this avoids losing navigation to the form's unmount guard.
+- Datasets has clearer typography and export/upload sections. Snapshot detail
+  has a compact summary and three keyboard-accessible workflow tabs, next-step
+  actions, collapsible technical metadata, metric cards and square bordered
+  tables with colored sticky headers and local scrolling. Light/dark and mobile
+  layouts were reviewed using synthetic browser screenshots.
+
+Hidden tab panels stay mounted, preserving reports, preview state, request locks
+and existing lifecycle guards. Tab selection is URL UI state only and does not
+replay a POST. Hidden-panel activity/errors remain visible. API contracts,
+validation/conversion eligibility, exact count strings and preview limits remain
+unchanged. No mining formula, threshold, schema, dependency or production backend
+source was changed by this task. R6 and exact-real equivalence remain unresolved.
+
+Final verification:
+
+- Full frontend: 322 PASS, 2 existing opt-in live tests skipped; 21 passing suites.
+  Evidence: `.agent-workspace/phase-wdm/UI-UX-regression-reviewed.log`.
+- TypeScript no-emit, scoped ESLint, production build, browser-module syntax and
+  diff whitespace checks PASS. Build retains existing unrelated warnings.
+- Dataset real Edge/MySQL/HTTPS gate: 17/17 PASS, including all sixteen prior
+  cases and actual downloaded SPMF readback through unchanged Java mining-core.
+  Evidence: `.agent-workspace/phase-wdm/WDM-01.8-nqBYJL/RESULT.json` and
+  `UI-UX-dataset-browser-reviewed.log` in the same phase workspace.
+- Auth real browser gate after session interruption: 12/12 PASS, native exit 0.
+  Evidence: `.agent-workspace/phase-wdm/AUTH-06-snJHAR/` and
+  `.agent-workspace/phase-wdm/UI-UX-auth-browser-resumed.log`. CRA development
+  proxy is NOT VERIFIED in this run because port 8080 was occupied; the existing
+  service was preserved. Interrupted/checkpoint logs remain as history, not
+  acceptance evidence. Backend/core full suites were not rerun for this UI task.
+
+Seven synthetic screenshots in `WDM-01.8-nqBYJL` cover home, upload receipt,
+Admin/customer accounts and desktop/mobile/dark snapshot detail. Automated mobile
+checks include no document overflow, colored sticky header and 2px table border.
+These checks do not establish complete WCAG or cross-browser certification.
+
+Task inventory: six new frontend source/test files; twenty-six modified files
+(thirteen runtime components/routes, five unit-test files, two browser case
+modules and six documentation/checklist files). Earlier dirty/untracked WDM work
+is preserved. No source deletion/rename, dependency update, stage/commit/push or
+development database write. Runner-owned resources are cleaned separately from
+owner services; acceptance logs/screenshots are retained.
+
+Final Docker inventory contains only the pre-existing `wspm-mysql`. The isolated
+container left by the interrupted Auth run was verified and stopped. Cleanup of
+its sole temporary `tls.p12` under the system-temp `wspm-auth06-Jrn5Gv` directory
+was rejected by automatic approval review (blocked by policy); this file remains
+pending cleanup. No source or acceptance evidence was removed.

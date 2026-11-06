@@ -23,6 +23,10 @@ export interface WdmRequestOptions {
   signal?: AbortSignal;
   /** Public endpoints such as health deliberately do not send the Admin token. */
   auth?: boolean;
+  /** Bounded artifact reads must use a stream; no unbounded blob fallback. */
+  maxDownloadBytes?: number;
+  /** Endpoint decoder runs with the transport request ID still available. */
+  decodeResponse?: (value: unknown) => unknown;
 }
 
 interface ClientOptions {
@@ -110,12 +114,44 @@ export function createWdmApiClient(options: ClientOptions = {}) {
         method, headers, body: payload, signal: controller.signal, credentials: 'omit',
       });
       const requestId = response.headers.get('X-Request-Id');
-      if (controller.signal.aborted) throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
+      if (controller.signal.aborted) {
+        await response.body?.cancel();
+        throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
+      }
       if (response.ok && requestOptions.expectedStatus !== undefined && response.status !== requestOptions.expectedStatus) {
         throw new WdmApiError('response', response.status, 'INVALID_RESPONSE', 'API returned an unexpected success status.', requestId);
       }
       if (response.ok && download) {
-        const blob = await response.blob();
+        let blob: Blob;
+        const limit = requestOptions.maxDownloadBytes;
+        if (limit !== undefined) {
+          const tooLarge = () => new WdmApiError('response', 200, 'DOWNLOAD_LIMIT_EXCEEDED', 'Artifact exceeds the download limit.', requestId);
+          const declared = response.headers.get('Content-Length');
+          if (!Number.isSafeInteger(limit) || limit < 1) throw tooLarge();
+          if (declared && (!/^(0|[1-9][0-9]*)$/.test(declared) || declared.length > String(limit).length
+            || (declared.length === String(limit).length && declared > String(limit)))) {
+            await response.body?.cancel();
+            throw tooLarge();
+          }
+          if (!response.body) throw new WdmApiError('response', 200, 'INVALID_DOWNLOAD_STREAM', 'Artifact stream is unavailable.', requestId);
+          const reader = response.body.getReader();
+          const cancel = () => { void reader.cancel().catch(() => undefined); };
+          controller.signal.addEventListener('abort', cancel);
+          const chunks: Uint8Array[] = [];
+          let size = 0;
+          try {
+            for (let next = await reader.read(); !next.done; next = await reader.read()) {
+              if (controller.signal.aborted) throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
+              size += next.value.byteLength;
+              if (size > limit) { await reader.cancel(); throw tooLarge(); }
+              chunks.push(next.value);
+            }
+            blob = new Blob(chunks, { type: response.headers.get('Content-Type') || '' });
+          } finally {
+            controller.signal.removeEventListener('abort', cancel);
+            reader.releaseLock();
+          }
+        } else blob = await response.blob();
         if (controller.signal.aborted) throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
         return {
           blob,
@@ -147,8 +183,14 @@ export function createWdmApiClient(options: ClientOptions = {}) {
           'API returned an invalid JSON response.', requestId);
       }
       if (requestOptions.responseMode === 'raw-health') return data as T;
-      try { return unwrapApiResponse<T>(data, requestId); }
+      let decoded: unknown;
+      try { decoded = unwrapApiResponse<unknown>(data, requestId); }
       catch { throw new WdmApiError('response', response.status, 'INVALID_RESPONSE', 'API returned an invalid response envelope.', requestId); }
+      try { return (requestOptions.decodeResponse ? requestOptions.decodeResponse(decoded) : decoded) as T; }
+      catch (error) {
+        if (error instanceof WdmApiError) throw new WdmApiError(error.kind, error.status, error.code, error.message, requestId, error.details);
+        throw new WdmApiError('response', response.status, 'INVALID_RESPONSE', 'API response could not be verified.', requestId);
+      }
     } catch (error) {
       if (error instanceof WdmApiError) throw error;
       if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {

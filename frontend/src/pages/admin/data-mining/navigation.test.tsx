@@ -137,7 +137,7 @@ describe('Admin Data & Mining navigation', () => {
   it('integrates with the actual DefaultNavbar while retaining legacy links and child navigation', () => {
     render(<Feature fullNavbar/>);
     expect(screen.getByRole('navigation', { name: 'Dữ liệu & Khai phá' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Trang chủ' })).toHaveAttribute('href', '/admin');
+    expect(screen.getByRole('link', { name: 'Trang chủ Admin' })).toHaveAttribute('href', '/admin');
     expect(screen.getByRole('link', { name: 'Sản phẩm' })).toHaveAttribute('href', '/admin/product');
     fireEvent.click(screen.getByRole('link', { name: 'Sản phẩm' }));
     expect(screen.getByRole('link', { name: 'Danh mục sản phẩm' })).toHaveAttribute('href', '/admin/category');

@@ -184,6 +184,9 @@ class OrderExportControllerTest {
         var unknown =
                 mvc.perform(request().param("sensitive-unknown-field", "sensitive-value"))
                         .andExpect(status().isBadRequest())
+                        .andExpect(jsonPath("$.details[0].field").value("query"))
+                        .andExpect(jsonPath("$.details[0].code").value("UNKNOWN_FIELD"))
+                        .andExpect(jsonPath("$.details[0].message").value("Query contains an unsupported filter."))
                         .andReturn();
         assertFalse(unknown.getResponse().getContentAsString().contains("sensitive"));
         verifyNoInteractions(repository);

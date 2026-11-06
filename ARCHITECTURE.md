@@ -170,7 +170,85 @@ application working tree and has no static resource mapping. DB rollback before
 the commit phase cleans only the current request's owned artifact; once the commit
 phase begins, an uncertain outcome keeps it for
 manual reconciliation. Storage and MySQL do not share an atomic transaction.
-Validation and SPMF conversion remain later WDM tasks.
+WDM-02.5 adds POST/GET `/api/v1/admin/dataset-snapshots/{id}/validation`.
+`services/dataset/validation` verifies raw integrity, runs the accepted CSV/business/
+consistency/cleaning stages, and builds a versioned report with complete record
+lineage. A dedicated repository publishes report/status atomically inside V2's
+existing JSON field; public DTOs paginate safe diagnostics and hide the manifest.
+Configured budgets, local concurrency limits and first-writer-wins publication
+bound the synchronous operation. WDM-02.6 provides the snapshot validation panel.
+WDM-02.7 adds the read-only `services/dataset/conversion` admission gate and POST
+`/api/v1/admin/dataset-snapshots/{id}/conversion`. It checks completed report binding,
+READY manifest/counts, raw integrity and fresh snapshot state, returning immutable
+verified bytes/kept records internally. Ineligible snapshots return 409; eligible
+snapshots currently return explicit 503 because conversion is not implemented.
+The proof does not reserve execution; WDM-03 must atomically claim/recheck state
+and consume verified input before producing artifacts. SPMF conversion remains
+WDM-03. Details and evidence are in the Dataset CSV contract.
+
+WDM-03.1 adds the internal `ProductItemMappingService`: it consumes only the
+gate's kept records and resolves an immutable, bidirectional snapshot dictionary.
+`repositories/dataset/ProductItemMappingStore` is the append-only JDBC writer for
+V2 `ITEM_MAPPING`; each bounded contention retry uses a fresh REQUIRES_NEW
+transaction. Existing product IDs retain their global positive Java-int item IDs;
+new IDs follow the global maximum, with exact opaque-product checks independent
+of MySQL collation. This service is not connected to the HTTP conversion endpoint;
+it neither claims snapshot execution nor publishes mapping/SPMF artifacts.
+
+WDM-03.2 adds `CustomerGroupingService` and the immutable `GroupedDataset`
+membership/provenance view: exact customer code -> exact order ID -> distinct
+numeric item IDs plus all retained source records and order metadata. It consumes
+the verified kept-record handoff and that input's exact product dictionary without
+DB/file access, cleaning replay or quantity/money aggregation. Map/record encounter
+order is traceability only; WDM-03.3 must establish chronology before creating core
+sequences. No HTTP conversion, snapshot publication or artifact is added here.
+
+WDM-03.3 adds the pure `TemporalOrderingService` and immutable `OrderedDataset`:
+customers are ordered by exact Unicode code points, and each customer's orders
+by `Instant` ascending then opaque order ID in the same code-point order. Equal
+timestamps retain separate orders. Sorted lists reference the original immutable
+grouped orders, preserving item IDs, timestamps, currency and source lineage.
+No SIDs/core sequences, SPMF, storage or HTTP conversion execution is added.
+
+WDM-03.4 adds `SpmfDatasetSerializer`: it turns the accepted ordered view into
+caller-owned canonical UTF-8 bytes, one customer/sequence per LF-terminated line,
+ascending positive numeric item tokens and SPMF `-1`/`-2` boundaries. It does not
+resort the handoff or read source payload fields. Full sequence/itemset/item
+round-trip is verified with the unchanged mining-core parser; SIDs are the parser's
+one-based sequence order. Serialization has no file/DB/HTTP publication side effects;
+artifact storage and conversion orchestration remain later work.
+
+WDM-03.5 adds internal `SnapshotConversionService`, `SnapshotConversionRepository`,
+`ConversionArtifactCodec`, `ConversionArtifactStorage` and immutable result metadata.
+The gate proof now includes a source/raw-reference binding. A short REQUIRES_NEW
+row-lock claim compares that binding and the complete frozen validation report,
+rejects snapshots already referenced by runs and assigns an attempt UUID. Pipeline
+work and private exclusive artifact writes happen outside the DB transaction.
+Persisted SPMF/mapping bytes are read back, hashed and verified against the entire
+ordered sequence structure before one publication transaction writes both file
+references/hashes and all descriptive statistics on existing V2 columns.
+Conversion JSON moves NOT_STARTED -> RUNNING -> SUCCEEDED/FAILED, with COMPUTED
+statistics only on success. Lost/uncertain publication outcomes retain files and
+claims for reconciliation; no automatic RUNNING takeover or FAILED retry. Repeated
+SUCCEEDED calls verify frozen files/raw/report binding and DB statistics without
+querying current catalog/mapping. The public snapshot mapper recognizes the new
+states while hiding operation metadata/paths. The conversion controller is still
+not wired to execution; write/query/download API work remains WDM-03.6.
+
+WDM-03.6 activates the existing POST `/dataset-snapshots/{id}/conversion` with
+the synchronous conversion service and adds GET on that path plus GET
+`/artifacts/sequence` and `/artifacts/mapping`. Shared ADMIN filters run before
+shape/UUID/resource checks. POST accepts no body/query and returns 200 only after
+verified success; repeated success is idempotent, RUNNING/FAILED are not retried.
+`ConversionReadService` extracts the accepted published-file verifier for POST
+confirmation, status and download without depending on execution or making claims.
+Pending states are strict metadata-only reads. Completed reads check raw/files/
+mapping/parser/statistics and fresh DB metadata; immutable bundles hold verified
+bytes so the download never reopens a path after attestation. Public
+`ConversionResponse`/mapper whitelist timestamps, states, string counts/sizes and
+protected relative download URLs; no internal attempt/reference/report is exposed.
+All routes use no-store; attachments use fixed UUID filenames, exact Content-Length
+and nosniff. Schema, mining and artifact publication rules remain unchanged.
 
 Business JSON success responses are explicit `ApiResponse<T>` values containing
 `code`, `message`, `data`, `requestId`; the HTTP status remains authoritative.
@@ -181,12 +259,39 @@ JSON, logout stays empty 204 and CSV stays a file. Auth/WDM retain no-store,
 Bearer challenges and authorization-before-validation. See the
 [shared API contract](docs/auth/README.md#api-contract).
 
+RF-04's `web/common/RequestChecks` shares exact empty-body, no-parameters/body,
+allowed query-name and single-value query checks. Controllers invoke them after
+the existing Auth/WDM filters; this is no new filter or automatic global policy.
+Endpoint messages/detail codes remain explicit. AuthJson.empty keeps its body-only
+policy; validation/conversion POSTs reject parameters before touching the body.
+Export timestamp/period rules and multipart upload checks remain endpoint-specific.
+
+RF-05 keeps the global MVC boundary and error envelope, with Java 21 type dispatch
+and named helpers for safe validation details, method headers and unexpected
+failure logging. Input method validation stays 400; invalid controller return
+values are 500. Both missing-resource and missing-handler exceptions map to 404.
+Filters continue using ApiErrorWriter directly, with unchanged Auth/default-deny
+ordering; committed responses and non-API exception resolution remain protected.
+
 The backend alone configures Lombok and MapStruct annotation processing, including
 lombok-mapstruct-binding. Lombok reduces trivial injection/accessor/logging code;
 entities do not use generated equality/toString via `@Data`. Sensitive DTOs remain
-records with redacted toString methods. MapStruct uses a shared Spring constructor
+records with redacted toString methods. RF-02 moves closed JSON projection to
+`web/auth/AuthRequestReader` after strict `AuthJson` parsing, and pure input
+normalization/validation to `services/auth/AuthInputValidator`. Registration
+revalidates direct service callers before password hashing or transaction work;
+email Bean Validation remains in the service. Constructors that only assign
+dependencies use `@RequiredArgsConstructor`; transaction/semaphore initialization
+remains explicit. MapStruct uses a shared Spring constructor
 injection config and fails compilation on unmapped target fields. IdentityMapper
 receives already-resolved roles; it does not query or assign permissions.
+RF-03 adds SnapshotResponseMapper for acquisition/detail DTOs and
+ValidationResponseMapper for public counts/diagnostics/positions. The snapshot
+mapper prepares a sanitized metadata view without storage access; services own
+lookups, availability/integrity checks and acquisition transactions.
+ValidationReportPresenter slices frozen diagnostics before mapping. Public DTOs
+own their nested types and immutable collections, with no service-report types or
+manifest exposed. Mapping preserves the existing JSON contract and null/count rules.
 AuthSessionService keeps explicit TransactionTemplate boundaries and
 account-before-session locks, with named methods for session creation, rotation,
 revocation and current-identity checks.
@@ -244,7 +349,7 @@ wire shapes. Shared primitive checks preserve canonical IDs, UTC timestamps,
 SHA-256 and exact string counts without weakening unknown/PENDING handling.
 
 Shared Auth UI resolves login destinations from verified roles: ADMIN reaches
-`/admin/datasets` from either sign-in form, CUSTOMER reaches the public home.
+`/admin` (the guided Admin home) from either sign-in form, CUSTOMER reaches the public home.
 Client/Admin headers expose same-session navigation links; `auth/useSignOut`
 centralizes notification and replacement navigation to `/` for every product
 logout entry, including an unconfirmed server logout. Public browsing remains
@@ -261,8 +366,9 @@ existing Admin shell and have UI-only ADMIN role guards. The Dataset page now
 provides period CSV export and multipart snapshot acquisition using the real WDM
 client contracts. Its calendar uses explicit fixed UTC+07 bounds, downloads
 CSV Blobs and shows only verified 201 PENDING acquisition receipts. The other
-two pages remain availability skeletons; validation/conversion and mining UI
-are pending. Shared frontend Auth is integrated. The backend
+two pages remain availability skeletons; conversion and mining UI are pending.
+WDM-02.6 adds validation actions/reporting within the snapshot detail route.
+Shared frontend Auth is integrated. The backend
 order export is protected by shared Auth/ADMIN independently of this UI guard.
 Frontend module tests and isolated real HTTP/CSV integration are covered in
 AUTH-05. `frontend/test/e2e/` owns AUTH-06's separate browser runner, disposable MySQL/
@@ -281,7 +387,8 @@ unknown provenance/status metadata stays null and uncomputed sequence counts
 remain hidden. `RawSnapshotStorage` probes availability without creating files,
 then bounds and verifies exact size/SHA-256 into a byte buffer before a download
 response is committed. Missing raw does not hide existing snapshot metadata.
-No list, validation, conversion or mining actions are added. WDM-01.8 verifies
+Validation actions are added separately by WDM-02.6; list, conversion and mining
+actions remain pending. WDM-01.8 verifies
 the full Dataset flow in Edge with disposable MySQL and an external temporary
 storage root. It found and fixed the Admin shell's missing detail-route allowance;
 an App regression now traverses the real Admin shell for a snapshot deep URL.

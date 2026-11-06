@@ -1,0 +1,80 @@
+{
+  "provenance": "Synthetic WDM-03.8 fixture; hand-authored product layouts, not derived from conversion output.",
+  "catalogProducts": [
+    "rt-p1",
+    "rt-p2",
+    "rt-p3",
+    "rt-p4",
+    "rt-unused"
+  ],
+  "sequences": [
+    {
+      "customer": "A",
+      "orders": [
+        "o-early",
+        "o-10",
+        "o-2"
+      ],
+      "itemsets": [
+        [
+          "rt-p1",
+          "rt-p2"
+        ],
+        [
+          "rt-p3"
+        ],
+        [
+          "rt-p1"
+        ]
+      ]
+    },
+    {
+      "customer": "C",
+      "orders": [
+        "b"
+      ],
+      "itemsets": [
+        [
+          "rt-p1",
+          "rt-p2"
+        ]
+      ]
+    },
+    {
+      "customer": "C😀",
+      "orders": [
+        "c-1",
+        "c-2"
+      ],
+      "itemsets": [
+        [
+          "rt-p1"
+        ],
+        [
+          "rt-p2"
+        ]
+      ]
+    }
+  ],
+  "counts": {
+    "inputRecords": "12",
+    "keptRecords": "9",
+    "rejectedRecords": "2",
+    "deduplicatedRecords": "1",
+    "blockedRecords": "0",
+    "inputOrders": "7",
+    "keptOrders": "6",
+    "rejectedOrders": "1"
+  },
+  "statistics": {
+    "sequenceCount": "3",
+    "singleItemsetSequenceCount": "1",
+    "multiItemsetSequenceCount": "2",
+    "itemsetCount": "6",
+    "distinctItemCount": "3",
+    "totalItemOccurrences": "8",
+    "minSequenceLength": "2",
+    "maxSequenceLength": "4",
+    "averageSequenceLength": 2.6666666666666665
+  }
+}
