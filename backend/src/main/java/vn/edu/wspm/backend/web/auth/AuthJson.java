@@ -9,6 +9,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import vn.edu.wspm.backend.exception.ApplicationException;
 import vn.edu.wspm.backend.exception.ErrorCode;
+import vn.edu.wspm.backend.web.common.RequestChecks;
 
 import java.io.IOException;
 
@@ -30,7 +31,6 @@ public final class AuthJson {
     }
 
     public static void empty(HttpServletRequest request) throws IOException {
-        if (request.getInputStream().read() != -1)
-            throw ApplicationException.invalid("body", "This operation requires an empty body.");
+        RequestChecks.requireEmptyBody(request, "body", "This operation requires an empty body.");
     }
 }

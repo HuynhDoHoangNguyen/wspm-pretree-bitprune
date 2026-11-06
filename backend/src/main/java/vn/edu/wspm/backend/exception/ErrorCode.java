@@ -34,6 +34,7 @@ public enum ErrorCode {
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "Request method is not supported."),
     NOT_ACCEPTABLE(HttpStatus.NOT_ACCEPTABLE, "Requested response media type is not supported."),
     IDENTITY_CONFLICT(HttpStatus.CONFLICT, "Account identity is already in use."),
+    INVALID_RESOURCE_STATE(HttpStatus.CONFLICT, "Resource state does not permit this operation."),
     PAYLOAD_TOO_LARGE(
             HttpStatus.CONTENT_TOO_LARGE,
             "Export exceeds configured limits; select a smaller period."),

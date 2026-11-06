@@ -12,7 +12,7 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 export async function runDatasetCases({ browser, httpsOrigin: origin, sql, temp, logDirectory }) {
   const results = [], contexts = [];
   const password = randomBytes(18).toString('base64url');
-  const evidence = { gate: 'WDM-01.8', browser: browser.version(), cases: results };
+  const evidence = { gate: 'WDM-01.8 + WDM-02.6 + WDM-02.7', browser: browser.version(), cases: results };
   const save = () => writeFileSync(path.join(logDirectory, 'RESULT.json'), JSON.stringify(evidence, null, 2));
   const count = () => Number(sql('SELECT COUNT(*) FROM DATASET_SNAPSHOT;'));
   async function context() {
@@ -321,6 +321,171 @@ export async function runDatasetCases({ browser, httpsOrigin: origin, sql, temp,
     assert.equal(downloads, 0); assert.equal(exports, 1); assert.equal(count(), 2);
   });
   evidence.finalSnapshotCount = count();
+  await test('WDM-02.6 valid report, one bodyless POST, metadata refresh and GET-only reload', async () => {
+    const ctx = await context(), { page, token } = await login(ctx);
+    const acquired = await upload(ctx, token, exported, 'validation-valid.csv');
+    assert.equal(acquired.status(), 201);
+    const receipt = envelope(acquired, await acquired.json()), id = idOf(receipt.snapshotId);
+    const before = record(id);
+    await page.goto(origin + '/admin/datasets/' + id);
+    const panel = page.getByRole('region', { name: 'Kiểm tra dữ liệu', exact: true });
+    const button = panel.getByRole('button', { name: 'Kiểm tra dữ liệu', exact: true });
+    await button.waitFor();
+    let posts = 0, release, arrived;
+    page.on('request', request => { if (request.method() === 'POST' && request.url() === origin + base + '/' + id + '/validation') posts++; });
+    const held = new Promise(resolve => { release = resolve; });
+    const committed = new Promise(resolve => { arrived = resolve; });
+    await page.route('**' + base + '/' + id + '/validation', async route => {
+      assert.equal(route.request().method(), 'POST');
+      assert.equal(route.request().postData(), null);
+      const response = await route.fetch(); assert.equal(response.status(), 200);
+      arrived(); await held;
+      await route.fulfill({ response });
+    });
+    try {
+      await button.click(); await committed;
+      assert.equal(await button.isDisabled(), true);
+      await button.dispatchEvent('click'); await button.dispatchEvent('click');
+      assert.equal(posts, 1);
+      assert.equal(record(id).validation, 'VALID');
+    } finally { release(); }
+    await panel.getByText('Có dữ liệu sạch sử dụng được', { exact: true }).waitFor();
+    await page.getByText('VALID — Có dữ liệu sạch sử dụng được', { exact: true }).waitFor();
+    assert.equal(await panel.getByRole('group', { name: 'Dòng giữ lại', exact: true }).getByText('4', { exact: true }).count(), 1);
+    await panel.getByText('Không có thông báo kiểm tra.', { exact: true }).waitFor();
+    await page.unrouteAll({ behavior: 'wait' });
+    const read = page.waitForResponse(r => r.request().method() === 'GET' && r.url().includes('/' + id + '/validation?'));
+    await page.reload(); assert.equal((await read).status(), 200);
+    await page.getByText('Có dữ liệu sạch sử dụng được', { exact: true }).waitFor();
+    const after = record(id);
+    assert.equal(after.sha, before.sha); assert.equal(after.path, before.path); assert.equal(after.count, '0');
+    assert.deepEqual(after.report.provenance, before.report.provenance);
+    const raw = await get(ctx, '/' + id + '/artifacts/raw', token, 200);
+    assert.deepEqual(await raw.body(), exported);
+    evidence.validation = { validSnapshot: id, postCount: posts, kept: '4', rawSha256: hash(exported) };
+  });
+
+  await test('WDM-02.6 recovers committed dirty-input report after lost POST response without replay', async () => {
+    const ctx = await context(), { page, token } = await login(ctx);
+    const line = (order, item, customer = 'source-A', product = 'dataset-product') =>
+      `${order},${item},${customer},2026-11-01T00:00:00.000000Z,COMPLETED,${product},OLD-SKU,Historical,1,100.00,0.00,100.00,VND\r\n`;
+    const bytes = Buffer.from(header + line('unknown', 201, 'source-A', 'missing-product')
+      + line('conflict', 202) + line('conflict', 203, 'source-B') + line('duplicate', 204) + line('duplicate', 204));
+    const response = await upload(ctx, token, bytes, 'validation-dirty.csv');
+    const receipt = envelope(response, await response.json()), id = idOf(receipt.snapshotId);
+    await page.goto(origin + '/admin/datasets/' + id);
+    const panel = page.getByRole('region', { name: 'Kiểm tra dữ liệu', exact: true });
+    let posts = 0;
+    page.on('request', request => { if (request.method() === 'POST' && request.url() === origin + base + '/' + id + '/validation') posts++; });
+    await page.route('**' + base + '/' + id + '/validation', async route => {
+      const committed = await route.fetch(); assert.equal(committed.status(), 200);
+      assert.equal(envelope(committed, await committed.json()).validationStatus, 'VALID');
+      await route.abort('failed'); // Real server committed; only the browser response is lost.
+    });
+    await panel.getByRole('button', { name: 'Kiểm tra dữ liệu', exact: true }).click();
+    await panel.getByText(/Kết nối bị gián đoạn/).waitFor();
+    assert.equal(await panel.getByRole('button', { name: 'Kiểm tra dữ liệu', exact: true }).isDisabled(), true);
+    assert.equal(posts, 1); assert.equal(record(id).validation, 'VALID');
+    await page.unrouteAll({ behavior: 'wait' });
+    await panel.getByRole('button', { name: 'Kiểm tra lại trạng thái', exact: true }).click();
+    await panel.getByText('Có dữ liệu sạch sử dụng được', { exact: true }).waitFor();
+    await page.getByText('VALID — Có dữ liệu sạch sử dụng được', { exact: true }).waitFor();
+    for (const [label, value] of [['Dòng giữ lại', '1'], ['Dòng loại theo đơn', '3'], ['Dòng lặp đã khử', '1']]) {
+      assert.equal(await panel.getByRole('group', { name: label, exact: true }).getByText(value, { exact: true }).count(), 1);
+    }
+    for (const code of ['PRODUCT_NOT_FOUND', 'ORDER_FIELD_CONFLICT', 'DUPLICATE_LINE_ID']) await panel.getByText(code, { exact: true }).waitFor();
+    assert.equal(posts, 1);
+    assert.equal(record(id).report.validation.manifest.length, 5);
+    assert.equal(hash(readFileSync(rawPath(id))), hash(bytes));
+    evidence.validation.recoveredSnapshot = id;
+  });
+
+  await test('WDM-02.6 INVALID structural, empty and blocked reports keep null counts and decoder accuracy', async () => {
+    const ctx = await context(), { page, token } = await login(ctx);
+    const blocked = Buffer.from(header + ' ,301,source-A,2026-11-01T00:00:00.000000Z,COMPLETED,dataset-product,SKU,Name,1,100.00,0.00,100.00,VND\r\n');
+    for (const [name, bytes, outcome] of [['utf8', Buffer.from([0xff]), 'NOT_RUN_STRUCTURAL_ERROR'],
+      ['empty', Buffer.from(header), 'EMPTY_INPUT'], ['blocked', blocked, 'BLOCKED_UNATTRIBUTABLE_ORDER']]) {
+      const acquired = await upload(ctx, token, bytes, name + '.csv');
+      const receipt = envelope(acquired, await acquired.json()), id = idOf(receipt.snapshotId);
+      await page.goto(origin + '/admin/datasets/' + id);
+      const panel = page.getByRole('region', { name: 'Kiểm tra dữ liệu', exact: true });
+      const response = page.waitForResponse(r => r.request().method() === 'POST' && r.url().endsWith('/' + id + '/validation'));
+      await panel.getByRole('button', { name: 'Kiểm tra dữ liệu', exact: true }).click();
+      const completed = await response; assert.equal(completed.status(), 200);
+      const report = envelope(completed, await completed.json());
+      assert.equal(report.validationStatus, 'INVALID'); assert.equal(report.cleaningOutcome, outcome);
+      assert.equal(Object.hasOwn(report, 'manifest'), false);
+      await panel.getByText('Chưa có dữ liệu sạch sử dụng được', { exact: true }).waitFor();
+      assert.equal(record(id).validation, 'INVALID');
+      if (name === 'utf8') {
+        await panel.getByText(/Đây là tiền tố đã đọc, không phải tổng dataset/).waitFor();
+        await panel.getByText(/không xác định chính xác byte hoặc bản ghi lỗi/).waitFor();
+        await panel.getByRole('group', { name: 'Dòng đầu vào', exact: true }).getByText('Chưa xác định', { exact: true }).waitFor();
+      }
+      if (name === 'blocked') await panel.getByRole('group', { name: 'Tổng số đơn', exact: true }).getByText('Chưa xác định', { exact: true }).waitFor();
+    }
+  });
+
+  await test('WDM-02.7 real Auth and API reject unauthorized, pending, invalid and forged status', async () => {
+    const anon = await context();
+    const denied = await anon.request.post(origin + base + '/bad/conversion', { data: '{}' });
+    assert.equal(denied.status(), 401);
+    const customer = await context(), customerLogin = await login(customer, 'dataset.customer');
+    assert.equal((await customer.request.post(origin + base + '/bad/conversion', {
+      headers: headers(customerLogin.token), data: '{}',
+    })).status(), 403);
+    const ctx = await context(), { token } = await login(ctx);
+    async function attempt(id, status, code) {
+      const response = await ctx.request.post(origin + base + '/' + id + '/conversion', { headers: headers(token) });
+      assert.equal(response.status(), status);
+      const error = await response.json(); assert.equal(error.code, code);
+      assert.equal(error.requestId, response.headers()['x-request-id']);
+      assert.ok(response.headers()['cache-control'].includes('no-store'));
+    }
+    await attempt('bad', 400, 'VALIDATION_FAILED');
+    await attempt(unknown, 404, 'RESOURCE_NOT_FOUND');
+    const acquired = await upload(ctx, token, exported, 'gate-pending.csv');
+    const id = idOf(envelope(acquired, await acquired.json()).snapshotId), pending = record(id);
+    await attempt(id, 409, 'INVALID_RESOURCE_STATE'); assert.deepEqual(record(id), pending);
+    // Isolated negative corruption fixture only; positive cases use the actual pipeline.
+    sql(`UPDATE DATASET_SNAPSHOT SET validation_status='VALID' WHERE snapshot_id='${id}';`);
+    const forged = record(id); await attempt(id, 409, 'INVALID_RESOURCE_STATE'); assert.deepEqual(record(id), forged);
+    const invalid = await upload(ctx, token, Buffer.from([0xff]), 'gate-invalid.csv');
+    const invalidId = idOf(envelope(invalid, await invalid.json()).snapshotId);
+    const validated = await ctx.request.post(origin + base + '/' + invalidId + '/validation', { headers: headers(token) });
+    assert.equal(validated.status(), 200);
+    assert.equal(envelope(validated, await validated.json()).validationStatus, 'INVALID');
+    const before = record(invalidId); await attempt(invalidId, 409, 'INVALID_RESOURCE_STATE');
+    assert.deepEqual(record(invalidId), before);
+  });
+
+  await test('WDM-02.7 actual ready pipeline passes admission without conversion or artifacts; tamper fails closed', async () => {
+    const ctx = await context(), { token } = await login(ctx);
+    const acquired = await upload(ctx, token, exported, 'gate-ready.csv');
+    const id = idOf(envelope(acquired, await acquired.json()).snapshotId);
+    const validated = await ctx.request.post(origin + base + '/' + id + '/validation', { headers: headers(token) });
+    assert.equal(validated.status(), 200);
+    assert.equal(envelope(validated, await validated.json()).validationStatus, 'VALID');
+    const before = record(id);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await ctx.request.post(origin + base + '/' + id + '/conversion', { headers: headers(token) });
+      assert.equal(response.status(), 503);
+      const error = await response.json(); assert.equal(error.code, 'SERVICE_UNAVAILABLE');
+      assert.equal(error.message, 'Conversion is not available yet.');
+      assert.deepEqual(record(id), before);
+      assert.deepEqual(readdirSync(path.dirname(rawPath(id))), ['raw.csv']);
+      assert.deepEqual(readFileSync(rawPath(id)), exported);
+    }
+    const corrupt = Buffer.from(exported); corrupt[corrupt.length - 3] ^= 1;
+    writeFileSync(rawPath(id), corrupt);
+    const unavailable = await ctx.request.post(origin + base + '/' + id + '/conversion', { headers: headers(token) });
+    assert.equal(unavailable.status(), 503);
+    assert.equal((await unavailable.json()).message, 'Conversion admission could not be completed.');
+    assert.deepEqual(record(id), before);
+    evidence.conversionGate = { snapshotId: id, validation: 'VALID', conversion: 'NOT_STARTED',
+      admittedResponse: 503, tamperedResponse: 503, artifacts: ['raw.csv'], realConversion: 'NOT VERIFIED — WDM-03' };
+  });
+
   evidence.status = 'PASS'; save();
   console.log('Dataset browser cases: ' + results.length + '/' + results.length + ' PASS.');
 }

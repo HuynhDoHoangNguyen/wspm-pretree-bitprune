@@ -7,6 +7,7 @@ import { useSharedAuth } from 'auth/session';
 import { setWdmAuthAdapter } from 'api/admin/data-mining';
 import { createDataMiningRoutes } from './routes';
 import DataMiningNavigation from './DataMiningNavigation';
+import { reportData } from 'api/admin/data-mining/validation-test-data';
 
 jest.mock('auth/session', () => ({ useSharedAuth: jest.fn() }));
 Object.assign(globalThis, runInThisContext('({ Headers, Response })'));
@@ -40,6 +41,18 @@ function page(snapshotId = id) {
 function field(label: string) {
   return within((screen.getByText(label).closest('dt') as HTMLElement).parentElement as HTMLElement);
 }
+
+it('refreshes metadata after validation without remounting/replaying the operation', async () => {
+  const report = { ...reportData(), rawSizeBytes: detail.rawSizeBytes };
+  fetchMock.mockResolvedValueOnce(json()).mockResolvedValueOnce(json(report))
+    .mockResolvedValueOnce(json({ ...detail, validationStatus: 'VALID' }));
+  render(page()); await screen.findByText('original.csv');
+  fireEvent.click(screen.getByRole('button', { name: 'Kiểm tra dữ liệu', exact: true }));
+  await screen.findByText('Có dữ liệu sạch sử dụng được');
+  await waitFor(() => expect(field('Trạng thái kiểm tra').getByText('VALID — Có dữ liệu sạch sử dụng được')).toBeInTheDocument());
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+  expect(fetchMock.mock.calls.map(call => call[1].method)).toEqual(['GET', 'POST', 'GET']);
+});
 beforeEach(() => {
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: jest.fn(query => ({ matches: false, media: query,
     onchange: null, addListener: jest.fn(), removeListener: jest.fn(), addEventListener: jest.fn(), removeEventListener: jest.fn(), dispatchEvent: jest.fn() })) });

@@ -3,6 +3,8 @@ package vn.edu.wspm.backend.services.dataset;
 import jakarta.servlet.MultipartConfigElement;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mapstruct.factory.Mappers;
+import vn.edu.wspm.backend.mappers.SnapshotResponseMapper;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.*;
@@ -26,6 +28,7 @@ class DatasetSnapshotServiceTest {
     RawSnapshotStorage storage;
     Transactions transactions;
     DatasetSnapshotService service;
+    private final SnapshotResponseMapper mapper = Mappers.getMapper(SnapshotResponseMapper.class);
     final MockMultipartFile file = new MockMultipartFile("file", "orders.csv", "text/csv", new byte[]{1, 2});
 
     @BeforeEach
@@ -34,7 +37,7 @@ class DatasetSnapshotServiceTest {
         storage = new RawSnapshotStorage(root.toString(), new MultipartConfigElement("", 100, 200, 0));
         transactions = new Transactions();
         service = new DatasetSnapshotService(storage, repository,
-                Clock.fixed(Instant.parse("2026-11-05T01:02:03.123456789Z"), ZoneOffset.UTC), transactions);
+                Clock.fixed(Instant.parse("2026-11-05T01:02:03.123456789Z"), ZoneOffset.UTC), transactions, mapper);
     }
 
     @Test
@@ -116,7 +119,7 @@ class DatasetSnapshotServiceTest {
         Path blocker = root.resolve("blocker");
         Files.writeString(blocker, "preserve");
         var bad = new DatasetSnapshotService(new RawSnapshotStorage(blocker.toString(),
-                new MultipartConfigElement("", 100, 200, 0)), repository, Clock.systemUTC(), transactions);
+                new MultipartConfigElement("", 100, 200, 0)), repository, Clock.systemUTC(), transactions, mapper);
         assertThrows(ApplicationException.class, () -> bad.acquire(file));
         verifyNoInteractions(repository);
         assertEquals("preserve", Files.readString(blocker));

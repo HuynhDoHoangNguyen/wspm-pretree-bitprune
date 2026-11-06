@@ -3,6 +3,8 @@ package vn.edu.wspm.backend.services.dataset;
 import jakarta.servlet.MultipartConfigElement;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mapstruct.factory.Mappers;
+import vn.edu.wspm.backend.mappers.SnapshotResponseMapper;
 import org.junit.jupiter.api.io.TempDir;
 import vn.edu.wspm.backend.entities.DatasetSnapshotEntity;
 import vn.edu.wspm.backend.exception.ApplicationException;
@@ -30,7 +32,7 @@ class SnapshotReadServiceTest {
     void setup() throws Exception {
         repository = mock(DatasetSnapshotRepository.class);
         storage = new RawSnapshotStorage(root.toString(), new MultipartConfigElement("", 1024, 2048, 0));
-        service = new SnapshotReadService(repository, storage);
+        service = new SnapshotReadService(repository, storage, Mappers.getMapper(SnapshotResponseMapper.class));
         raw = storage.save(new ByteArrayInputStream(new byte[]{1, 2, 3}));
         entity = new DatasetSnapshotEntity();
         entity.setSnapshotId(raw.snapshotId()); entity.setSourceType("CSV"); entity.setSourceName("sample.csv");
