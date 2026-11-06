@@ -1,5 +1,66 @@
 # Browser E2E gates
 
+## WDM-04.6 configuration gate
+
+Dataset mode now runs **25 cases: the existing 17 plus 8 configuration groups**.
+`configuration-cases.mjs` uses the actual Admin form, strict four-field POSTs,
+verified conversion artifacts, shared Auth and isolated MySQL. It never serves
+the Auth harness or introduces production test hooks. New cases cover both
+algorithms/modes, precision/zero/underflow, real errors and artifact tamper,
+double-click/no-replay behavior, edit/navigation/logout cancellation and unchanged
+snapshot/mapping/file data with no mining run.
+
+Use a task-owned build directory to preserve existing build artifacts:
+
+```powershell
+# From repository root; use a fresh task-owned output path for another task.
+$env:BUILD_PATH='../.agent-workspace/phase-wdm/WDM-04.6-build'
+npm --prefix frontend run build
+mvn -B -pl backend -am package -DskipTests
+$env:WDM_E2E_BUILD_DIR='.agent-workspace/phase-wdm/WDM-04.6-build'
+$env:AUTH_E2E_LOG_DIR='.agent-workspace/phase-wdm/WDM-04.6'
+npm --prefix frontend/test/e2e run test:dataset
+```
+
+CRA resolves BUILD_PATH against `frontend`; the runner resolves WDM_E2E_BUILD_DIR
+against repository root, canonicalizes it, checks workspace containment and
+requires index.html. Without the override, frontend/build remains the default
+for compatibility. This is not a deployment command. Packaging with skipTests
+is preparation only. Use existing pinned E2E dependencies when already installed;
+do not clean older evidence, builds or dependency directories as preparation.
+
+Each run retains PREPARATION.json with Node/Java versions, Git HEAD (the working
+tree may be dirty) and hashes of served index/manifest/backend JAR. RESULT.json
+contains safe configuration IDs/counts/hashes, request counts and verifier status.
+It never saves credentials, access tokens, browser auth storage or wire headers.
+The shared directory prefix remains WDM-01.8; the combined gate label includes
+WDM-04.6 and the optional parent above groups evidence by task.
+
+`java/MiningThresholdVerifier.java` is a test-only JDK 21 source launcher. It
+parses the actual browser-downloaded SPMF and compares captured wire tuples
+against MinimumSupportResolver, using exact double bits. It also checks that
+the core JAR on its classpath is byte-identical to the nested core JAR in the
+running backend package. Its TSV input and downloaded bytes exist only in the
+run-owned temporary directory and are cleaned by the runner. Two negative
+controls alter a captured threshold and the expected sequence count and must
+exit 1 after the valid input has exited 0.
+
+The gate captures the actual JSON number sent. In particular, JSON serializes
+JS -0 as 0; raw form input -0.0 is still checked as an operational zero rejection.
+No JavaScript threshold formula substitutes for core. Routes used for races
+fetch real backend responses and then hold/drop/release those bytes. No fake
+success payload grants a PASS.
+
+Native final run 2026-11-07: **25/25 PASS**, 57 core-verified tuples and 2 rejected
+negative controls, Edge 156.0.4314.58, JDK 21.0.12.1, Node v22.23.4, isolated
+MySQL 8.4/HTTPS. Parser/resolver focused suite: 23/23 PASS. Desktop/mobile
+configuration screenshots were inspected; mobile width 390 has no horizontal
+overflow. Evidence and AC details are in docs/wdm/mining-request-contract.md.
+Actual run creation/execution, other browser engines, production capacity and
+Flyway upgrade behavior are outside this gate.
+
+## Shared setup and earlier gates
+
 This directory contains test source, separate from `src` and the application
 bundle. Dependencies are pinned in this directory's package/lockfile; no React,
 CRA or application dependency upgrades are required.

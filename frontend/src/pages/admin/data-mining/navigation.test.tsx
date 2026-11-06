@@ -81,7 +81,7 @@ describe('Admin Data & Mining navigation', () => {
     expect(screen.getByRole('heading', { level: 2, name: label })).toBeInTheDocument();
     expect(within(nav).getByRole('link', { name: label })).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getAllByRole('link')).toHaveLength(3);
-    expect(screen.queryByText('Chức năng đang được chuẩn bị') !== null).toBe(path !== '/admin/datasets');
+    expect(screen.queryByText('Chức năng đang được chuẩn bị') !== null).toBe(path === '/admin/patterns');
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.queryByText(/không có dữ liệu/i)).not.toBeInTheDocument();
   });

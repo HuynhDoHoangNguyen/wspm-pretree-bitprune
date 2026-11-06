@@ -3,6 +3,7 @@ import { WdmAuthAdapter } from './types';
 import { createDatasetApi } from './datasets';
 import { createValidationApi } from './validation';
 import { createConversionApi } from './conversion';
+import { createMiningApi } from './mining';
 
 let authAdapter: WdmAuthAdapter | null = null;
 
@@ -19,6 +20,8 @@ export const wdmApi = createWdmApiClient({
 export const datasetApi = createDatasetApi(wdmApi);
 export const validationApi = createValidationApi(wdmApi);
 export const conversionApi = createConversionApi(wdmApi);
+export const miningApi = createMiningApi(wdmApi);
+export type { MiningRequest, MiningPreview, MiningValidation } from './mining-response';
 export type { ConversionReport, ConversionArtifact, ConversionStatistics } from './conversion-response';
 export type { ValidationReport, ValidationDiagnostic, ValidationPosition } from './validation-response';
 export type { DatasetSnapshotResponse, SnapshotDetail } from './types';

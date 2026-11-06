@@ -178,6 +178,8 @@ export default function SnapshotDetailPage() {
       </div>
       <div role="tabpanel" id="snapshot-panel-conversion" aria-labelledby="snapshot-tab-conversion" hidden={selected !== 'conversion'}>
         <SnapshotConversionPanel key={'conversion:' + detail.snapshotId} detail={detail} validationReport={validationReport} onComplete={refreshValidationMetadata} onActivityChange={setConversionActivity}/>
+        {detail.conversionStatus === 'SUCCEEDED' && detail.statisticsStatus === 'COMPUTED' && <Button component={Link}
+          to={'/admin/mining-runs?snapshotId=' + encodeURIComponent(detail.snapshotId)} mt="md">Cấu hình khai phá</Button>}
       </div>
     </>}
   </Stack></div>;

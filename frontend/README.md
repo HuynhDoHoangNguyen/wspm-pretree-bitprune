@@ -403,6 +403,32 @@ hàng. Giao diện tài khoản Admin và `/user` cùng dùng IdentityPanel đã
 theo thông tin đăng nhập, xác minh email và quyền; không bật form sửa tài khoản
 hoặc các API hồ sơ legacy chưa được hỗ trợ.
 
+## WDM-04.5 — Cấu hình khai phá
+
+Trang `/admin/mining-runs` dành cho Admin có form snapshot ID, thuật toán,
+mode và giá trị minsup. Từ tab chuyển đổi của snapshot `SUCCEEDED/COMPUTED`,
+chọn **Cấu hình khai phá** để mở `/admin/mining-runs?snapshotId=<UUID>`.
+ID được điền sẵn nhưng không tự gửi request. Chưa có API danh sách snapshot;
+form không sử dụng danh sách hoặc dữ liệu mẫu.
+
+- **Xem trước dữ liệu** gọi POST `/api/v1/admin/mining-runs/preview`.
+- **Kiểm tra cấu hình** gọi POST `/api/v1/admin/mining-runs/configuration-validation`.
+- Hai thao tác dùng cùng request bốn trường và Auth client hiện có. Không có nút
+  tạo/chạy mining run trong task này.
+- `PERCENT: 14` là 14%; ABSOLUTE là ngưỡng hỗ trợ có trọng số, cho phép số thập
+  phân. Form giữ chuỗi khi nhập, hỗ trợ ký pháp khoa học và không tính threshold.
+- Thống kê, relative fraction và effective threshold lấy từ backend; count giữ
+  nguyên chuỗi số. Preview không cấp quyền thực thi; SUPPORTED chỉ có nghĩa cấu
+  hình qua kiểm tra tại thời điểm đọc. Lỗi 422 zero được giải thích riêng.
+- Sửa cấu hình/đổi phiên hoặc quyền xóa kết quả cũ, hủy request đang chạy và bỏ
+  response đến muộn. Không tự replay POST, tự submit khi mở trang hoặc lưu marker
+  SUPPORTED vào localStorage.
+
+API types/decoders nằm trong `src/api/admin/data-mining/mining*.ts`; form/hook/
+result thuộc `src/pages/admin/data-mining/`. Hợp đồng và evidence:
+`../docs/wdm/mining-request-contract.md`, mục WDM-04.5. Real browser/API/DB gate
+cho cấu hình thuộc WDM-04.6; module tests ở đây dùng mocked HTTP.
+
 ## Quy tắc dọn frontend
 
 - Xóa theo feature slice hoàn chỉnh, không xóa file rời chỉ dựa vào tên.

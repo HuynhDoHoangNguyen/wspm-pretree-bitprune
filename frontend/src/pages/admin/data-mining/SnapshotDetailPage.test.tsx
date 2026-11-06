@@ -90,6 +90,17 @@ beforeEach(() => {
 });
 afterEach(() => { setWdmAuthAdapter(null); jest.restoreAllMocks(); });
 
+it('offers configuration prefill only for a converted snapshot without sending mining POSTs', async () => {
+  fetchMock.mockResolvedValue(json({ ...detail, validationStatus: 'VALID', conversionStatus: 'SUCCEEDED', statisticsStatus: 'COMPUTED', sequenceCount: '3' }));
+  conversionFetchMock.mockResolvedValue(json(conversionData()));
+  render(page(id, 'conversion'));
+  expect(await screen.findByRole('link', { name: 'Cấu hình khai phá' })).toHaveAttribute('href', '/admin/mining-runs?snapshotId=' + id);
+  fireEvent.click(screen.getByRole('link', { name: 'Cấu hình khai phá' }));
+  expect(await screen.findByRole('form', { name: 'Cấu hình khai phá' })).toBeInTheDocument();
+  expect(screen.getByLabelText(/Snapshot ID/)).toHaveValue(id);
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/mining-runs/'))).toBe(false);
+});
+
 it('opens the real deep route, renders honest metadata and refetches after remount/reload', async () => {
   fetchMock.mockImplementation(() => Promise.resolve(json()));
   const view = render(page());

@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, unlinkSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { runConfigurationCases } from './configuration-cases.mjs';
 
 const base = '/api/v1/admin/dataset-snapshots';
 const unknown = '00000000-0000-4000-8000-000000000000';
@@ -13,7 +14,7 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 export async function runDatasetCases({ browser, httpsOrigin: origin, sql, temp, logDirectory, root }) {
   const results = [], contexts = [];
   const password = randomBytes(18).toString('base64url');
-  const evidence = { gate: 'WDM-01.8 + WDM-02.6 + WDM-02.7 + WDM-03.6 + WDM-03.7 + WDM-03.8 + UI/UX refresh', browser: browser.version(), cases: results };
+  const evidence = { gate: 'WDM-01.8 + WDM-02.6 + WDM-02.7 + WDM-03.6 + WDM-03.7 + WDM-03.8 + UI/UX refresh + WDM-04.6', browser: browser.version(), cases: results };
   const save = () => writeFileSync(path.join(logDirectory, 'RESULT.json'), JSON.stringify(evidence, null, 2));
   const count = () => Number(sql('SELECT COUNT(*) FROM DATASET_SNAPSHOT;'));
   async function context() {
@@ -834,6 +835,7 @@ export async function runDatasetCases({ browser, httpsOrigin: origin, sql, temp,
       sharedAccounts: ['ADMIN', 'CUSTOMER'], mobileViewport: '390x844', tableHeader: style, screenshots: 7 };
   });
 
+  await runConfigurationCases({ test, context, login, origin, sql, temp, root, logDirectory, evidence });
   evidence.status = 'PASS'; save();
   console.log('Dataset browser cases: ' + results.length + '/' + results.length + ' PASS.');
 }

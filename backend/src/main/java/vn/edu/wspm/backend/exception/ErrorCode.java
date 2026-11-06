@@ -4,6 +4,7 @@ import org.springframework.http.HttpStatus;
 
 public enum ErrorCode {
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "Request validation failed."),
+    UNSUPPORTED_MINING_CONFIGURATION(HttpStatus.valueOf(422), "Mining configuration is outside the supported scope."),
     MALFORMED_REQUEST(HttpStatus.BAD_REQUEST, "Request body or transport is invalid."),
     AUTHENTICATION_REQUIRED(HttpStatus.UNAUTHORIZED, "Authentication is required."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "Access is denied."),
