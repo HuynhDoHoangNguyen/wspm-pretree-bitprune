@@ -29,6 +29,9 @@ public class PatternEntity {
     @Column(name = "pattern_weight")
     private Double weight;
 
+    @Column(name = "pattern_weight_policy", length = 80)
+    private String patternWeightPolicy;
+
     @Column(name = "pattern_item_count")
     private Integer patternLength;
 
@@ -64,6 +67,22 @@ public class PatternEntity {
 
     public Double getWeight() {
         return weight;
+    }
+
+    public String getPatternWeightPolicy() {
+        return patternWeightPolicy;
+    }
+
+    /** Pair shape only. A policy string is not approval or permission to update a completed run. */
+    public void setPatternMetric(Double weight, String policy) {
+        if ((weight == null) != (policy == null)
+                || (weight != null && (!Double.isFinite(weight) || policy.isBlank()
+                    || policy.codePointCount(0, policy.length()) > 80 || policy.indexOf('\0') >= 0
+                    || !java.nio.charset.StandardCharsets.UTF_8.newEncoder().canEncode(policy)))) {
+            throw new IllegalArgumentException("Invalid pattern metric pair");
+        }
+        this.weight = weight;
+        this.patternWeightPolicy = policy;
     }
 
     public Integer getPatternLength() {

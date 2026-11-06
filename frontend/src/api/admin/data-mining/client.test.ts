@@ -151,7 +151,42 @@ describe('WDM API client', () => {
     controller.abort();
     fetchMock.mockRejectedValue(Object.assign(new Error('aborted'), { name: 'AbortError' }));
     await expect(client().get('/health', { signal: controller.signal })).rejects.toMatchObject({ code: 'REQUEST_ABORTED' });
-    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled(); // An already-cancelled request must not leave the browser.
+  });
+
+  it.each(['caller', 'session'])('cancels an in-flight request from either %s signal and removes listeners', async source => {
+    const caller = new AbortController(), session = new AbortController();
+    const removeCaller = jest.spyOn(caller.signal, 'removeEventListener');
+    const removeSession = jest.spyOn(session.signal, 'removeEventListener');
+    fetchMock.mockImplementation((_url, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(Object.assign(new Error('cancelled'), { name: 'AbortError' })));
+    }));
+    const result = client({ getAccessToken: () => null, getSessionSignal: () => session.signal }).get('/v1/admin/mining-runs', { signal: caller.signal });
+    (source === 'caller' ? caller : session).abort();
+    await expect(result).rejects.toMatchObject({ kind: 'aborted', code: 'REQUEST_ABORTED' });
+    expect(removeCaller).toHaveBeenCalledWith('abort', expect.any(Function));
+    expect(removeSession).toHaveBeenCalledWith('abort', expect.any(Function));
+  });
+
+  it('captures the current session signal per request and rejects a late successful response after logout', async () => {
+    let session = new AbortController();
+    let finish: (value: Response) => void = () => undefined;
+    fetchMock.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const api = client({ getAccessToken: () => null, getSessionSignal: () => session.signal });
+    const first = api.get('/v1/admin/mining-runs');
+    const oldSignal = session.signal;session.abort();finish(jsonResponse({ stale: true }));
+    await expect(first).rejects.toMatchObject({ code: 'REQUEST_ABORTED' });
+    session = new AbortController();fetchMock.mockResolvedValueOnce(jsonResponse({ fresh: true }));
+    await expect(api.get('/v1/admin/mining-runs')).resolves.toEqual({ fresh: true });
+    expect(fetchMock.mock.calls[1][1].signal).toBe(session.signal);
+    expect(fetchMock.mock.calls[1][1].signal).not.toBe(oldSignal);
+  });
+
+  it('does not consult the protected session signal for public health', async () => {
+    const getSessionSignal = jest.fn(() => { throw new Error('must not access auth'); });
+    fetchMock.mockResolvedValue(jsonResponse({ status: 'UP' }));
+    await client({ getAccessToken: () => null, getSessionSignal }).get('/health', { auth: false });
+    expect(getSessionSignal).not.toHaveBeenCalled();
   });
 
   it('serializes JSON bodies once and handles empty 204 responses', async () => {
