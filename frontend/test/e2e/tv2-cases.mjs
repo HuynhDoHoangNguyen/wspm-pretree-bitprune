@@ -130,7 +130,7 @@ export async function runTv2Cases({ browser, httpsOrigin: origin, sql, temp, log
   await test('Combo blocked DRAFT has explicit missing authority and no enabled actions', async () => {
     const { page } = await login();await page.goto(origin + '/admin/combos');await page.getByRole('heading', { name: 'Quản lý Combo', exact: true }).waitFor();
     const list = await comboList(page, fixture.batches[0], 'DRAFT');assert.equal(list.scopeTotal, '3');assert.equal(list.filteredTotal, '3');const detail = await openCombo(page, list.items[0].data);
-    assert.deepEqual(detail.assessment.allowedActions, []);assert.equal(detail.reviewToken, null);await page.getByText('Chặn: REVIEW_POLICY_UNCONFIRMED', { exact: true }).waitFor();
+    assert.deepEqual(detail.assessment.allowedActions, []);assert.equal(detail.reviewToken, null);await page.getByText('Chặn: Chưa có chính sách duyệt được xác nhận.', { exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Duyệt', exact: true }).isDisabled(), true);assert.equal(await page.getByRole('button', { name: 'Từ chối', exact: true }).isDisabled(), true);
   });
   await test('Combo approve, principal audit, row leaves DRAFT, reload and independent SQL', async () => {
@@ -162,5 +162,43 @@ export async function runTv2Cases({ browser, httpsOrigin: origin, sql, temp, log
     const next = adminApi(page, '/api/v1/admin/combos');await page.getByRole('button', { name: 'Trang sau', exact: true }).click();const response = await next;const tail = envelope(response, await response.json());assert.equal(tail.page, 1);assert.equal(tail.items.length, 1);
     const row = tail.items[0].data;await openCombo(page, row);await review(page, row, 'APPROVE');await page.getByText('Trang 1', { exact: true }).waitFor();await page.getByText('Trong phạm vi: 24; Khớp bộ lọc: 20', { exact: true }).waitFor();assert.equal(await page.getByRole('heading', { name: 'Chi tiết Combo ' + row.comboId, exact: true }).count(), 0);assert.equal(stored(row.comboId).status, 'APPROVED');
   });
+  if (process.argv.includes('--ui')) {
+    evidence.viewports = [];
+    async function fits(page) {
+      const size = await page.evaluate(() => ({ width: innerWidth, documentWidth: document.documentElement.scrollWidth }));
+      assert.ok(size.documentWidth <= size.width + 1, 'No horizontal page overflow');
+    }
+    for (const width of [1440, 1024, 390]) await test('UI populated layout, keyboard and screenshots at ' + width + 'px', async () => {
+      const { page } = await login();await page.setViewportSize({ width, height: 1000 });await page.goto(origin + '/admin/patterns');
+      await selectRun(page, fixture.patternRun);await page.getByRole('button', { name: '18446744073709551615', exact: true }).click();
+      await page.getByRole('group', { name: 'Itemset 1', exact: true }).waitFor();await fits(page);
+      const controls = await page.getByRole('combobox', { name: 'Mining run', exact: true }).boundingBox();assert.ok(controls.height >= 35 && controls.height <= 40);
+      await page.getByRole('combobox', { name: 'Mining run', exact: true }).focus();await page.keyboard.press('Tab');
+      assert.ok(await page.evaluate(() => document.activeElement !== document.body));
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({ path: path.join(logDirectory, 'patterns-data-' + width + '.png'), fullPage: true });
+      await page.goto(origin + '/admin/combos');const list = await comboList(page, fixture.batches[4], 'DRAFT', 'MIXED_SEQUENCE');
+      await openCombo(page, list.items[0].data);await page.getByRole('button', { name: 'Duyệt', exact: true }).click();
+      await page.getByLabel('Ghi chú review', { exact: true }).waitFor();await fits(page);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({ path: path.join(logDirectory, 'combos-review-' + width + '.png'), fullPage: true });
+      evidence.viewports.push({ width, pageOverflow: false, controlHeight: controls.height, screenshots: ['patterns-data-' + width + '.png', 'combos-review-' + width + '.png'] });
+    });
+    await test('UI real empty datasource layouts at all three viewports', async () => {
+      assert.ok(!process.argv.includes('--manual'), 'Use UI empty gate separately from manual mode');
+      // End-of-gate reader-state fixture only. sql() verifies the exact owned container before every call.
+      // No application hook, mocked response, constraint disabling or shared/demo datasource.
+      for (const table of ['COMBO_BATCH_WRITE_EVIDENCE', 'COMBO_SOURCE', 'COMBO_ITEM', 'COMBO', 'COMBO_BATCH', 'PATTERN_ITEM', 'PATTERN', 'RUN_ITEM_STATISTIC',
+        'MINING_RUN_COMPLETION', 'MINING_RUN_OWNERSHIP', 'MINING_RUN_INPUT_BINDING', 'MINING_RUN', 'SNAPSHOT_CONVERSION_SEAL', 'DATASET_SNAPSHOT']) sql('DELETE FROM ' + table + ';');
+      const { page } = await login();
+      for (const width of [1440, 1024, 390]) {
+        await page.setViewportSize({ width, height: 1000 });await page.goto(origin + '/admin/patterns');await page.getByText('Chưa có mining run.', { exact: true }).waitFor();await fits(page);
+        assert.equal(await page.getByRole('combobox', { name: 'Mining run', exact: true }).isDisabled(), true);
+        await page.screenshot({ path: path.join(logDirectory, 'patterns-empty-' + width + '.png'), fullPage: true });
+        await page.goto(origin + '/admin/combos');await page.getByText('Chưa có Combo trong phạm vi đã chọn.', { exact: true }).waitFor();await fits(page);
+        await page.screenshot({ path: path.join(logDirectory, 'combos-empty-' + width + '.png'), fullPage: true });
+      }
+    });
+  }
   evidence.status = 'PASS';writeFileSync(path.join(logDirectory, 'RESULT.json'), JSON.stringify(evidence, null, 2));
 }
