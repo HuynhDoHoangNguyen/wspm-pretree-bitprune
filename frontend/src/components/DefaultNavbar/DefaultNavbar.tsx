@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Center, Navbar, ScrollArea, Stack, useMantineTheme } from '@mantine/core';
 import {
   AddressBook,
@@ -252,9 +252,13 @@ export function DefaultNavbar() {
   const theme = useMantineTheme();
   const { opened } = useAppStore();
   const { classes, cx } = useDefaultNavbarStyles();
-  const [active, setActive] = useState('Trang chủ');
   const { pathname } = useLocation();
   const onDataMiningPage = isDataMiningPath(pathname);
+  const active = navbarLinks.find(({ link, childLinks = [] }) =>
+    [link, ...childLinks.map(child => child.link)].some(path =>
+      pathname === path || (path !== '/admin' && pathname.startsWith(`${path}/`))
+    )
+  )?.label ?? 'Trang chủ';
 
   const { user } = useSharedAuth();
   const isOnlyEmployee = () => !!user && !user.roles.includes('ADMIN');
@@ -271,7 +275,6 @@ export function DefaultNavbar() {
           [classes.linkActive]: !onDataMiningPage && navbarLink.label === active,
           [classes.linkDisabled]: isOnlyEmployee() && navbarLink.disableForEmployee,
         })}
-        onClick={() => setActive(navbarLink.label)}
       >
         <navbarLink.icon className={classes.linkIcon}/>
         <span>{navbarLink.label}</span>

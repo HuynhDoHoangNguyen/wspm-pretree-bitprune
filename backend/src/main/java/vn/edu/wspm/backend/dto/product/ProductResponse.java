@@ -7,7 +7,12 @@ public record ProductResponse(
         String productName,
         String categoryId,
         String productStatus,
-        BigDecimal price
+        BigDecimal price,
+        String imageUrl
 ) {
+    public ProductResponse(String productId, String productName, String categoryId,
+            String productStatus, BigDecimal price) {
+        this(productId, productName, categoryId, productStatus, price, null);
+    }
 }
 

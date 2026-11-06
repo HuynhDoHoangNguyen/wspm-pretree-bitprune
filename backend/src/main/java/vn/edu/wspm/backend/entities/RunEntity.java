@@ -58,6 +58,36 @@ public class RunEntity {
     @Column(name = "candidate_count")
     private Long candidateCount;
 
+    @Column(name = "max_w")
+    private Double maxW;
+
+    @Column(name = "min_w")
+    private Double minW;
+
+    @Column(name = "dataset_io_ms")
+    private Long datasetIoMs;
+
+    @Column(name = "preprocessing_ms")
+    private Long preprocessingMs;
+
+    @Column(name = "dfs_mining_ms")
+    private Long dfsMiningMs;
+
+    @Column(name = "complete_algorithm_ms")
+    private Long completeAlgorithmMs;
+
+    @Column(name = "output_io_ms")
+    private Long outputIoMs;
+
+    @Column(name = "error_message", length = 2000)
+    private String errorMessage;
+
+    @Column(name = "started_at")
+    private LocalDateTime startedAt;
+
+    @Column(name = "finished_at")
+    private LocalDateTime finishedAt;
+
     protected RunEntity() {
     }
 
@@ -137,4 +167,22 @@ public class RunEntity {
     @Transient
     public Double getCoefDelta() { return null; }
     public void setCoefDelta(Double ignored) { }
+
+    public String getMinsupMode() { return minsupMode; }
+    public Double getMinsupConfigured() { return minsupConfigured; }
+    public Double getMaxW() { return maxW; }
+    public Double getMinW() { return minW; }
+    public Long getDatasetIoMs() { return datasetIoMs; }
+    public Long getPreprocessingMs() { return preprocessingMs; }
+    public Long getDfsMiningMs() { return dfsMiningMs; }
+    public Long getCompleteAlgorithmMs() { return completeAlgorithmMs; }
+    public Long getOutputIoMs() { return outputIoMs; }
+    public String getErrorMessage() { return errorMessage; }
+    public LocalDateTime getStartedAt() { return startedAt; }
+    public LocalDateTime getFinishedAt() { return finishedAt; }
+    public Double getEffectiveThreshold() { return minsupAbs; }
+    public Double getMinsupRelativeFraction() { return minsupRatio; }
+    public LocalDateTime getCreatedAt() { return runTime; }
+    public Long getTotalExecutionMs() { return totalExecutionMs; }
+    public Long getPeakSampledJvmHeapBytes() { return peakSampledJvmHeapBytes; }
 }

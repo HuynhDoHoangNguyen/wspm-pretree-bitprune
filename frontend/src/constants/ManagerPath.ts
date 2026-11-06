@@ -1,6 +1,8 @@
 class ManagerPath {
   static DATASETS = '/admin/datasets';
   static MINING_RUNS = '/admin/mining-runs';
+  // Compatibility alias: TV3 history and shared mining navigation own the same route.
+  static MINING_RUN = ManagerPath.MINING_RUNS;
   static PATTERNS = '/admin/patterns';
 
   static ADDRESS = '/admin/address';

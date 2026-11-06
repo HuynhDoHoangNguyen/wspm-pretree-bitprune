@@ -1,3 +1,4 @@
+import { BRAND_NAME } from './Brand';
 import ManagerPath from './ManagerPath';
 
 const titles: Record<string, string> = {
@@ -27,13 +28,21 @@ const titles: Record<string, string> = {
 
   '/admin': 'Admin',
   [ManagerPath.DATASETS]: 'Dữ liệu khai phá',
-  [ManagerPath.MINING_RUNS]: 'Lần chạy khai phá',
+  [ManagerPath.MINING_RUNS]: 'Lịch sử Mining RUN',
   [ManagerPath.PATTERNS]: 'Mẫu khai phá',
+  [ManagerPath.DATASETS + '/:snapshotId']: 'Chi tiết dữ liệu khai phá',
+  [ManagerPath.ACCOUNT]: 'Tài khoản quản trị',
+  '/__preview/admin-login': 'Admin Preview',
+  '/__preview/customer-combos': 'Gợi ý Combo',
+  '/__preview/customer-combos/:comboId': 'Chi tiết Combo',
+  '/__preview/mining-monitoring': 'Giám sát Mining',
+  '/__preview/mining-runs': 'Lịch sử Mining RUN',
+  '/__preview/mining-comparison': 'So sánh thuật toán Mining',
 };
 
 const handler = {
   get: function (target: typeof titles, name: string) {
-    return Object.prototype.hasOwnProperty.call(target, name) ? target[name] + ' – Electro' : 'Electro';
+    return Object.prototype.hasOwnProperty.call(target, name) ? target[name] + ' – ' + BRAND_NAME : BRAND_NAME;
   },
 };
 

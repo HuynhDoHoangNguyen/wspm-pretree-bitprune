@@ -16,6 +16,7 @@ import {
   useMantineTheme
 } from '@mantine/core';
 import { ElectroLogo } from 'components';
+import { BRAND_NAME } from 'constants/Brand';
 import {
   BrandFacebook,
   BrandInstagram,
@@ -154,7 +155,7 @@ function ClientFooter() {
         </Grid>
         <Group className={classes.afterFooter} position="apart">
           <Text color="dimmed" size="sm">
-            © 2022 Electro Corporation. Bảo lưu mọi quyền.
+            © 2022 {BRAND_NAME}. Bảo lưu mọi quyền.
           </Text>
           <Group spacing="xs">
             <ThemeIcon variant="outline" color="gray" sx={{ width: 50, height: 30 }}>

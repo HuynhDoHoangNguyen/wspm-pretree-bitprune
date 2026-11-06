@@ -1,4 +1,5 @@
 import Titles from 'constants/Titles';
+import { BRAND_NAME } from 'constants/Brand';
 import { matchRoutes, useLocation } from 'react-router-dom';
 import { useDocumentTitle } from '@mantine/hooks';
 
@@ -9,7 +10,7 @@ function useTitle(explicitTitle?: string) {
   const match = matchRoutes(routes, location);
   const path = match ? match[0].route.path : '';
 
-  useDocumentTitle(explicitTitle ? explicitTitle + ' – Electro' : Titles[path]);
+  useDocumentTitle(explicitTitle ? explicitTitle + ' – ' + BRAND_NAME : Titles[path]);
 }
 
 export default useTitle;

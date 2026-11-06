@@ -1,6 +1,7 @@
 import React from 'react';
-import { Link, Outlet } from 'react-router-dom';
-import { ActionIcon, Affix, Anchor, Button, Card, Group, Tooltip, useMantineColorScheme } from '@mantine/core';
+import { Link, matchPath, Outlet, useLocation } from 'react-router-dom';
+import { ActionIcon, Affix, Anchor, Button, Card, Group, Text, Tooltip, useMantineColorScheme } from '@mantine/core';
+import { CustomerStoreLayout } from './customer-combos/CustomerCombos';
 import { ClientFooter, ClientHeader, LoadingMiddleware } from 'components';
 import { Messages, MoonStars, Sun } from 'tabler-icons-react';
 import { useDisclosure, useHotkeys } from '@mantine/hooks';
@@ -13,6 +14,17 @@ function Client() {
   const isLoading = useIsFetching();
 
   const { user } = useAuthStore();
+  const { pathname } = useLocation();
+  const { user: identity } = useSharedAuth();
+  const signOut = useSignOut();
+
+  // TV3 pages share the original store shell without mounting legacy API widgets.
+  if (['/', '/signin', '/signup', '/forgot', '/change-password'].includes(pathname) || matchPath('/products/:productId/combos', pathname) || matchPath('/combos/:comboId', pathname)) {
+    return <CustomerStoreLayout actions={<Group>{identity ? <>
+      <Text size="sm">{identity.displayName}</Text>
+      <Button variant="light" color="blue" onClick={() => void signOut()}>Đăng xuất</Button>
+    </> : <Button component={Link} to="/signin" variant="light" color="blue">Đăng nhập</Button>}</Group>}><Outlet/></CustomerStoreLayout>;
+  }
 
   return (
     <>

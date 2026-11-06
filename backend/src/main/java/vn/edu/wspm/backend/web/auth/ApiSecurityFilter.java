@@ -46,6 +46,9 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
             List.of("/api/health", "/api/v1/products", "/api/v1/categories").stream()
                     .map(PathPatternParser.defaultInstance::parse)
                     .toList();
+    private static final List<PathPattern> COMBO_READS =
+            List.of("/api/v1/recommendations/combos", "/api/v1/recommendations/combos/{comboId}")
+                    .stream().map(PathPatternParser.defaultInstance::parse).toList();
     private final StrictHttpFirewall firewall = new StrictHttpFirewall();
     private final ObjectMapper mapper;
     private final SharedRequestAuthenticator authenticator;
@@ -109,6 +112,8 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
                         .pathWithinApplication();
         if (ADMIN.matches(path) || AUTH.stream().anyMatch(route -> route.path().matches(path)))
             return true;
+        if ("GET".equals(request.getMethod()) && COMBO_READS.stream().anyMatch(route -> route.matches(path)))
+            return true;
         return ("GET".equals(request.getMethod()) || "HEAD".equals(request.getMethod()))
                 && PUBLIC_READS.stream().anyMatch(route -> route.matches(path));
     }
@@ -118,6 +123,13 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
         PathContainer path =
                 RequestPath.parse(request.getRequestURI(), request.getContextPath())
                         .pathWithinApplication();
+        // These exact storefront resources expose GET only; do not inherit MVC's HEAD support.
+        if (COMBO_READS.stream().anyMatch(route -> route.matches(path))
+                && !"GET".equals(request.getMethod())) {
+            response.setHeader("Allow", "GET");
+            reject(request, response, ErrorCode.METHOD_NOT_ALLOWED, "Request method is not supported.");
+            return false;
+        }
         for (AuthRoute route : AUTH) {
             if (!route.path().matches(path) || route.allowed(request.getMethod())) continue;
             // Keep identity authentication ahead of method/resource disclosure.

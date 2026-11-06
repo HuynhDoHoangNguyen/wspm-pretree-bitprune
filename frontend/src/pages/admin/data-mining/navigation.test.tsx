@@ -79,7 +79,7 @@ describe('Admin Data & Mining navigation', () => {
     render(<Feature entries={[path]}/>);
     const nav = screen.getByRole('navigation', { name: 'Dữ liệu & Khai phá' });
     expect(screen.getByRole('heading', { level: 2, name: label })).toBeInTheDocument();
-    expect(within(nav).getByRole('link', { name: label })).toHaveAttribute('aria-current', 'page');
+    expect(within(nav).getByRole('link', { name: path === '/admin/mining-runs' ? 'Lịch sử Mining RUN' : label })).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getAllByRole('link')).toHaveLength(3);
     expect(screen.queryByText('Chức năng đang được chuẩn bị') !== null).toBe(path !== '/admin/datasets');
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
@@ -90,7 +90,7 @@ describe('Admin Data & Mining navigation', () => {
     render(<Feature/>);
     const nav = screen.getByRole('navigation', { name: 'Dữ liệu & Khai phá' });
     for (const { path, label } of dataMiningPages) {
-      const link = within(nav).getByRole('link', { name: label });
+      const link = within(nav).getByRole('link', { name: path === '/admin/mining-runs' ? 'Lịch sử Mining RUN' : label });
       expect(link).toHaveAttribute('href', path);
       fireEvent.click(link);
       expect(screen.getByRole('heading', { level: 2, name: label })).toBeInTheDocument();
@@ -101,13 +101,13 @@ describe('Admin Data & Mining navigation', () => {
 
   it('keeps active links correct on back/forward rather than relying on click state', () => {
     render(<Feature entries={['/admin/datasets', '/admin/mining-runs']}/>);
-    expect(screen.getByRole('link', { name: 'Lần chạy khai phá' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Lịch sử Mining RUN' })).toHaveAttribute('aria-current', 'page');
     fireEvent.click(screen.getByRole('button', { name: 'Quay lại' }));
     expect(screen.getByRole('heading', { level: 2, name: 'Dữ liệu khai phá' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Dữ liệu khai phá' })).toHaveAttribute('aria-current', 'page');
     fireEvent.click(screen.getByRole('button', { name: 'Tiến tới' }));
     expect(screen.getByRole('heading', { level: 2, name: 'Lần chạy khai phá' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Lần chạy khai phá' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Lịch sử Mining RUN' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('resolves a fresh page load with trailing slash, query and hash', () => {

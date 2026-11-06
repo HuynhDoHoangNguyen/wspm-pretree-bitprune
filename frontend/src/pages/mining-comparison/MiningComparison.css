@@ -1,0 +1,7 @@
+.mining-comparison-page { min-height: 100vh; background: #f7faff; color: #18324d; }
+.mining-comparison-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.mining-comparison-kpis, .mining-comparison-charts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.mining-comparison-chart { height: 280px; width: 100%; min-width: 0; }
+.mining-comparison-page .mantine-Paper-root { border-color: #e0ebf5; }
+@media (max-width: 1000px) { .mining-comparison-kpis, .mining-comparison-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 650px) { .mining-comparison-pair, .mining-comparison-kpis, .mining-comparison-charts { grid-template-columns: 1fr; } }

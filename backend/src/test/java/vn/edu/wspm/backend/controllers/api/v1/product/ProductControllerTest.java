@@ -41,7 +41,8 @@ class ProductControllerTest {
     void shouldReturnProductList() throws Exception {
         ProductResponse response =
                 new ProductResponse(
-                        "prod-1", "Laptop", "cat-1", "ACTIVE", BigDecimal.valueOf(1200.0));
+                        "prod-1", "Laptop", "cat-1", "ACTIVE", BigDecimal.valueOf(1200.0),
+                        "/uploads/products/laptop.jpg");
         given(productService.findAll()).willReturn(List.of(response));
 
         mockMvc.perform(get("/api/v1/products"))
@@ -60,6 +61,7 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.data[0].productName").value("Laptop"))
                 .andExpect(jsonPath("$.data[0].categoryId").value("cat-1"))
                 .andExpect(jsonPath("$.data[0].productStatus").value("ACTIVE"))
-                .andExpect(jsonPath("$.data[0].price").value(1200.0));
+                .andExpect(jsonPath("$.data[0].price").value(1200.0))
+                .andExpect(jsonPath("$.data[0].imageUrl").value("/uploads/products/laptop.jpg"));
     }
 }

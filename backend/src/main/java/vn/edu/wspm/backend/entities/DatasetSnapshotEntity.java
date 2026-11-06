@@ -104,6 +104,17 @@ public class DatasetSnapshotEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    public DatasetSnapshotEntity() {
+    }
+
+    /** Partial snapshot for TV3 read-model fixtures; populate all V2 metadata before persistence. */
+    public DatasetSnapshotEntity(String snapshotId, Long sequenceCount, Long distinctItemCount, String validationStatus) {
+        this.snapshotId = snapshotId;
+        this.sequenceCount = sequenceCount;
+        this.distinctItemCount = distinctItemCount;
+        this.validationStatus = validationStatus;
+    }
+
     public String getSnapshotId() {
         return snapshotId;
     }

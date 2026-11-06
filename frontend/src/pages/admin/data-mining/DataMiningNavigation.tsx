@@ -5,6 +5,7 @@ import { useSharedAuth } from 'auth/session';
 import useDefaultNavbarStyles from 'components/DefaultNavbar/DefaultNavbar.styles';
 import { hasDataMiningAdminAccess } from './access';
 import { dataMiningPages } from './routes';
+import ManagerPath from 'constants/ManagerPath';
 
 export default function DataMiningNavigation() {
   const { user, status, forbidden } = useSharedAuth();
@@ -22,7 +23,7 @@ export default function DataMiningNavigation() {
             className={({ isActive }) => cx(classes.link, { [classes.linkActive]: isActive })}
           >
             <Icon className={classes.linkIcon} size={24}/>
-            <span>{label}</span>
+            <span>{path === ManagerPath.MINING_RUNS ? 'Lịch sử Mining RUN' : label}</span>
           </NavLink>
         ))}
       </Stack>

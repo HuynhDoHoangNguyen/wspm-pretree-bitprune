@@ -1,0 +1,18 @@
+.customer-combos-page { --customer-bg: #f7faff; --customer-surface: white; --customer-text: #18324d; --customer-border: #e0ebf5; --customer-muted: #62788c; --customer-tint: #eef6ff; --customer-accent: #1971c2; min-height: 100vh; display: flex; flex-direction: column; background: var(--customer-bg); color: var(--customer-text); }
+.customer-combos-page[data-color-scheme="dark"] { --customer-bg: #141b24; --customer-surface: #1b2635; --customer-text: #e2edf7; --customer-border: #32445b; --customer-muted: #adbaca; --customer-tint: #223b53; --customer-accent: #74c0fc; }
+.customer-combos-page > main { flex: 1; min-width: 0; }
+.customer-store-header { background: var(--customer-surface); border-bottom: 1px solid var(--customer-border); padding: 24px 0; }
+.customer-store-header a, .customer-store-footer a { color: var(--customer-accent); }
+.customer-combos-layout { display: grid; grid-template-columns: minmax(240px, 340px) minmax(0, 1fr); gap: 32px; align-items: start; }
+.customer-combo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.customer-product, .customer-combo { background: var(--customer-surface); border-color: var(--customer-border); box-shadow: 0 5px 22px #18324d06; }
+.customer-product-image { min-height: 200px; background: var(--customer-tint); border-radius: 12px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; color: var(--customer-accent); }
+.customer-combo-items { padding-left: 20px; margin: 0; font-size: 14px; line-height: 1.8; }
+.customer-store-footer { padding: 28px 0; color: var(--customer-muted); border-top: 1px solid var(--customer-border); background: var(--customer-surface); font-size: 13px; }
+.customer-store-footer-grid { display: grid; grid-template-columns: minmax(140px, 0.7fr) minmax(0, 1fr) minmax(0, 1.4fr); gap: 24px; align-items: start; overflow-wrap: anywhere; }
+.customer-store-footer-bottom { border-top: 1px solid var(--customer-border); margin-top: 24px; padding-top: 20px; }
+.customer-detail-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); gap: 28px; align-items: start; }
+.customer-detail-summary { background: var(--customer-surface); border-color: var(--customer-border); }
+@media (max-width: 700px) { .customer-detail-layout, .customer-store-footer-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .customer-combos-layout { grid-template-columns: 1fr; } }
+@media (max-width: 540px) { .customer-combo-grid { grid-template-columns: 1fr; } }

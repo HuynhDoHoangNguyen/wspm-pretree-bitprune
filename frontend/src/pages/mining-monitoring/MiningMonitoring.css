@@ -1,0 +1,13 @@
+.mining-monitoring-page { min-height: 100vh; background: #f7faff; color: #18324d; }
+.mining-monitoring-page .mantine-Paper-root { border-color: #e0ebf5; }
+.mining-monitoring-table-scroll { overflow-x: auto; }
+.mining-monitoring-table { min-width: 1000px; }
+.mining-monitoring-table td { overflow-wrap: anywhere; }
+.mining-monitoring-table tr[aria-selected="true"] { background: #edf6ff; }
+.mining-monitoring-detail-panel { scroll-margin-top: 24px; border: 1px solid #c5ddf4; border-radius: 16px; padding: 20px; background: #edf6ff; }
+.mining-monitoring-detail-panel:focus-visible { outline: 2px solid #1971c2; outline-offset: 3px; }
+.mining-monitoring-detail { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.mining-monitoring-fields { display: grid; gap: 14px; margin-bottom: 0; }
+.mining-monitoring-fields dt { color: #62788c; font-size: 13px; }
+.mining-monitoring-fields dd { margin: 4px 0 0; overflow-wrap: anywhere; font-size: 14px; }
+@media (max-width: 800px) { .mining-monitoring-detail { grid-template-columns: 1fr; } }
