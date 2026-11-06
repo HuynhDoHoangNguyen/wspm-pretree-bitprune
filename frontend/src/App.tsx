@@ -10,7 +10,7 @@ import { ModalsProvider } from '@mantine/modals';
 import ManagerPath from 'constants/ManagerPath';
 import Client from 'pages/Client';
 import Admin from 'pages/Admin';
-import AdminDashboard from 'pages/AdminDashboard';
+import AdminHomePage from 'pages/admin/data-mining/AdminHomePage';
 import { createDataMiningRoutes } from 'pages/admin/data-mining/routes';
 import AddressManage, { AddressCreate, AddressUpdate } from 'pages/address';
 import ProvinceManage, { ProvinceCreate, ProvinceUpdate } from 'pages/province';
@@ -195,7 +195,7 @@ function App() {
                 </Route>
                 <Route path="/admin" element={<Admin/>}>
                   <Route path="/admin/*" element={<AdminError/>}/>
-                  <Route index element={<AdminDashboard/>}/>
+                  <Route index element={<AdminHomePage/>}/>
                   {createDataMiningRoutes()}
                   {/* ADDRESS */}
                   <Route path={ManagerPath.ADDRESS} element={<AddressManage/>}/>

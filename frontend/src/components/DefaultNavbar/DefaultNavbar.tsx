@@ -38,7 +38,7 @@ interface NavbarChildLink {
 const navbarLinks: NavbarLink[] = [
   {
     link: '/admin',
-    label: 'Trang chủ',
+    label: 'Trang chủ Admin',
     icon: Home,
   },
   {
@@ -268,7 +268,7 @@ export function DefaultNavbar() {
       <Link
         to={navbarLink.link}
         className={cx(classes.link, {
-          [classes.linkActive]: !onDataMiningPage && navbarLink.label === active,
+          [classes.linkActive]: navbarLink.link === '/admin' ? pathname.replace(/\/+$/, '') === '/admin' : !onDataMiningPage && navbarLink.label === active,
           [classes.linkDisabled]: isOnlyEmployee() && navbarLink.disableForEmployee,
         })}
         onClick={() => setActive(navbarLink.label)}

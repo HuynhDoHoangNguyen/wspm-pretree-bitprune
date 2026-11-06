@@ -190,6 +190,7 @@ class WdmAuthorizationIntegrationTest {
                 List.of(
                         "ORDER_ITEM",
                         "DATASET_SNAPSHOT",
+                        "ITEM_MAPPING",
                         "ORDERS",
                         "USER_ROLE",
                         "CUSTOMER",
@@ -486,6 +487,92 @@ class WdmAuthorizationIntegrationTest {
         assertFalse(detail.body().contains("private-marker"));
         error(snapshotGet(path + "/artifacts/raw", adminToken), 503, "SERVICE_UNAVAILABLE");
         assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM DATASET_SNAPSHOT", Long.class));
+    }
+
+    @Test
+    void actualAdminConversionGetAndDownloadsPreserveBytesAndIdempotentPublication() throws Exception {
+        byte[] csv = get(EXPORT, adminToken).body().getBytes(StandardCharsets.UTF_8);
+        var acquired = upload(csv, "conversion.csv");
+        assertEquals(201, acquired.statusCode(), acquired.body());
+        String id = JSON.readTree(acquired.body()).get("data").get("snapshotId").asString();
+        String prefix = "/api/v1/admin/dataset-snapshots/" + id;
+        var pending = snapshotGet(prefix + "/conversion", adminToken); metadata(pending);
+        assertEquals("NOT_STARTED", JSON.readTree(pending.body()).get("data").get("conversionStatus").asString());
+        error(snapshotGet(prefix + "/artifacts/sequence", adminToken), 409, "INVALID_RESOURCE_STATE");
+        assertEquals(200, snapshotPost(prefix + "/validation", adminToken).statusCode());
+        var converted = snapshotPost(prefix + "/conversion", adminToken);
+        assertEquals(200, converted.statusCode(), converted.body()); metadata(converted);
+        var result = JSON.readTree(converted.body()).get("data");
+        assertEquals("SUCCEEDED", result.get("conversionStatus").asString());
+        assertEquals("COMPUTED", result.get("statisticsStatus").asString());
+        assertEquals("1", result.get("statistics").get("sequenceCount").asString());
+        assertEquals("1", result.get("statistics").get("totalItemOccurrences").asString());
+        assertEquals(prefix + "/artifacts/sequence", result.get("sequence").get("downloadUrl").asString());
+        for (String privateField : List.of("attemptId", "validationSha256", "reference", "conversion_report_json", "/conversions/")) {
+            assertFalse(converted.body().contains(privateField));
+        }
+        String before = jdbc.queryForObject("SELECT CAST(conversion_report_json AS CHAR) FROM DATASET_SNAPSHOT WHERE snapshot_id=?", String.class, id);
+        var status = snapshotGet(prefix + "/conversion", adminToken);
+        assertEquals(200, status.statusCode()); metadata(status);
+        assertEquals(result, JSON.readTree(status.body()).get("data"));
+        byte[] sequence = null;
+        for (String kind : List.of("sequence", "mapping")) {
+            var response = http.send(base(prefix + "/artifacts/" + kind).header("Authorization", "Bearer " + adminToken).GET().build(), HttpResponse.BodyHandlers.ofByteArray());
+            assertEquals(200, response.statusCode());
+            assertEquals("no-store", response.headers().firstValue("Cache-Control").orElseThrow());
+            assertEquals("nosniff", response.headers().firstValue("X-Content-Type-Options").orElseThrow());
+            assertEquals(response.body().length, Integer.parseInt(response.headers().firstValue("Content-Length").orElseThrow()));
+            assertTrue(response.headers().firstValue("Content-Disposition").orElseThrow().startsWith("attachment;"));
+            java.util.UUID.fromString(response.headers().firstValue("X-Request-Id").orElseThrow());
+            assertEquals(result.get(kind).get("sha256").asString(), vn.edu.wspm.backend.services.dataset.conversion.ConversionArtifactCodec.sha256(response.body()));
+            if (kind.equals("sequence")) sequence = response.body();
+            else {
+                var mapping = JSON.readTree(response.body());
+                assertEquals("CONVERSION_ARTIFACT_V1", mapping.get("formatVersion").asString());
+                assertEquals("product", mapping.get("items").get(0).get("productId").asString());
+            }
+        }
+        assertEquals("1 -1 -2\n", new String(sequence, StandardCharsets.UTF_8));
+        var db = new vn.edu.wspm.io.SpmfSequenceParser().parse(new java.io.StringReader(new String(sequence, StandardCharsets.UTF_8)));
+        assertEquals(1, db.size()); assertEquals(1, db.records().getFirst().sid());
+        assertEquals(List.of(new vn.edu.wspm.model.Item(1)), db.records().getFirst().sequence().itemsets().getFirst().items());
+        var repeated = snapshotPost(prefix + "/conversion", adminToken);
+        assertEquals(200, repeated.statusCode()); assertEquals(result, JSON.readTree(repeated.body()).get("data"));
+        assertEquals(before, jdbc.queryForObject("SELECT CAST(conversion_report_json AS CHAR) FROM DATASET_SNAPSHOT WHERE snapshot_id=?", String.class, id));
+    }
+
+    @Test
+    void conversionRoutesUseRealSharedAuthorizationAndTamperFailsWithoutMutation() throws Exception {
+        for (String suffix : List.of("/conversion", "/artifacts/sequence", "/artifacts/mapping")) {
+            String bad = "/api/v1/admin/dataset-snapshots/bad" + suffix + "?force=true";
+            error(snapshotGet(bad, null), 401, "AUTHENTICATION_REQUIRED");
+            error(snapshotGet(bad, customerToken), 403, "ACCESS_DENIED");
+        }
+        error(snapshotPost("/api/v1/admin/dataset-snapshots/bad/conversion", null), 401, "AUTHENTICATION_REQUIRED");
+        error(snapshotPost("/api/v1/admin/dataset-snapshots/bad/conversion", customerToken), 403, "ACCESS_DENIED");
+        error(snapshotGet("/api/v1/admin/dataset-snapshots/bad/conversion", adminToken), 400, "VALIDATION_FAILED");
+        error(snapshotGet("/api/v1/admin/dataset-snapshots/00000000-0000-4000-8000-000000000000/conversion", adminToken), 404, "RESOURCE_NOT_FOUND");
+        String id = JSON.readTree(upload(get(EXPORT, adminToken).body().getBytes(StandardCharsets.UTF_8), "tamper-conversion.csv").body()).get("data").get("snapshotId").asString();
+        String prefix = "/api/v1/admin/dataset-snapshots/" + id;
+        assertEquals(200, snapshotPost(prefix + "/validation", adminToken).statusCode());
+        assertEquals(200, snapshotPost(prefix + "/conversion", adminToken).statusCode());
+        String before = jdbc.queryForObject("SELECT CAST(conversion_report_json AS CHAR) FROM DATASET_SNAPSHOT WHERE snapshot_id=?", String.class, id);
+        String reference = jdbc.queryForObject("SELECT mapping_file_path FROM DATASET_SNAPSHOT WHERE snapshot_id=?", String.class, id);
+        Path path = snapshotRoot.resolve(reference);
+        byte[] bytes = Files.readAllBytes(path); bytes[0] ^= 1; Files.write(path, bytes);
+        for (String suffix : List.of("/conversion", "/artifacts/sequence", "/artifacts/mapping")) {
+            error(snapshotGet(prefix + suffix, adminToken), 503, "SERVICE_UNAVAILABLE");
+        }
+        error(snapshotPost(prefix + "/conversion", adminToken), 503, "SERVICE_UNAVAILABLE");
+        assertEquals(before, jdbc.queryForObject("SELECT CAST(conversion_report_json AS CHAR) FROM DATASET_SNAPSHOT WHERE snapshot_id=?", String.class, id));
+        assertEquals(204, post("logout", "", adminRefresh).statusCode());
+        error(snapshotGet(prefix + "/artifacts/sequence", adminToken), 401, "AUTHENTICATION_REQUIRED");
+    }
+
+    private HttpResponse<String> snapshotPost(String path, String credential) throws Exception {
+        var request = base(path).header("Accept", "application/json");
+        if (credential != null) request.header("Authorization", "Bearer " + credential);
+        return http.send(request.POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
     }
 
     private HttpResponse<String> snapshotGet(String path, String credential) throws Exception {

@@ -33,7 +33,7 @@ export default function DatasetExportForm() {
       <form aria-label="Xuất dữ liệu đơn hàng" onSubmit={submit} noValidate>
         <Stack>
           <Title order={3}>1. Xuất CSV từ đơn hàng</Title>
-          <Text size="sm" color="dimmed">Chọn kỳ theo giờ Việt Nam (UTC+07), tính cả ngày kết thúc. Chỉ xuất đơn đang ở trạng thái COMPLETED theo thời điểm đặt hàng.</Text>
+          <Text size="sm" color="dimmed" data-secondary>Chọn kỳ theo giờ Việt Nam (UTC+07), tính cả ngày kết thúc. Chỉ xuất đơn đang ở trạng thái COMPLETED theo thời điểm đặt hàng.</Text>
           <InputWrapper id="dataset-first-day" label="Từ ngày" required>
             <Input id="dataset-first-day" type="date" required value={first} min="1000-01-02" max="9999-12-31" disabled={request.busy}
               onChange={(event: ChangeEvent<HTMLInputElement>) => change(setFirst, event.currentTarget.value)}/>

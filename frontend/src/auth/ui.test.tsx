@@ -21,7 +21,7 @@ function view(element: React.ReactElement) {
   return render(<MantineProvider><MemoryRouter initialEntries={['/signin']}><Routes><Route path="/signin" element={element}/>
     <Route path="/" element={<h1>Cửa hàng công khai</h1>}/>
     <Route path="/user" element={<h1>Danh tính đã xác thực</h1>}/>
-    <Route path="/admin/datasets" element={<h1>Admin datasets</h1>}/></Routes></MemoryRouter></MantineProvider>);
+    <Route path="/admin" element={<h1>Admin datasets</h1>}/></Routes></MemoryRouter></MantineProvider>);
 }
 test('registration uses exactly four fields and routes to separate login without fake email verification', async () => {
   const register = jest.spyOn(authSession, 'register').mockResolvedValue(user);

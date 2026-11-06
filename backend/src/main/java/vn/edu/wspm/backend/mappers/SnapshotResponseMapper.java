@@ -59,7 +59,7 @@ public abstract class SnapshotResponseMapper {
         hash = hash != null && hash.matches("[0-9a-f]{64}") ? hash : null;
         return new Metadata(known(snapshot.getSourceType(), "CSV", "DATABASE"), safeName(snapshot.getSourceName()),
                 known(snapshot.getValidationStatus(), "PENDING", "VALID", "INVALID", "LEGACY_UNVERIFIED"),
-                known(text(report, "conversionStatus"), "NOT_STARTED"), statistics, hash, size, count,
+                known(text(report, "conversionStatus"), "NOT_STARTED", "RUNNING", "SUCCEEDED", "FAILED"), statistics, hash, size, count,
                 new SnapshotDetailResponse.Provenance(known(text(report, "contractVersion"), "wdm-order-csv-v1"),
                         known(text(provenance, "acquisition"), "CSV_UPLOAD", "DATABASE_EXPORT"),
                         known(text(provenance, "sourceTimeZone"), "UTC"), known(text(provenance, "timeField"), "ordered_at"),

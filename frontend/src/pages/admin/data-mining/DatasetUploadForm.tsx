@@ -1,10 +1,11 @@
 import React, { FormEvent, useRef, useState } from 'react';
 import { Alert, Anchor, Badge, Button, Group, Paper, Stack, Text, Title, useMantineTheme } from '@mantine/core';
-import { FileSpreadsheet, Upload, X } from 'tabler-icons-react';
+import { ArrowRight, Check, FileSpreadsheet, Upload, X } from 'tabler-icons-react';
 import { Link } from 'react-router-dom';
 import { datasetApi, DatasetSnapshotResponse } from 'api/admin/data-mining';
 import DatasetRequestError from './DatasetRequestError';
 import { useDatasetRequest } from './useDatasetRequest';
+import CopyValue from './CopyValue';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return bytes + ' B';
@@ -47,7 +48,7 @@ export default function DatasetUploadForm() {
       <form aria-label="Upload CSV" onSubmit={submit} noValidate>
         <Stack>
           <Title order={3}>2. Upload CSV tạo snapshot</Title>
-          <Text size="sm" color="dimmed">Chọn tệp vừa export hoặc CSV theo hợp đồng dữ liệu. Hệ thống sẽ lưu bản gốc; kiểm tra nội dung và chuyển đổi sequence được thực hiện ở bước sau.</Text>
+          <Text size="sm" color="dimmed" data-secondary>Chọn tệp vừa export hoặc CSV theo hợp đồng dữ liệu. Hệ thống sẽ lưu bản gốc; kiểm tra nội dung và chuyển đổi sequence được thực hiện ở bước sau.</Text>
 
           <div>
             <span style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
@@ -75,6 +76,8 @@ export default function DatasetUploadForm() {
             {!file ? (
               <label
                 htmlFor="dataset-csv-file"
+                role="button" tabIndex={request.busy ? -1 : 0} aria-disabled={request.busy}
+                onKeyDown={event => { if (!request.busy && ['Enter', ' '].includes(event.key)) { event.preventDefault(); input.current?.click(); } }}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -111,7 +114,7 @@ export default function DatasetUploadForm() {
                       <Text size="sm" weight={500} lineClamp={1} title={file.name}>
                         {file.name}
                       </Text>
-                      <Text size="xs" color="dimmed">
+                      <Text size="xs" color="dimmed" data-secondary>
                         {formatBytes(file.size)}
                       </Text>
                     </Stack>
@@ -120,6 +123,8 @@ export default function DatasetUploadForm() {
                   <Group spacing="xs" noWrap style={{ flexShrink: 0 }}>
                     <label
                       htmlFor="dataset-csv-file"
+                      role="button" tabIndex={request.busy ? -1 : 0} aria-disabled={request.busy}
+                      onKeyDown={event => { if (!request.busy && ['Enter', ' '].includes(event.key)) { event.preventDefault(); input.current?.click(); } }}
                       style={{
                         fontSize: 12,
                         fontWeight: 500,
@@ -134,12 +139,13 @@ export default function DatasetUploadForm() {
                     </label>
 
                     <span
+                      role="button" aria-disabled={request.busy}
                       tabIndex={0}
                       title="Bỏ chọn tệp"
                       aria-label="Bỏ chọn tệp"
                       onClick={request.busy ? undefined : clearFile}
                       onKeyDown={e => {
-                        if (!request.busy && (e.key === 'Enter' || e.key === ' ')) clearFile();
+                        if (!request.busy && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); clearFile(); }
                       }}
                       style={{
                         display: 'inline-flex',
@@ -161,23 +167,24 @@ export default function DatasetUploadForm() {
             )}
           </div>
 
-          <Text id="dataset-upload-help" size="sm" color="dimmed">Giới hạn dung lượng do server quyết định. Chưa có tệp được chọn thì chưa có yêu cầu upload.</Text>
+          <Text id="dataset-upload-help" size="sm" color="dimmed" data-secondary>Giới hạn dung lượng do server quyết định. Chưa có tệp được chọn thì chưa có yêu cầu upload.</Text>
           {validation && <Alert role="alert" color="red">{validation}</Alert>}
           <DatasetRequestError error={request.error} upload/>
-          {receipt && (
-            <Alert role="status" title="Đã tạo snapshot" color="teal">
-              <Stack spacing={4}>
-                <Text size="sm">Snapshot ID: {receipt.snapshotId}</Text>
-                <Anchor component={Link} to={'/admin/datasets/' + receipt.snapshotId}>Xem chi tiết snapshot</Anchor>
-                <Text size="sm" style={{ overflowWrap: 'anywhere' }}>Nguồn CSV: {receipt.sourceName}</Text>
-                <Badge color="yellow" variant="light">PENDING — Chưa kiểm tra dữ liệu</Badge>
-                <Text size="sm">Chưa chuyển đổi sequence, chưa tính thống kê và chưa thể chạy khai phá.</Text>
-              </Stack>
-            </Alert>
-          )}
           <Button type="submit" loading={request.busy} disabled={request.busy || !file}>{request.busy ? 'Đang upload…' : 'Upload CSV'}</Button>
         </Stack>
       </form>
+      {receipt && <Paper component="section" aria-label="Snapshot đã tạo" mt="xl" p="lg" radius="md" withBorder
+        sx={{ borderColor: isDark ? theme.colors.teal[8] : theme.colors.teal[3], background: isDark ? theme.colors.dark[6] : theme.colors.teal[0] }}>
+        <Stack spacing="md">
+          <Group spacing="xs"><Check size={22} color={theme.colors.teal[isDark ? 3 : 8]}/><Text role="status" weight={700}>Đã lưu dữ liệu thành công</Text></Group>
+          <Text weight={600} style={{ overflowWrap: 'anywhere' }}>{receipt.sourceName}</Text>
+          <div><Badge color="yellow" variant="light" sx={{ color: isDark ? '#fde68a' : '#713f12', background: isDark ? '#422006' : '#fef3c7' }}>Chờ kiểm tra dữ liệu</Badge></div>
+          <Text size="sm">Bước tiếp theo: kiểm tra nội dung CSV. Bạn sẽ xem báo cáo và chuyển đổi dữ liệu tại trang chi tiết snapshot.</Text>
+          <Button component={Link} to={'/admin/datasets/' + receipt.snapshotId + '?tab=validation'} rightIcon={<ArrowRight size={17}/>}>Tiếp tục kiểm tra dữ liệu</Button>
+          <Anchor component={Link} to={'/admin/datasets/' + receipt.snapshotId}>Xem chi tiết snapshot</Anchor>
+          <div><Text size="sm" color="dimmed" data-secondary>Snapshot ID</Text><CopyValue label="Snapshot ID" value={receipt.snapshotId}/></div>
+        </Stack>
+      </Paper>}
     </Paper>
   );
 }

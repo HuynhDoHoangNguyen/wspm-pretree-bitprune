@@ -62,7 +62,7 @@ sự kiện tab; `SignInForm`, `AuthGate`, `IdentityPanel` phục vụ giao di�
 - Login username/password → JWT → `/me` → hiển thị danh tính thật. Password tối thiểu
   8 codepoint, tối đa 72 byte UTF-8, không trim/cắt. Không gọi API giỏ hàng để login.
   Quy tắc độ dài trên là cho đăng ký; đăng nhập chỉ kiểm tra field rỗng ở UI.
-  ADMIN đăng nhập ở cả hai form → `/admin/datasets`; CUSTOMER → `/`.
+  ADMIN đăng nhập ở cả hai form → `/admin` (trang hướng dẫn); CUSTOMER → `/`.
   Nút Trang quản trị trên header Client chỉ hiện với role ADMIN; Về cửa hàng trên
   header Admin đi về `/` trong cùng tab, giữ cùng shared session.
 - Khởi động/reload → refresh cookie → `/me`. JWT chỉ ở memory, refresh là HttpOnly
@@ -345,6 +345,63 @@ Kiểm tra cả navigation và API foundation:
 ```powershell
 node node_modules/react-scripts/bin/react-scripts.js test --watchAll=false --runInBand --testPathPattern='src/(pages|api)/admin/data-mining'
 ```
+
+### WDM-03.7 — Conversion trong chi tiết snapshot
+
+Panel **Chuyển đổi dữ liệu** đọc GET khi mở/reload trang. Nút POST chỉ bật khi
+báo cáo validation VALID/READY/countsComplete khớp ID, raw hash/size và metadata
+hiện tại. UI chặn click trùng ngay lập tức; không tự gửi lại POST khi mất phản
+hồi. Kết quả được đối soát bằng GET và metadata được cập nhật sau thành công.
+RUNNING được đọc tuần tự mỗi 2 giây, tối đa 60 giây rồi cần đọc lại thủ công;
+FAILED không có nút retry. Đổi snapshot, rời trang hoặc logout hủy chờ phía client.
+
+SUCCEEDED hiển thị chín thống kê từ backend, size và SHA-256 do máy chủ cung cấp.
+Count/size/length giữ dạng chuỗi thập phân, không ép sang Number. Độ dài sequence
+là tổng số item; không tính công thức mining trong TypeScript.
+
+**Xem trước SPMF** chỉ chạy khi Admin bấm, với tệp <= 1 MiB. HTTP stream bị hủy
+khi vượt giới hạn byte, kể cả Content-Length bị thiếu/sai. Nội dung React text
+giữ nguyên dòng và delimiter, tối đa 20 dòng sequence / 4000 ký tự; không cắt
+giữa sequence. Sequence đầu quá dài thì hướng dẫn tải file. Tệp lớn vẫn tải
+được bằng **Tải SPMF** / **Tải mapping JSON**. Download dùng Auth chung, URL được
+dựng từ UUID hợp lệ, kiểm tra MIME, tên file cố định và size; không tự xác minh
+SHA-256 phía trình duyệt. Lỗi chỉ có diễn giải an toàn và request ID nếu có.
+
+Không thêm route, thư viện, backend/schema hoặc thay đổi mining-core. Dataset
+browser gate có 15 ca gồm conversion UI thật, mất POST response được khôi phục
+bằng GET và logout khi response artifact bị giữ lại. WDM-03.8 (parse artifact
+qua mining-core và đối chiếu sequence) vẫn là task riêng.
+
+### Cải thiện UI/UX sau WDM-03.8
+
+`/admin` là trang chủ hướng dẫn bảy bước từ CSV đến combo. Đăng nhập Admin và
+liên kết Trang quản trị đều dẫn tới trang này; khi form Admin mở từ một URL con,
+nó chọn `/admin` trước khi xác thực để việc thay form bằng nội dung đã đăng nhập
+không làm mất điều hướng. URL chi tiết vẫn mở trực tiếp được khi đã đăng nhập.
+Bốn bước chuẩn bị/kiểm tra/chuyển đổi đã có chức năng; khai phá, xem mẫu và tạo
+combo ghi rõ Chưa khả dụng. Không gọi các API legacy của dashboard cũ.
+
+Trang dữ liệu tổ chức xuất/upload theo hai bước, kết quả upload có tên file,
+trạng thái dễ đọc, sao chép Snapshot ID và nút Tiếp tục kiểm tra dữ liệu. Nút này
+mở `/admin/datasets/:id?tab=validation`. Clipboard không được cấp quyền thì vẫn
+có ID đầy đủ để sao chép thủ công; không ghi snapshot/token vào storage.
+
+Chi tiết snapshot có tóm tắt/trạng thái và nút dẫn tới bước cần làm ở phía trên.
+Ba tab Dữ liệu gốc, Kiểm tra dữ liệu, Chuyển đổi & thống kê dùng query `tab` chỉ
+cho điều hướng UI; query này không chuyển tới API. Nếu không chỉ định tab, chọn
+bước theo metadata lần đầu; không tự đổi tab khi kết quả đến trong lúc đọc báo
+cáo. Các panel vẫn mounted khi ẩn nên giữ report, preview, request guard, polling
+và abort lifecycle. Đổi tab chỉ đổi nội dung nhìn thấy, không POST lại. Tab có
+chỉ báo đang xử lý/lỗi, kèm thông báo ngoài tab để lỗi không bị giấu. Tab hỗ trợ
+Arrow Left/Right, Home/End, ARIA selection và URL reload. Bước không đủ điều kiện
+vẫn xem được nhưng nút xử lý tuân theo validation/conversion gate hiện có.
+
+Metadata/checksum thu gọn, số đếm trình bày thành ô và giữ nguyên chuỗi chính xác.
+Bảng thông báo vuông, có viền, header tô màu/cố định và cuộn trong vùng riêng.
+Typography/màu chữ phụ được áp dụng trong workspace, không đổi theme toàn bộ cửa
+hàng. Giao diện tài khoản Admin và `/user` cùng dùng IdentityPanel đã bố trí lại
+theo thông tin đăng nhập, xác minh email và quyền; không bật form sửa tài khoản
+hoặc các API hồ sơ legacy chưa được hỗ trợ.
 
 ## Quy tắc dọn frontend
 
