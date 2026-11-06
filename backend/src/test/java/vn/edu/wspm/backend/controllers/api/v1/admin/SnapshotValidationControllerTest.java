@@ -2,6 +2,8 @@ package vn.edu.wspm.backend.controllers.api.v1.admin;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mapstruct.factory.Mappers;
+import vn.edu.wspm.backend.mappers.ValidationResponseMapper;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -36,7 +38,7 @@ class SnapshotValidationControllerTest {
             if (identity == null) throw new ApplicationException(ErrorCode.AUTHENTICATION_REQUIRED);
             if (!identity.equals("ADMIN")) throw new ApplicationException(ErrorCode.ACCESS_DENIED);
         });
-        mvc = MockMvcBuilders.standaloneSetup(new SnapshotValidationController(service))
+        mvc = MockMvcBuilders.standaloneSetup(new SnapshotValidationController(service, new ValidationReportPresenter(Mappers.getMapper(ValidationResponseMapper.class))))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .addFilters(new RequestIdFilter(), new WdmRequestFilter(factory.getBeanProvider(WdmAdminAuthorizer.class),
                         JsonMapper.builder().build())).build();
@@ -82,5 +84,23 @@ class SnapshotValidationControllerTest {
         when(service.read(ID)).thenThrow(new ApplicationException(ErrorCode.INVALID_RESOURCE_STATE));
         mvc.perform(get(PATH).header("X-Test-Identity", "ADMIN")).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("INVALID_RESOURCE_STATE"));
+    }
+
+    @Test
+    void shapeErrorsKeepExactDetailsBeforeServiceAccess() throws Exception {
+        for (var request : java.util.List.of(post(PATH).content(" "), post(PATH).param("private-key", "private-value"))) {
+            mvc.perform(request.header("X-Test-Identity", "ADMIN")).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                    .andExpect(jsonPath("$.details[0].field").value("request"))
+                    .andExpect(jsonPath("$.details[0].code").value("INVALID_VALUE"))
+                    .andExpect(jsonPath("$.details[0].message").value("Validation POST accepts no body or query parameters."));
+        }
+        for (var request : java.util.List.of(get(PATH).param("private-key", "private-value"), get(PATH).param("page", "0", "1"))) {
+            mvc.perform(request.header("X-Test-Identity", "ADMIN")).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.details[0].field").value("query"))
+                    .andExpect(jsonPath("$.details[0].code").value("INVALID_VALUE"))
+                    .andExpect(jsonPath("$.details[0].message").value("Unknown or repeated query parameter."));
+        }
+        verifyNoInteractions(service);
     }
 }

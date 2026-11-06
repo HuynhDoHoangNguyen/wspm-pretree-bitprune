@@ -44,9 +44,15 @@ class ConversionAdmissionControllerTest {
 
     @Test void rejectsBodyAndQueryBeforeGate() throws Exception {
         mvc.perform(post(PATH).header("X-Test-Identity", "ADMIN").content("{}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.details[0].field").value("request"))
+                .andExpect(jsonPath("$.details[0].code").value("INVALID_VALUE"))
+                .andExpect(jsonPath("$.details[0].message").value("Conversion admission accepts no body or query parameters."));
         mvc.perform(post(PATH).header("X-Test-Identity", "ADMIN").param("force", "true"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.details[0].field").value("request"))
+                .andExpect(jsonPath("$.details[0].code").value("INVALID_VALUE"))
+                .andExpect(jsonPath("$.details[0].message").value("Conversion admission accepts no body or query parameters."));
         verifyNoInteractions(gate);
     }
 

@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import vn.edu.wspm.backend.exception.ApplicationException;
 import vn.edu.wspm.backend.services.export.OrderExportService;
+import vn.edu.wspm.backend.web.common.RequestChecks;
 
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
@@ -32,13 +33,8 @@ public class OrderExportController {
 
     @GetMapping(produces = "text/csv")
     public ResponseEntity<byte[]> export(@RequestParam MultiValueMap<String, String> parameters) {
-        for (String field : parameters.keySet()) {
-            if (!FILTERS.contains(field)) {
-                // Never echo untrusted parameter names in error fields/messages.
-                throw ApplicationException.invalid(
-                        "query", "UNKNOWN_FIELD", "Query contains an unsupported filter.");
-            }
-        }
+        RequestChecks.requireAllowedQueryNames(parameters.keySet(), FILTERS,
+                "UNKNOWN_FIELD", "Query contains an unsupported filter.");
         OffsetDateTime fromTime = timestamp(parameters, "fromTime");
         OffsetDateTime toTime = timestamp(parameters, "toTime");
         byte[] csv = service.export(fromTime, toTime);

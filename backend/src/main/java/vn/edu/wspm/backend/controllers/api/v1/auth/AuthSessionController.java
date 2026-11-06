@@ -13,7 +13,6 @@ import tools.jackson.databind.ObjectMapper;
 
 import vn.edu.wspm.backend.common.api.ApiResponse;
 import vn.edu.wspm.backend.dto.auth.IdentityResponse;
-import vn.edu.wspm.backend.dto.auth.LoginRequest;
 import vn.edu.wspm.backend.dto.auth.TokenResponse;
 import vn.edu.wspm.backend.exception.ApplicationException;
 import vn.edu.wspm.backend.services.auth.AuthSessionService;
@@ -33,7 +32,7 @@ public class AuthSessionController {
     @PostMapping(value = "/login", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ApiResponse<TokenResponse> login(
             HttpServletRequest request, HttpServletResponse response) throws IOException {
-        var input = LoginRequest.from(AuthJson.read(request, mapper));
+        var input = AuthRequestReader.login(AuthJson.read(request, mapper));
         var grant = sessions.login(input.username(), input.password());
         cookies.setRefresh(response, grant.refreshToken(), grant.sessionExpiresAt());
         cookies.clearCsrf(request, response);

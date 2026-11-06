@@ -13,6 +13,7 @@ import vn.edu.wspm.backend.entities.DatasetSnapshotEntity;
 import vn.edu.wspm.backend.exception.ApplicationException;
 import vn.edu.wspm.backend.exception.ErrorCode;
 import vn.edu.wspm.backend.repositories.dataset.DatasetSnapshotRepository;
+import vn.edu.wspm.backend.mappers.SnapshotResponseMapper;
 
 import java.io.IOException;
 import java.time.Clock;
@@ -28,12 +29,14 @@ public class DatasetSnapshotService {
     private final DatasetSnapshotRepository repository;
     private final Clock clock;
     private final TransactionTemplate transaction;
+    private final SnapshotResponseMapper mapper;
 
     public DatasetSnapshotService(RawSnapshotStorage storage, DatasetSnapshotRepository repository,
-                                  Clock clock, PlatformTransactionManager transactions) {
+                                  Clock clock, PlatformTransactionManager transactions, SnapshotResponseMapper mapper) {
         this.storage = storage;
         this.repository = repository;
         this.clock = clock;
+        this.mapper = mapper;
         this.transaction = new TransactionTemplate(transactions);
         // The HTTP response must not precede commit, even if a future caller has an outer transaction.
         this.transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -49,7 +52,7 @@ public class DatasetSnapshotService {
             }
             var stored = raw;
             var snapshot = metadata(file.getOriginalFilename(), stored);
-            DatasetSnapshotResponse response = response(snapshot, stored);
+            DatasetSnapshotResponse response = mapper.acquisition(snapshot, stored.sha256(), stored.sizeBytes());
             transaction.executeWithoutResult(status -> {
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     private boolean commitPhase;
@@ -105,9 +108,4 @@ public class DatasetSnapshotService {
         return snapshot;
     }
 
-    private static DatasetSnapshotResponse response(DatasetSnapshotEntity snapshot, RawSnapshotStorage.StoredRaw raw) {
-        return new DatasetSnapshotResponse(snapshot.getSnapshotId(), "CSV", snapshot.getSourceName(),
-                "PENDING", "NOT_STARTED", "NOT_COMPUTED", raw.sha256(), Long.toString(raw.sizeBytes()),
-                null, null, null, snapshot.getCreatedAt());
-    }
 }
