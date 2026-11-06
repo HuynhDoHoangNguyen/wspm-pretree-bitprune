@@ -3,7 +3,8 @@ package vn.edu.wspm.backend.services.dataset.validation;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 import tools.jackson.databind.json.JsonMapper;
-import vn.edu.wspm.backend.dto.dataset.ValidationResponse;
+import org.mapstruct.factory.Mappers;
+import vn.edu.wspm.backend.mappers.ValidationResponseMapper;
 import vn.edu.wspm.backend.exception.ApplicationException;
 import vn.edu.wspm.backend.services.dataset.csv.ProductReferenceLookup;
 
@@ -24,6 +25,7 @@ class ValidationReportEngineTest {
     static final ValidationLimits LIMITS = new ValidationLimits(16384, 100000, 8388608, 16777216, 30000, 2);
     private final ProductReferenceLookup catalog = mock(ProductReferenceLookup.class);
     private final JsonMapper mapper = JsonMapper.builder().build();
+    private final ValidationReportPresenter presenter = new ValidationReportPresenter(Mappers.getMapper(ValidationResponseMapper.class));
 
     ValidationReportEngineTest() {
         when(catalog.findExisting(anySet())).thenReturn(Set.of("product-laptop", "product-mouse", "product-bag"));
@@ -143,10 +145,11 @@ class ValidationReportEngineTest {
         var report = generate(fixture("business-invalid.csv"), LIMITS);
         Map<?, ?> persisted = mapper.convertValue(report, Map.class);
         assertEquals(report, mapper.convertValue(persisted, ValidationReport.class));
-        var page = ValidationResponse.page(report, 1, 1);
+        var page = presenter.page(report, 1, 1);
         assertEquals("3", page.issues().totalElements());
-        assertEquals(report.diagnostics().get(1), page.issues().content().getFirst());
-        assertTrue(ValidationResponse.page(report, Integer.MAX_VALUE, 100).issues().content().isEmpty());
+        assertEquals(mapper.readTree(mapper.writeValueAsString(report.diagnostics().get(1))),
+                mapper.readTree(mapper.writeValueAsString(page.issues().content().getFirst())));
+        assertTrue(presenter.page(report, Integer.MAX_VALUE, 100).issues().content().isEmpty());
         assertFalse(mapper.writeValueAsString(page).contains("manifest"));
         assertFalse(mapper.writeValueAsString(page).contains("order-duplicate"));
         assertThrows(UnsupportedOperationException.class, () -> page.issues().content().clear());

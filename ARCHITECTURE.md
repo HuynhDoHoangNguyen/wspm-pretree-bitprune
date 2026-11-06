@@ -195,12 +195,39 @@ JSON, logout stays empty 204 and CSV stays a file. Auth/WDM retain no-store,
 Bearer challenges and authorization-before-validation. See the
 [shared API contract](docs/auth/README.md#api-contract).
 
+RF-04's `web/common/RequestChecks` shares exact empty-body, no-parameters/body,
+allowed query-name and single-value query checks. Controllers invoke them after
+the existing Auth/WDM filters; this is no new filter or automatic global policy.
+Endpoint messages/detail codes remain explicit. AuthJson.empty keeps its body-only
+policy; validation/conversion POSTs reject parameters before touching the body.
+Export timestamp/period rules and multipart upload checks remain endpoint-specific.
+
+RF-05 keeps the global MVC boundary and error envelope, with Java 21 type dispatch
+and named helpers for safe validation details, method headers and unexpected
+failure logging. Input method validation stays 400; invalid controller return
+values are 500. Both missing-resource and missing-handler exceptions map to 404.
+Filters continue using ApiErrorWriter directly, with unchanged Auth/default-deny
+ordering; committed responses and non-API exception resolution remain protected.
+
 The backend alone configures Lombok and MapStruct annotation processing, including
 lombok-mapstruct-binding. Lombok reduces trivial injection/accessor/logging code;
 entities do not use generated equality/toString via `@Data`. Sensitive DTOs remain
-records with redacted toString methods. MapStruct uses a shared Spring constructor
+records with redacted toString methods. RF-02 moves closed JSON projection to
+`web/auth/AuthRequestReader` after strict `AuthJson` parsing, and pure input
+normalization/validation to `services/auth/AuthInputValidator`. Registration
+revalidates direct service callers before password hashing or transaction work;
+email Bean Validation remains in the service. Constructors that only assign
+dependencies use `@RequiredArgsConstructor`; transaction/semaphore initialization
+remains explicit. MapStruct uses a shared Spring constructor
 injection config and fails compilation on unmapped target fields. IdentityMapper
 receives already-resolved roles; it does not query or assign permissions.
+RF-03 adds SnapshotResponseMapper for acquisition/detail DTOs and
+ValidationResponseMapper for public counts/diagnostics/positions. The snapshot
+mapper prepares a sanitized metadata view without storage access; services own
+lookups, availability/integrity checks and acquisition transactions.
+ValidationReportPresenter slices frozen diagnostics before mapping. Public DTOs
+own their nested types and immutable collections, with no service-report types or
+manifest exposed. Mapping preserves the existing JSON contract and null/count rules.
 AuthSessionService keeps explicit TransactionTemplate boundaries and
 account-before-session locks, with named methods for session creation, rotation,
 revocation and current-identity checks.

@@ -57,7 +57,7 @@ public class RegistrationService {
     }
 
     public IdentityResponse register(RegistrationRequest input) {
-        RegistrationRequest request = input.validated();
+        RegistrationRequest request = AuthInputValidator.registration(input);
         if (!validator.validate(request).isEmpty()) {
             throw ApplicationException.invalid(
                     "email", "Supply a valid ASCII email address of at most 254 characters.");

@@ -18,10 +18,10 @@ import tools.jackson.databind.ObjectMapper;
 
 import vn.edu.wspm.backend.common.api.ApiResponse;
 import vn.edu.wspm.backend.dto.auth.IdentityResponse;
-import vn.edu.wspm.backend.dto.auth.RegistrationRequest;
 import vn.edu.wspm.backend.services.auth.RegistrationService;
 import vn.edu.wspm.backend.web.auth.AuthJson;
 import vn.edu.wspm.backend.web.auth.AuthRequestFilter;
+import vn.edu.wspm.backend.web.auth.AuthRequestReader;
 import vn.edu.wspm.backend.web.common.RequestIdFilter;
 
 import java.io.IOException;
@@ -46,7 +46,7 @@ public class RegistrationController {
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<IdentityResponse> register(HttpServletRequest request) throws IOException {
         return ApiResponse.success(
-                service.register(RegistrationRequest.from(AuthJson.read(request, mapper))),
+                service.register(AuthRequestReader.registration(AuthJson.read(request, mapper))),
                 RequestIdFilter.requestId(request));
     }
 
