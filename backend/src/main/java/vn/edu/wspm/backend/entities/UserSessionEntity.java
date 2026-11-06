@@ -3,10 +3,16 @@ package vn.edu.wspm.backend.entities;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+
+import lombok.Getter;
+import lombok.Setter;
+
 import org.hibernate.annotations.ColumnDefault;
 
 import java.time.Instant;
 
+@Getter
+@Setter
 @Entity
 @Table(name = "USER_SESSION")
 public class UserSessionEntity {
@@ -49,77 +55,4 @@ public class UserSessionEntity {
     @ColumnDefault("CURRENT_TIMESTAMP(6)")
     @Column(name = "last_used_at", nullable = false)
     private Instant lastUsedAt;
-
-    public String getSessionId() {
-        return sessionId;
-    }
-
-    public void setSessionId(String sessionId) {
-        this.sessionId = sessionId;
-    }
-
-    public UserAccountEntity getUser() {
-        return user;
-    }
-
-    public void setUser(UserAccountEntity user) {
-        this.user = user;
-    }
-
-    public String getRefreshTokenHash() {
-        return refreshTokenHash;
-    }
-
-    public void setRefreshTokenHash(String refreshTokenHash) {
-        this.refreshTokenHash = refreshTokenHash;
-    }
-
-    public String getDeviceInfo() {
-        return deviceInfo;
-    }
-
-    public void setDeviceInfo(String deviceInfo) {
-        this.deviceInfo = deviceInfo;
-    }
-
-    public String getIpHash() {
-        return ipHash;
-    }
-
-    public void setIpHash(String ipHash) {
-        this.ipHash = ipHash;
-    }
-
-    public Instant getExpiresAt() {
-        return expiresAt;
-    }
-
-    public void setExpiresAt(Instant expiresAt) {
-        this.expiresAt = expiresAt;
-    }
-
-    public Instant getRevokedAt() {
-        return revokedAt;
-    }
-
-    public void setRevokedAt(Instant revokedAt) {
-        this.revokedAt = revokedAt;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(Instant createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public Instant getLastUsedAt() {
-        return lastUsedAt;
-    }
-
-    public void setLastUsedAt(Instant lastUsedAt) {
-        this.lastUsedAt = lastUsedAt;
-    }
-
 }

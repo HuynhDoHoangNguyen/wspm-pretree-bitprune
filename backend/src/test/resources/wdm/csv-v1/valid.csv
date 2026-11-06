@@ -1,0 +1,7 @@
+order_id,order_item_id,customer_code,ordered_at,status,product_id,sku_snapshot,product_name_snapshot,quantity,list_unit_price,allocated_discount_amount,line_total,currency_code
+order-a,9,anon-A,2026-11-01T00:00:00.000000Z,COMPLETED,product-laptop,=OLD-SKU,"Laptop Việt, ""bản cũ""
+Dòng thứ hai",2,15000000.00,1000000.00,29000000.00,VND
+order-a,10,anon-A,2026-11-01T00:00:00.000000Z,COMPLETED,product-laptop,LAP-OLD,Laptop lich su,1,15000000.00,0.00,15000000.00,VND
+order-b,9007199254740993,anon-A,2026-11-01T00:00:00.000000Z,COMPLETED,product-mouse,MOUSE-OLD,Chuột cũ,1,250000.50,0.50,250000.00,VND
+order-c,9007199254740994,anon-B,2026-11-01T23:59:59.999999Z,COMPLETED,product-mouse,MOUSE-OLD,Chuột cũ,1,100.00,0.00,100.00,VND
+order-c,9007199254740995,anon-B,2026-11-01T23:59:59.999999Z,COMPLETED,product-bag,BAG-OLD,Túi laptop,1,100.00,0.00,100.00,VND

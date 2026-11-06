@@ -1,3 +1,5 @@
+import ManagerPath from './ManagerPath';
+
 const titles: Record<string, string> = {
   '/': 'Trang chủ',
   '/all-categories': 'Tất cả danh mục sản phẩm',
@@ -24,6 +26,9 @@ const titles: Record<string, string> = {
   '/forgot': 'Yêu cầu cấp lại mật khẩu',
 
   '/admin': 'Admin',
+  [ManagerPath.DATASETS]: 'Dữ liệu khai phá',
+  [ManagerPath.MINING_RUNS]: 'Lần chạy khai phá',
+  [ManagerPath.PATTERNS]: 'Mẫu khai phá',
 };
 
 const handler = {

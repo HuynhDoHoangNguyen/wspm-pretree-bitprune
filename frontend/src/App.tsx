@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Route } from 'react-router-dom';
 import 'dayjs/locale/vi';
 import '@smastrom/react-rating/style.css';
 import { QueryClient, QueryClientProvider } from 'react-query';
@@ -11,6 +11,7 @@ import ManagerPath from 'constants/ManagerPath';
 import Client from 'pages/Client';
 import Admin from 'pages/Admin';
 import AdminDashboard from 'pages/AdminDashboard';
+import { createDataMiningRoutes } from 'pages/admin/data-mining/routes';
 import AddressManage, { AddressCreate, AddressUpdate } from 'pages/address';
 import ProvinceManage, { ProvinceCreate, ProvinceUpdate } from 'pages/province';
 import DistrictManage, { DistrictCreate, DistrictUpdate } from 'pages/district';
@@ -86,6 +87,7 @@ import RewardManage from 'pages/reward-strategy';
 import ClientReward from 'pages/client-reward';
 import ClientSignup from 'pages/client-signup';
 import ClientForgotPassword, { ClientChangePassword } from 'pages/client-forgot-password';
+import { AuthRoutes } from 'auth/AuthBoundary';
 
 const queryClient = new QueryClient();
 
@@ -101,7 +103,7 @@ function App() {
           <NotificationsProvider>
             <ModalsProvider>
               <ScrollToTop/>
-              <Routes>
+              <AuthRoutes>
                 <Route path="/" element={<Client/>}>
                   <Route index element={<ClientHome/>}/>
                   <Route path="/*" element={<ClientError/>}/>
@@ -194,6 +196,7 @@ function App() {
                 <Route path="/admin" element={<Admin/>}>
                   <Route path="/admin/*" element={<AdminError/>}/>
                   <Route index element={<AdminDashboard/>}/>
+                  {createDataMiningRoutes()}
                   {/* ADDRESS */}
                   <Route path={ManagerPath.ADDRESS} element={<AddressManage/>}/>
                   <Route path={ManagerPath.ADDRESS + '/create'} element={<AddressCreate/>}/>
@@ -367,7 +370,7 @@ function App() {
                 </Route>
                 <Route path="/payment/success" element={<ClientPaymentSuccess/>}/>
                 <Route path="/payment/cancel" element={<ClientPaymentCancel/>}/>
-              </Routes>
+              </AuthRoutes>
             </ModalsProvider>
           </NotificationsProvider>
         </MantineProvider>

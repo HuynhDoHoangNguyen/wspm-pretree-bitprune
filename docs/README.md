@@ -53,6 +53,14 @@ semantics hoặc kết quả thuật toán.
 
 ## Active research documents
 
+Auth local setup, step-by-step manual tests, SQL provisioning, shared API contract,
+verification history and the proposed Auth/refactor versus WDM-01 commit boundary
+are consolidated in [Shared Auth](auth/README.md). AUTH-01–06 owner acceptance and
+refactor automated evidence are recorded there; owner manual testing after the
+refactor is pending. The three older api-refactor documents were consolidated
+and removed with explicit owner approval; historical evidence/logs are retained.
+Mining contracts are unchanged.
+
 ### Baseline contracts and acceptance
 
 | File | Vai trò |
@@ -100,6 +108,13 @@ loại trừ. Khi task yêu cầu một nguồn chưa có trong clone:
 3. không commit tài liệu có hạn chế bản quyền hoặc thông tin cá nhân nếu chưa
    được phép;
 4. ghi lại provenance/checksum nếu tài liệu được dùng cho thực nghiệm.
+
+## Web Data & Mining contracts
+
+- [Dataset/CSV contract v1](wdm/dataset-csv-contract.md): WDM-01.1 columns,
+  historical sources, period/status/time semantics, raw snapshot lifecycle and
+  executable synthetic fixtures. This is a contract; export/upload/validation
+  endpoints and DB/Auth integration require their own later-task evidence.
 
 ## Database documents
 

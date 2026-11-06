@@ -2,6 +2,14 @@ spring:
   application:
     name: backend
 
+  servlet:
+    multipart:
+      max-file-size: ${WDM_CSV_UPLOAD_MAX_FILE_BYTES:104857600}B
+      max-request-size: ${WDM_CSV_UPLOAD_MAX_REQUEST_BYTES:105906176}B
+      file-size-threshold: 0B
+      # Authorization must precede parsing, including malformed/oversized uploads.
+      resolve-lazily: true
+
   config:
     import:
       - "optional:file:./.env[.properties]"
@@ -23,6 +31,8 @@ spring:
       naming:
         physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
     show-sql: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
 
   flyway:
     enabled: true
@@ -31,6 +41,36 @@ spring:
 
 server:
   port: 8080
+
+# .env is imported as properties above; map its explicit names to Auth's contract.
+auth:
+  jwt:
+    secret: ${AUTH_JWT_SECRET:}
+    issuer: ${AUTH_JWT_ISSUER:}
+    key-id: ${AUTH_JWT_KEY_ID:}
+  cookie-secure: ${AUTH_COOKIE_SECURE:true}
+  allowed-origins: ${AUTH_ALLOWED_ORIGINS:}
+
+# Hibernate duplicate-key diagnostics can contain username/email values. Auth
+# logs safe operation/context instead; never emit raw SQL errors or bound hashes.
+logging:
+  level:
+    org.hibernate.orm.jdbc.error: "OFF"
+    org.hibernate.orm.jdbc.bind: "OFF"
+
+wdm:
+  validation:
+    max-record-characters: ${WDM_VALIDATION_MAX_RECORD_CHARACTERS:16384}
+    max-rows: ${WDM_VALIDATION_MAX_ROWS:100000}
+    max-report-bytes: ${WDM_VALIDATION_MAX_REPORT_BYTES:8388608}
+    max-raw-bytes: ${WDM_VALIDATION_MAX_RAW_BYTES:16777216}
+    max-duration-millis: ${WDM_VALIDATION_MAX_DURATION_MILLIS:30000}
+    max-concurrent: ${WDM_VALIDATION_MAX_CONCURRENT:2}
+  snapshot-storage:
+    root: ${WDM_SNAPSHOT_STORAGE_ROOT:${user.home}/.wspm/snapshots}
+  order-export:
+    max-rows: ${WDM_ORDER_EXPORT_MAX_ROWS:100000}
+    max-bytes: ${WDM_ORDER_EXPORT_MAX_BYTES:104857600}
 
 management:
   endpoints:

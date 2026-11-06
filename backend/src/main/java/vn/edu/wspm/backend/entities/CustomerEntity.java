@@ -5,6 +5,11 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import lombok.Getter;
+
+import java.time.Instant;
+
+@Getter
 @Entity
 @Table(name = "CUSTOMER")
 public class CustomerEntity {
@@ -13,15 +18,26 @@ public class CustomerEntity {
     @Column(name = "customer_id", length = 40)
     private String customerId;
 
-    protected CustomerEntity() {
-    }
+    @Column(name = "user_id", length = 40)
+    private String userId;
+
+    @Column(name = "anonymous_code", nullable = false, length = 80)
+    private String anonymousCode;
+
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
+
+    protected CustomerEntity() {}
 
     public CustomerEntity(String customerId) {
         this.customerId = customerId;
     }
 
-    public String getCustomerId() {
-        return customerId;
+    public CustomerEntity(
+            String customerId, String userId, String anonymousCode, Instant createdAt) {
+        this.customerId = customerId;
+        this.userId = userId;
+        this.anonymousCode = anonymousCode;
+        this.createdAt = createdAt;
     }
 }
-

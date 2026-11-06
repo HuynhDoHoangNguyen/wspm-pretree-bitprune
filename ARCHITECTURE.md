@@ -55,11 +55,16 @@ wspm-pretree-bitprune/
 │   ├── pom.xml
 │   └── src/
 │       ├── main/java/vn/edu/wspm/backend/
+│       │   ├── common/api/   Shared success/error DTOs
+│       │   ├── config/       Auth/runtime bean configuration
 │       │   ├── controllers/  REST endpoints
 │       │   ├── dto/          API response models
 │       │   ├── entities/     JPA entities
-│       │   ├── mappers/      Entity-to-DTO mapping
+│       │   ├── exception/    ErrorCode, ApplicationException, global MVC handler
+│       │   ├── mappers/      MapStruct entity-to-DTO mapping and shared config
 │       │   ├── repositories/ Spring Data repositories
+│       │   ├── security/jwt/ HS256 token signing/verification
+│       │   ├── web/          Auth/WDM guards and shared correlation/error writer
 │       │   └── services/     Application services
 │       ├── main/resources/application.yaml
 │       └── test/             Backend unit/integration tests
@@ -67,6 +72,9 @@ wspm-pretree-bitprune/
 │   ├── package.json
 │   ├── public/
 │   └── src/
+│       ├── api/admin/data-mining/  Admin data/mining API client, types and tests
+│       ├── api/common/       Shared response contracts and strict envelope parser
+│       ├── auth/             Shared Auth client, memory session and UI boundary
 │       ├── components/       Shared UI components
 │       ├── pages/            Client/admin pages and view models
 │       ├── hooks/            API and state hooks
@@ -108,13 +116,121 @@ as an independent test oracle for tiny controlled databases.
 
 ## Backend boundaries
 
-The backend currently exposes health, product and category reads. It uses:
+The backend exposes health, product and category reads.
+
+Shared Auth additionally exposes registration, login, refresh, identity and logout
+under `/api/v1/auth`. `security/jwt` signs/verifies HS256 access JWTs using one secret;
+the root `.env` supplies `AUTH_JWT_SECRET`,
+`AUTH_JWT_ISSUER`, `AUTH_JWT_KEY_ID`, `AUTH_COOKIE_SECURE` and `AUTH_ALLOWED_ORIGINS`.
+The imported properties are explicitly mapped in application.yaml; the local
+profile also honors these values. The Base64 secret decodes to at least 32 random
+bytes, stays in ignored .env, and has no generated/default fallback at startup.
+No PEM files are used; legacy RS256 tokens are rejected. Explicit test properties
+still override local settings for isolated test databases/secrets.
+`services/auth` and `repositories/auth` own account/session lifecycle; `web/auth`
+owns CSRF/Origin and identity HTTP protection. `exception/GlobalExceptionHandler`
+owns API-wide MVC error translation; `web/common/ApiErrorWriter` serves pre-MVC
+filter failures using the same immutable `common/api` error DTO. Session checks
+read current account/session/roles from MySQL. Setup and evidence boundaries are
+in [Shared Auth](docs/auth/README.md). AUTH-04 connects the same authenticator to
+the WDM ADMIN provider. `ApiSecurityFilter` applies strict HTTP firewall checks
+and an explicit API route allowlist before downstream guards; other API routes
+are denied by default, including routes added without a declared policy.
+
+It uses:
 
 - Spring Web MVC for HTTP;
 - Spring Data JPA/JDBC for persistence;
 - MySQL Connector/J;
 - Actuator for operational health;
 - `mining-core` as an in-reactor Java dependency.
+
+WDM also defines `GET /api/v1/admin/order-exports` with a historical JDBC
+projection and bounded CSV serialization. `web/wdm` owns the WDM authorization
+guard and shared Auth integration seam. `web/common/RequestIdFilter` runs before
+the firewall and guards, generating one server request ID for headers and JSON;
+incoming correlation IDs are not trusted. Without a unique
+`WdmAdminAuthorizer` provider, `/api/v1/admin/**` returns 503 before business
+processing. The default `SharedAuthWdmAdminAuthorizer` verifies shared JWT/account/
+session identity and requires exact DB role ADMIN: absent/invalid credentials
+return 401, eligible non-ADMIN returns 403, eligible ADMIN reaches the export.
+HTTP/Auth/export integration is tested with disposable MySQL. AUTH-06 additionally
+verifies Edge UI/session/cookies, concurrency and actual CSV file download through
+a test-only harness using the production WDM client. Dataset business UI is
+implemented in WDM-01.6/01.7; WDM-01.8 verifies its browser/API/DB flow. The exact CSV/filter
+contract and test evidence are in [dataset-csv-contract.md](docs/wdm/dataset-csv-contract.md).
+
+`POST /api/v1/admin/dataset-snapshots` now acquires a CSV snapshot after the
+same ADMIN guard and multipart transport checks. `services/dataset` streams
+original bytes to an exclusively allocated UUID directory, computes SHA-256,
+and commits acquisition metadata through `repositories/dataset` before HTTP 201.
+The public DTO in `dto/dataset` exposes PENDING acquisition metadata without
+internal paths or computed sequence statistics. Storage is external to the
+application working tree and has no static resource mapping. DB rollback before
+the commit phase cleans only the current request's owned artifact; once the commit
+phase begins, an uncertain outcome keeps it for
+manual reconciliation. Storage and MySQL do not share an atomic transaction.
+WDM-02.5 adds POST/GET `/api/v1/admin/dataset-snapshots/{id}/validation`.
+`services/dataset/validation` verifies raw integrity, runs the accepted CSV/business/
+consistency/cleaning stages, and builds a versioned report with complete record
+lineage. A dedicated repository publishes report/status atomically inside V2's
+existing JSON field; public DTOs paginate safe diagnostics and hide the manifest.
+Configured budgets, local concurrency limits and first-writer-wins publication
+bound the synchronous operation. WDM-02.6 provides the snapshot validation panel.
+WDM-02.7 adds the read-only `services/dataset/conversion` admission gate and POST
+`/api/v1/admin/dataset-snapshots/{id}/conversion`. It checks completed report binding,
+READY manifest/counts, raw integrity and fresh snapshot state, returning immutable
+verified bytes/kept records internally. Ineligible snapshots return 409; eligible
+snapshots currently return explicit 503 because conversion is not implemented.
+The proof does not reserve execution; WDM-03 must atomically claim/recheck state
+and consume verified input before producing artifacts. SPMF conversion remains
+WDM-03. Details and evidence are in the Dataset CSV contract.
+
+Business JSON success responses are explicit `ApiResponse<T>` values containing
+`code`, `message`, `data`, `requestId`; the HTTP status remains authoritative.
+Failures retain `status`, `code`, `message`, `path`, `requestId`, `details`.
+`ErrorCode` determines status/code together and `ApplicationException` carries
+safe business errors independently of Auth/WDM web packages. Health stays raw
+JSON, logout stays empty 204 and CSV stays a file. Auth/WDM retain no-store,
+Bearer challenges and authorization-before-validation. See the
+[shared API contract](docs/auth/README.md#api-contract).
+
+RF-04's `web/common/RequestChecks` shares exact empty-body, no-parameters/body,
+allowed query-name and single-value query checks. Controllers invoke them after
+the existing Auth/WDM filters; this is no new filter or automatic global policy.
+Endpoint messages/detail codes remain explicit. AuthJson.empty keeps its body-only
+policy; validation/conversion POSTs reject parameters before touching the body.
+Export timestamp/period rules and multipart upload checks remain endpoint-specific.
+
+RF-05 keeps the global MVC boundary and error envelope, with Java 21 type dispatch
+and named helpers for safe validation details, method headers and unexpected
+failure logging. Input method validation stays 400; invalid controller return
+values are 500. Both missing-resource and missing-handler exceptions map to 404.
+Filters continue using ApiErrorWriter directly, with unchanged Auth/default-deny
+ordering; committed responses and non-API exception resolution remain protected.
+
+The backend alone configures Lombok and MapStruct annotation processing, including
+lombok-mapstruct-binding. Lombok reduces trivial injection/accessor/logging code;
+entities do not use generated equality/toString via `@Data`. Sensitive DTOs remain
+records with redacted toString methods. RF-02 moves closed JSON projection to
+`web/auth/AuthRequestReader` after strict `AuthJson` parsing, and pure input
+normalization/validation to `services/auth/AuthInputValidator`. Registration
+revalidates direct service callers before password hashing or transaction work;
+email Bean Validation remains in the service. Constructors that only assign
+dependencies use `@RequiredArgsConstructor`; transaction/semaphore initialization
+remains explicit. MapStruct uses a shared Spring constructor
+injection config and fails compilation on unmapped target fields. IdentityMapper
+receives already-resolved roles; it does not query or assign permissions.
+RF-03 adds SnapshotResponseMapper for acquisition/detail DTOs and
+ValidationResponseMapper for public counts/diagnostics/positions. The snapshot
+mapper prepares a sanitized metadata view without storage access; services own
+lookups, availability/integrity checks and acquisition transactions.
+ValidationReportPresenter slices frozen diagnostics before mapping. Public DTOs
+own their nested types and immutable collections, with no service-report types or
+manifest exposed. Mapping preserves the existing JSON contract and null/count rules.
+AuthSessionService keeps explicit TransactionTemplate boundaries and
+account-before-session locks, with named methods for session creation, rotation,
+revocation and current-identity checks.
 
 Application code must not copy mining logic into controllers/services. Future
 combo use cases should call a deliberate application boundary around
@@ -143,10 +259,85 @@ adaptation source, not proof that corresponding backend capabilities exist.
 Remove unused functionality by coherent feature slices only after route/import
 and license review.
 
-The development proxy points to backend port 8080. A legacy
-`ApplicationConstants.HOME_PATH` currently references port 8085; resolve this
-configuration mismatch in a dedicated frontend task rather than hiding it in
-documentation.
+The development proxy points to backend port 8080. WDM uses `frontend/src/api/admin/data-mining/`
+with `/api` as its default API root, optionally configured by
+`REACT_APP_WDM_API_BASE_URL`, restricted to the frontend origin by shared Auth.
+`frontend/src/auth/` owns the shared API contract, memory-only access token,
+bootstrap/refresh/logout and verified `/me` identity. Refresh stays in the
+HttpOnly cookie; Auth POSTs obtain a fresh CSRF token. Its WDM adapter attaches
+Bearer credentials, aborts protected requests and clears query/cart state on
+session invalidation. Protected requests are never automatically replayed.
+Inherited Electro features still reference the legacy port 8085 and rich numeric
+profiles. Unsupported protected screens display availability notices instead of
+inventing profile data or invoking those APIs. Compatibility stores hold no Auth
+identity/token. See `frontend/README.md` for client usage and tests.
+
+`frontend/src/api/common/response.ts` owns transport response types and parsing.
+Auth and WDM business clients unwrap success `data` exactly once and require its
+request ID to match `X-Request-Id`; session/UI callers retain their domain DTOs.
+Only GET /health may opt into raw-health JSON mode; downloads retain the Blob
+path. This backend/frontend wire change is coordinated, without dual-format
+fallbacks. Existing legacy port-8085 clients are not silently redirected.
+
+Within the Dataset API slice, `datasets.ts` owns request paths/methods and file
+transport, while `dataset-response.ts` validates and projects the receipt/detail
+wire shapes. Shared primitive checks preserve canonical IDs, UTC timestamps,
+SHA-256 and exact string counts without weakening unknown/PENDING handling.
+
+Shared Auth UI resolves login destinations from verified roles: ADMIN reaches
+`/admin/datasets` from either sign-in form, CUSTOMER reaches the public home.
+Client/Admin headers expose same-session navigation links; `auth/useSignOut`
+centralizes notification and replacement navigation to `/` for every product
+logout entry, including an unconfirmed server logout. Public browsing remains
+available without identity; private account/order data stays guarded and commerce
+legacy APIs are not enabled by these UI changes. Paper-wrapped forms render local
+and whitelisted server field errors, with explicit password error accessibility.
+Password confirmation is UI-only; registration keeps the four-field API DTO.
+Manual recovery controls are replaced by sign-in/home links; automatic refresh
+and the session's token/cookie/cancellation/role enforcement remain unchanged.
+
+Admin Data & Mining pages live in `frontend/src/pages/admin/data-mining/`, with
+routes `/admin/datasets`, `/admin/mining-runs` and `/admin/patterns`. They reuse the
+existing Admin shell and have UI-only ADMIN role guards. The Dataset page now
+provides period CSV export and multipart snapshot acquisition using the real WDM
+client contracts. Its calendar uses explicit fixed UTC+07 bounds, downloads
+CSV Blobs and shows only verified 201 PENDING acquisition receipts. The other
+two pages remain availability skeletons; conversion and mining UI are pending.
+WDM-02.6 adds validation actions/reporting within the snapshot detail route.
+Shared frontend Auth is integrated. The backend
+order export is protected by shared Auth/ADMIN independently of this UI guard.
+Frontend module tests and isolated real HTTP/CSV integration are covered in
+AUTH-05. `frontend/test/e2e/` owns AUTH-06's separate browser runner, disposable MySQL/
+Spring setup, HTTPS test reverse proxy and test-only harness. Edge checks include
+HttpOnly/Secure cookie handling, two-tab refresh/logout and downloaded CSV content.
+WDM-01.6 adds mocked-HTTP UI/API tests for the Dataset forms and preserves
+request cancellation/no POST replay. The new business UI's real browser/API/DB
+gate is implemented in WDM-01.8 using the application build and real routes;
+historical AUTH-06 harness evidence remains separate.
+
+WDM-01.7 adds `/admin/datasets/:snapshotId` and a link from the successful upload
+receipt. It reads explicit metadata from GET `/api/v1/admin/dataset-snapshots/{id}`
+and downloads only original CSV from GET `.../{id}/artifacts/raw`, both behind
+the shared ADMIN guard. `SnapshotReadService` projects approved public fields;
+unknown provenance/status metadata stays null and uncomputed sequence counts
+remain hidden. `RawSnapshotStorage` probes availability without creating files,
+then bounds and verifies exact size/SHA-256 into a byte buffer before a download
+response is committed. Missing raw does not hide existing snapshot metadata.
+Validation actions are added separately by WDM-02.6; list, conversion and mining
+actions remain pending. WDM-01.8 verifies
+the full Dataset flow in Edge with disposable MySQL and an external temporary
+storage root. It found and fixed the Admin shell's missing detail-route allowance;
+an App regression now traverses the real Admin shell for a snapshot deep URL.
+`frontend/test/e2e/` holds the relocated Auth gate and independent Dataset cases
+using shared infrastructure. Dataset mode does not serve the Auth harness.
+The gate checks exact CSV/UTC+07 bounds, one real upload/commit, independent SQL/
+file/hash evidence, detail reload/raw download, authorization/transport failures,
+missing/tampered raw, duplicate submit and logout cancellation. Technical checks
+pass; owner acceptance is recorded separately in the checklist.
+CRA health forwarding is separately verified with a loopback host allowlist and
+owned port-8080 bridge. No E2E routes/hooks are shipped in the application bundle.
+Other browser engines, real production deployment and export-capacity benchmarks
+are not established by this gate; owner acceptance is recorded in the checklist.
 
 ## Dependency rules
 
@@ -168,6 +359,7 @@ documentation.
 | MySQL host binding | `127.0.0.1:3307` |
 | MySQL container port | `3306` |
 | MySQL volume | `wspm_mysql_data` |
+| Raw snapshot storage | `${user.home}/.wspm/snapshots`, configurable with `WDM_SNAPSHOT_STORAGE_ROOT` |
 
 ## Documentation ownership
 

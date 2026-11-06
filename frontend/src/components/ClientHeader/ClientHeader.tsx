@@ -39,6 +39,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import CategoryMenu from 'components/ClientHeader/CategoryMenu';
 import { useElementSize } from '@mantine/hooks';
 import useAuthStore from 'stores/use-auth-store';
+import { useSharedAuth } from 'auth/session';
+import { useSignOut } from 'auth/useSignOut';
 import NotifyUtils from 'utils/NotifyUtils';
 import { useQuery } from 'react-query';
 import FetchUtils, { ErrorMessage } from 'utils/FetchUtils';
@@ -78,7 +80,8 @@ function ClientHeader() {
 
   const { ref: refHeaderStack, width: widthHeaderStack } = useElementSize();
 
-  const { user, resetAuthState, currentTotalCartItems } = useAuthStore();
+  const { user: legacyUser, currentTotalCartItems } = useAuthStore();
+  const { user } = useSharedAuth();
 
   // Search state & function
   const navigate = useNavigate();
@@ -102,12 +105,7 @@ function ClientHeader() {
     }
   };
 
-  const handleSignoutMenu = () => {
-    if (user) {
-      resetAuthState();
-      NotifyUtils.simpleSuccess('Đăng xuất thành công');
-    }
-  };
+  const handleSignoutMenu = useSignOut();
 
   const handleNotificationButton = () => {
     if (user) {
@@ -138,7 +136,8 @@ function ClientHeader() {
               onKeyDown={handleSearchInput}
             />
             <Group spacing="xs">
-              {user && (
+              {user?.roles.includes('ADMIN') && <Button component={Link} to="/admin/datasets" variant="light" size="sm">Trang quản trị</Button>}
+              {legacyUser && (
                 <>
                   <Tooltip label="Giỏ hàng" position="bottom">
                     <UnstyledButton component={Link} to="/cart">
@@ -171,20 +170,19 @@ function ClientHeader() {
 
               <Menu
                 placement="end"
+                menuButtonLabel="Tài khoản"
                 control={(
-                  <Tooltip label="Tài khoản" position="bottom">
-                    <UnstyledButton>
-                      <Group
-                        spacing="xs"
-                        px={theme.spacing.sm}
-                        py={theme.spacing.xs}
-                        className={classes.iconGroup}
-                        sx={{ color: user ? theme.colors.blue[theme.colorScheme === 'dark' ? 4 : 7] : 'inherit' }}
-                      >
-                        <UserCircle strokeWidth={1}/>
-                      </Group>
-                    </UnstyledButton>
-                  </Tooltip>
+                  <UnstyledButton aria-label="Tài khoản">
+                    <Group
+                      spacing="xs"
+                      px={theme.spacing.sm}
+                      py={theme.spacing.xs}
+                      className={classes.iconGroup}
+                      sx={{ color: user ? theme.colors.blue[theme.colorScheme === 'dark' ? 4 : 7] : 'inherit' }}
+                    >
+                      <UserCircle strokeWidth={1}/>
+                    </Group>
+                  </UnstyledButton>
                 )}
               >
                 {user && (
