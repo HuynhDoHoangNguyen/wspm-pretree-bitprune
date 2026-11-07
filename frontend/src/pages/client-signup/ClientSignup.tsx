@@ -17,7 +17,7 @@ export default function ClientSignup() {
     const name = Object.keys(serverErrors)[0];
     if (!busy && name) form.current?.querySelector<HTMLInputElement>('[name="' + name + '"]')?.focus();
   }, [busy, serverErrors]);
-  if (user) return <Navigate to={user.roles.includes('ADMIN') ? '/admin/datasets' : '/'} replace/>;
+  if (user) return <Navigate to={user.roles.includes('ADMIN') ? '/admin' : '/'} replace/>;
   function validate(value: RegistrationInput, repeated: string): AuthFormErrors {
     const invalid = registrationErrors(value);
     if (!repeated) invalid.passwordConfirmation = 'Vui lòng xác nhận mật khẩu.';

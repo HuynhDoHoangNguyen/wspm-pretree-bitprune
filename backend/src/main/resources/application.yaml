@@ -59,6 +59,8 @@ logging:
     org.hibernate.orm.jdbc.bind: "OFF"
 
 wdm:
+  conversion:
+    max-artifact-bytes: ${WDM_CONVERSION_MAX_ARTIFACT_BYTES:67108864}
   validation:
     max-record-characters: ${WDM_VALIDATION_MAX_RECORD_CHARACTERS:16384}
     max-rows: ${WDM_VALIDATION_MAX_ROWS:100000}

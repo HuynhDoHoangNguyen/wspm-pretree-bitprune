@@ -56,7 +56,8 @@ public class ConversionValidationGate {
             var records = new ConversionManifestVerifier().verify(ready.report(), raw, limits, budget);
             var current = ready(find(id));
             require(ready.equals(current));
-            var verified = new VerifiedConversionInput(raw, ready.report(), records);
+            var verified = new VerifiedConversionInput(raw, ready.report(), records,
+                    new VerifiedConversionInput.Binding(ready.stamp().source(), ready.stamp().reference()));
             budget.run();
             log.info("Conversion admission verified: snapshotId={}, keptRecords={}", id, records.size());
             return verified;

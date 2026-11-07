@@ -48,7 +48,7 @@ export interface SnapshotDetail {
   sourceType: 'CSV' | 'DATABASE' | null;
   sourceName: string | null;
   validationStatus: 'PENDING' | 'VALID' | 'INVALID' | 'LEGACY_UNVERIFIED' | null;
-  conversionStatus: 'NOT_STARTED' | null;
+  conversionStatus: 'NOT_STARTED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | null;
   statisticsStatus: 'NOT_COMPUTED' | 'COMPUTED' | null;
   rawSha256: string | null;
   rawSizeBytes: string | null;

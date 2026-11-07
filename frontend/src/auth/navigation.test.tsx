@@ -27,8 +27,8 @@ function page(path = '/') { return render(<MemoryRouter initialEntries={[path]}>
 test('ADMIN switches both sites through visible links using the same shared session', async () => {
   page();
   const adminLink = within(screen.getByRole('banner')).getByRole('link', { name: 'Trang quản trị', exact: true });
-  expect(adminLink).toHaveAttribute('href', '/admin/datasets'); expect(adminLink).toBeVisible(); fireEvent.click(adminLink);
-  await screen.findByText('Dữ liệu khai phá', { selector: 'h2' });
+  expect(adminLink).toHaveAttribute('href', '/admin'); expect(adminLink).toBeVisible(); fireEvent.click(adminLink);
+  await screen.findByRole('heading', { name: 'Từ dữ liệu đơn hàng đến combo sản phẩm' });
   const clientSwitch = screen.getByText('Về cửa hàng');
   expect(clientSwitch).toBeVisible(); fireEvent.click(clientSwitch);
   await screen.findByText('Cửa hàng công khai', { selector: 'h1' });
@@ -39,6 +39,19 @@ test.each([null, { ...identity, roles: ['CUSTOMER'] }])('public home remains ava
   authSession.useStore.setState({ status: user ? 'authenticated' : 'anonymous', user });
   page(); expect(screen.getByRole('heading', { name: 'Cửa hàng công khai' })).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Trang quản trị', exact: true })).not.toBeInTheDocument();
+});
+
+test('Admin sign-in from a deep URL lands on the guide even when identity replaces the form', async () => {
+  authSession.useStore.setState({ status: 'anonymous', user: null, accessToken: null });
+  jest.spyOn(authSession, 'login').mockImplementation(async () => {
+    authSession.useStore.setState({ status: 'authenticated', user: identity, accessToken: 'test' });
+  });
+  page('/admin/datasets');
+  fireEvent.change(screen.getByLabelText('Tên tài khoản', { exact: false }), { target: { value: 'fixture' } });
+  fireEvent.change(screen.getByLabelText('Mật khẩu', { exact: false }), { target: { value: 'password' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập', exact: true }));
+  expect(await screen.findByRole('heading', { name: 'Từ dữ liệu đơn hàng đến combo sản phẩm' })).toBeVisible();
+  expect(authSession.login).toHaveBeenCalledTimes(1);
 });
 
 test.each(['/admin/account', '/user'])('logout at %s finishes on public home', async path => {

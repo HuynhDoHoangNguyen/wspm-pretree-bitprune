@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { authSession } from 'auth/session';
 import App from './App';
 import { datasetApi } from 'api/admin/data-mining';
+import { patternHttpClient } from 'pages/pattern/PatternHttpClient';
 jest.mock('./pages/combo/ComboHttpClient', () => ({ comboHttpClient: require('./pages/combo/ComboClient').unavailableComboClient }));
 
 
@@ -87,4 +88,15 @@ test('Customer cannot enter the Combo Admin outlet', () => {
   render(<MemoryRouter initialEntries={['/admin/combos']}><App/></MemoryRouter>);
   expect(screen.getByRole('alert')).toHaveTextContent('không có quyền ADMIN');
   expect(screen.queryByRole('heading', { name: 'Quản lý Combo' })).not.toBeInTheDocument();
+});
+
+test.each(['/admin/patterns', '/admin/patterns/?page=2#detail'])('actual App opens the shared Pattern route at %s', async path => {
+  const runs = jest.spyOn(patternHttpClient, 'runs').mockResolvedValue({ page: 0, size: 20, total: '0', items: [] });
+  authSession.useStore.setState({ status: 'authenticated', forbidden: false,
+    user: { userId: 'fixture-admin', username: 'fixture', email: null, displayName: 'Fixture', roles: ['ADMIN'], status: 'ACTIVE', emailVerified: false } });
+  render(<MemoryRouter initialEntries={[path]}><App/></MemoryRouter>);
+  expect(await screen.findByRole('heading', { name: 'Khám phá Pattern' })).toBeInTheDocument();
+  expect(await screen.findByText('Chưa có mining run.')).toBeInTheDocument();
+  expect(runs).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText('Chức năng đang được chuẩn bị')).not.toBeInTheDocument();
 });

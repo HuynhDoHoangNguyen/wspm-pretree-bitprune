@@ -10,9 +10,8 @@ import { ModalsProvider } from '@mantine/modals';
 import ManagerPath from 'constants/ManagerPath';
 import Client from 'pages/Client';
 import Admin from 'pages/Admin';
-import PatternExplorer from 'pages/pattern/PatternExplorer';
 import ComboAdmin from 'pages/combo/ComboAdmin';
-import AdminDashboard from 'pages/AdminDashboard';
+import AdminHomePage from 'pages/admin/data-mining/AdminHomePage';
 import { createDataMiningRoutes } from 'pages/admin/data-mining/routes';
 import AddressManage, { AddressCreate, AddressUpdate } from 'pages/address';
 import ProvinceManage, { ProvinceCreate, ProvinceUpdate } from 'pages/province';
@@ -196,10 +195,9 @@ function App() {
                   <Route path="/change-password" element={<ClientChangePassword/>}/>
                 </Route>
                 <Route path="/admin" element={<Admin/>}>
-                  <Route path="patterns" element={<PatternExplorer/>}/>
                   <Route path="combos" element={<ComboAdmin/>}/>
                   <Route path="/admin/*" element={<AdminError/>}/>
-                  <Route index element={<AdminDashboard/>}/>
+                  <Route index element={<AdminHomePage/>}/>
                   {createDataMiningRoutes()}
                   {/* ADDRESS */}
                   <Route path={ManagerPath.ADDRESS} element={<AddressManage/>}/>

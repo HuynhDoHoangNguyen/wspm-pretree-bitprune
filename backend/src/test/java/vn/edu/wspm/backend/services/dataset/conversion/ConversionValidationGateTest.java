@@ -70,6 +70,9 @@ class ConversionValidationGateTest {
         var proof = gate().prepare(ID);
         assertEquals(name.equals("valid.csv") ? 5 : 1, proof.keptRecords().size());
         assertArrayEquals(fixture.raw(), proof.rawBytes());
+        assertEquals("CSV", proof.binding().sourceType());
+        assertEquals(ID + "/raw.csv", proof.binding().rawReference());
+        assertFalse(proof.binding().toString().contains("raw.csv"));
         byte[] copy = proof.rawBytes(); copy[0] ^= 1;
         assertArrayEquals(fixture.raw(), proof.rawBytes());
         byte original = fixture.raw()[0]; fixture.raw()[0] ^= 1;

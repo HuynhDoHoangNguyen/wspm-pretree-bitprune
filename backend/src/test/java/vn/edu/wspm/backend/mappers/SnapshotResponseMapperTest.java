@@ -56,7 +56,7 @@ class SnapshotResponseMapperTest {
     @Test void unknownUnsafeAndWrongTypedMetadataRemainNullAndNeverChangeState() {
         var snapshot = snapshot(); snapshot.setSourceType("UNKNOWN"); snapshot.setSourceName("C:\\private\\test.csv");
         snapshot.setValidationStatus("NEW_STATE"); snapshot.setRawSha256("private-invalid-sha");
-        snapshot.setConversionReportJson(Map.of("contractVersion", "future", "conversionStatus", "RUNNING",
+        snapshot.setConversionReportJson(Map.of("contractVersion", "future", "conversionStatus", "FUTURE_STATE",
                 "statisticsStatus", "future", "provenance", Map.of("rawSizeBytes", 42, "sourceTimeZone", "private-zone")));
         var metadata = mapper.metadata(snapshot);
         assertNull(metadata.sourceType()); assertNull(metadata.sourceName()); assertNull(metadata.validationStatus());
@@ -75,5 +75,18 @@ class SnapshotResponseMapperTest {
         assertNull(mapper.metadata(snapshot).rawSizeBytes());
         snapshot.setSequenceCount(-1L); assertNull(mapper.metadata(snapshot).sequenceCount());
         snapshot.setSequenceCount(null); assertNull(mapper.metadata(snapshot).sequenceCount());
+    }
+
+    @Test void conversionStatesAreWhitelistedWithoutExposingPrivateOperationMetadata() {
+        for (String state : java.util.List.of("NOT_STARTED", "RUNNING", "SUCCEEDED", "FAILED")) {
+            var snapshot = snapshot();
+            snapshot.setConversionReportJson(Map.of("conversionStatus", state, "statisticsStatus", "NOT_COMPUTED",
+                    "conversion", Map.of("attemptId", "private-attempt", "reference", "private-path")));
+            var metadata = mapper.metadata(snapshot);
+            assertEquals(state, metadata.conversionStatus());
+            assertNull(metadata.sequenceCount());
+            String json = JsonMapper.builder().build().writeValueAsString(mapper.detail(snapshot, metadata, "AVAILABLE"));
+            assertFalse(json.contains("private"));
+        }
     }
 }

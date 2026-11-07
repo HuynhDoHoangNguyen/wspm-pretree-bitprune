@@ -5,13 +5,13 @@ import ManagerPath from 'constants/ManagerPath';
 import DataMiningGuard from './DataMiningGuard';
 import DatasetsPage from './DatasetsPage';
 import MiningRunsPage from './MiningRunsPage';
-import PatternsPage from './PatternsPage';
+import PatternExplorer from 'pages/pattern/PatternExplorer';
 import SnapshotDetailPage from './SnapshotDetailPage';
 
 export const dataMiningPages = [
   { path: ManagerPath.DATASETS, label: 'Dữ liệu khai phá', Component: DatasetsPage, Icon: Database },
   { path: ManagerPath.MINING_RUNS, label: 'Lần chạy khai phá', Component: MiningRunsPage, Icon: PlayerPlay },
-  { path: ManagerPath.PATTERNS, label: 'Mẫu khai phá', Component: PatternsPage, Icon: ListSearch },
+  { path: ManagerPath.PATTERNS, label: 'Mẫu khai phá', Component: PatternExplorer, Icon: ListSearch },
 ];
 
 export function isDataMiningPath(pathname: string): boolean {

@@ -1,7 +1,7 @@
 import { chromium } from 'playwright-core';
 import { build } from 'esbuild';
 import { spawn, execFileSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { createServer as httpServer, request as httpRequest, globalAgent } from 'node:http';
 import { createServer as httpsServer } from 'node:https';
 import { createServer as netServer } from 'node:net';
@@ -23,7 +23,7 @@ const temp = mkdtempSync(path.join(tmpdir(), prefix));
 const label = tv2Mode ? 'TV2-INT-14' : datasetMode ? 'WDM-01.8' : 'AUTH-06', name = prefix + randomBytes(5).toString('hex');
 const password = randomBytes(24).toString('hex'), db = tv2Mode ? 'tv2_int14_' + randomBytes(5).toString('hex') : 'auth06_browser_test';
 const processes = [], servers = [], logStreams = [];
-let containerId, browser;
+let containerId, browser, buildRoot;
 const logBase = path.resolve(root, process.env.AUTH_E2E_LOG_DIR || '.agent-workspace/phase-wdm');
 mkdirSync(logBase, { recursive: true });
 const logDirectory = mkdtempSync(path.join(logBase, label + '-'));
@@ -76,8 +76,18 @@ async function finished(child, name) {
 }
 try {
   if (tv2Mode && process.argv.includes('--manual')) assert.ok(process.env.TV2_INT14_BROWSER_PASSWORD, 'Manual mode requires a password supplied through process environment');
-  assert.ok(existsSync(path.join(root, 'frontend/build/index.html')), 'Build frontend first');
+  buildRoot = realpathSync(path.resolve(root, process.env.WDM_E2E_BUILD_DIR || 'frontend/build'));
+  assert.ok(buildRoot.startsWith(realpathSync(root) + path.sep), 'Build must be inside the workspace');
+  assert.ok(existsSync(path.join(buildRoot, 'index.html')), 'Build frontend first');
   if (!tv2Mode) assert.ok(existsSync(path.join(root, 'backend/target/backend-1.0-SNAPSHOT.jar')), 'Package backend first');
+  const digest = file => createHash('sha256').update(readFileSync(file)).digest('hex');
+  writeFileSync(path.join(logDirectory, 'PREPARATION.json'), JSON.stringify({
+    node: process.version, java: command('java', ['--version']).split('\n')[0],
+    gitHead: command('git', ['rev-parse', 'HEAD']), buildDirectory: path.relative(root, buildRoot),
+    indexSha256: digest(path.join(buildRoot, 'index.html')),
+    manifestSha256: digest(path.join(buildRoot, 'asset-manifest.json')),
+    backendJarSha256: tv2Mode ? null : digest(path.join(root, 'backend/target/backend-1.0-SNAPSHOT.jar')),
+  }, null, 2));
   const backendPort = await freePort(), httpPort = await freePort(), httpsPort = await freePort();
   const httpOrigin = 'http://127.0.0.1:' + httpPort, httpsOrigin = 'https://127.0.0.1:' + httpsPort;
   containerId = command('docker', ['run', '--detach', '--rm', '--name', name, '--label', 'codex-task=' + label,
@@ -142,8 +152,7 @@ try {
     response.setHeader('Cache-Control', 'no-store');
     if (!applicationMode && request.url === '/__auth06') { response.setHeader('Content-Type', 'text/html'); response.end('<div id="root"></div><script src="/__auth06.js"></script>'); return; }
     if (!applicationMode && request.url === '/__auth06.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(readFileSync(path.join(temp, 'harness.js'))); return; }
-    const asset = path.resolve(root, 'frontend/build', '.' + new URL(request.url, httpOrigin).pathname);
-    const buildRoot = path.resolve(root, 'frontend/build');
+    const asset = path.resolve(buildRoot, '.' + new URL(request.url, httpOrigin).pathname);
     if (!asset.startsWith(buildRoot + path.sep) && asset !== buildRoot) { response.writeHead(400); response.end(); return; }
     const file = existsSync(asset) && path.extname(asset) ? asset : path.join(buildRoot, 'index.html');
     response.setHeader('Content-Type', file.endsWith('.js') ? 'application/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.html') ? 'text/html' : 'application/octet-stream');

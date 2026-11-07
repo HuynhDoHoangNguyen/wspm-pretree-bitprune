@@ -16,11 +16,15 @@ import vn.edu.wspm.backend.BackendApplication;
 import vn.edu.wspm.backend.db.review.NullablePatternMetricPreflight;
 import vn.edu.wspm.backend.services.combo.review.*;
 import vn.edu.wspm.backend.services.combo.persistence.DraftBatchWrite.*;
+import vn.edu.wspm.backend.services.combo.generation.ComboGenerationService;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import static vn.edu.wspm.backend.services.combo.review.ComboReview.*;
 
 /** Explicit test classpath launcher only. Never component-scanned or packaged in production. */
 public final class Tv2BrowserApplication {
     static final Set<String> allowedBatches=new HashSet<>();
+    static final Map<String,WriterEvidenceReviewAuthority.Inspection> reviewRoots=new HashMap<>();
     public static void main(String[] args)throws Exception {
         if(!"OWNED_DISPOSABLE_INT14".equals(System.getenv("TV2_INT14_MODE")))throw new IllegalStateException("TEST_ONLY_LAUNCHER");
         var config=JsonMapper.builder().build().readTree(System.getenv("SPRING_APPLICATION_JSON"));
@@ -35,18 +39,28 @@ public final class Tv2BrowserApplication {
                 .callbacks(new NullablePatternMetricPreflight()).cleanDisabled(true).load().migrate();
         jdbc.update("INSERT INTO CATEGORY(category_id,name,slug,status) VALUES('LCAT','TEST_FIXTURE Laptop','laptop','ACTIVE'),('ACAT','TEST_FIXTURE Accessory','accessory','ACTIVE')");
         jdbc.update("INSERT INTO ROLE(role_id,code,name) VALUES('customer-role','CUSTOMER','Customer'),('admin-role','ADMIN','Admin')");
-        var f=new DraftBatchWriterMySqlTest();f.ds=ds;f.jdbc=jdbc;f.fixture();
+        DraftBatchWriterMySqlTest f=null;
+        var inspector=new WriterEvidenceReviewAuthority(ds,500,4*1024*1024,b->ComboReviewAuthority.Check.unavailable());
+        var readTx=new TransactionTemplate(new DataSourceTransactionManager(ds));readTx.setReadOnly(true);
+        readTx.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_REPEATABLE_READ);
         var batches=new ArrayList<String>();var combos=new ArrayList<String>();
         for(int n=0;n<8;n++) {
+            var generation=new ComboGenerationMySqlTest();generation.f.ds=ds;generation.f.jdbc=jdbc;generation.fixture();f=generation.f;
             String batch="TEST_FIXTURE_BATCH_"+n;var fields=new HashMap<vn.edu.wspm.backend.services.combo.grouping.CandidateGrouping.StructureKey,Fields>();
             for(var e:f.request.fields().entrySet()) {
                 var x=e.getValue();String id="T14-"+n+"-"+x.comboId();
                 fields.put(e.getKey(),new Fields(id,"TEST_FIXTURE "+n+" "+x.name(),x.explanation(),x.currency(),x.referenceOriginalPrice(),x.referenceSalePrice(),x.priceEvidenceRef(),x.discountType(),x.items()));
                 combos.add(id);
             }
-            var r=f.request;
-            var saved=f.writer().write(new Request(r.grouping(),r.context(),r.preview(),"TEST_FIXTURE_INT14_WRITE_"+n,batch,null,r.createdAt(),fields));
+            var grant=generation.grant;
+            generation.grant=new ComboGenerationService.Grant(grant.fullPayloadDigest(),grant.purpose(),grant.purposeReference(),grant.evaluationPolicy(),grant.catalog(),
+                    grant.catalogReference(),grant.evaluatedAt(),grant.ranking(),grant.anchorProductId(),batch,grant.createdBy(),fields,grant.generatorVersion(),grant.commercialPolicyReference(),grant.resolvedBusinessEvidence());
+            var saved=generation.service().generate(generation.intent());
             if(!saved.status().equals("INSERTED"))throw new IllegalStateException("FIXTURE_WRITER_REJECTED");
+            final String sample=fields.values().iterator().next().comboId();
+            var root=readTx.execute(tx->inspector.inspect(new JdbcComboAdminReader(ds).detailCurrent(sample)));
+            if(!root.valid())throw new IllegalStateException("FIXTURE_REVIEW_EVIDENCE_INVALID:"+root.issue());
+            reviewRoots.put(batch,root);
             batches.add(batch);if(n!=0)allowedBatches.add(batch);
         }
         // Labels only; no change to writer's sealed run/input/receipt facts.
@@ -70,7 +84,8 @@ public final class Tv2BrowserApplication {
             String id=i==22?empty:"TEST_FIXTURE_OTHER_"+i;
             jdbc.update("INSERT INTO MINING_RUN(run_id,snapshot_id,algorithm,status,dataset_source,minsup_mode,minsup_configured,effective_threshold,mean_w,pattern_count,created_at) VALUES(?,'TEST_FIXTURE_PATTERN_S','WSPM_PRETREE','SUCCEEDED','TEST_FIXTURE_NOT_MINING_OUTPUT','ABSOLUTE',.1,.1,.5,0,'2020-01-01 00:00:00')",id);
         }
-        var metadata=Map.of("label","TEST_FIXTURE_NOT_MINING_OUTPUT","patternRun",patternRun,"emptyRun",empty,"writerRun",f.run,"batches",batches,"combos",combos,"patterns",patterns);
+        jdbc.update("INSERT INTO MINING_RUN(run_id,snapshot_id,algorithm,status,dataset_source,minsup_mode,minsup_configured,effective_threshold,mean_w,pattern_count,created_at) VALUES('TEST_FIXTURE_NOT_READY','TEST_FIXTURE_PATTERN_S','WSPM_PRETREE','RUNNING','TEST_FIXTURE_NOT_MINING_OUTPUT','ABSOLUTE',.1,.1,.5,0,'2021-01-01 00:00:00')");
+        var metadata=Map.of("label","TEST_FIXTURE_NOT_MINING_OUTPUT","comboCreation","COMBO_GENERATION_SERVICE_AND_EXECUTABLE_WRITER","patternRun",patternRun,"emptyRun",empty,"notReadyRun","TEST_FIXTURE_NOT_READY","writerRun",f.run,"batches",batches,"combos",combos,"patterns",patterns);
         Files.writeString(Path.of(System.getenv("TV2_INT14_METADATA")),JsonMapper.builder().build().writeValueAsString(metadata),StandardCharsets.UTF_8);
         // Assert current compiled application classes, rather than silently serving an old packaged JAR.
         if(!ComboManagementService.class.getProtectionDomain().getCodeSource().getLocation().toString().endsWith("/target/classes/"))throw new IllegalStateException("STALE_APPLICATION_CLASSPATH");
@@ -78,10 +93,14 @@ public final class Tv2BrowserApplication {
     }
     @TestConfiguration(proxyBeanMethods=false)
     public static class ControlledPolicy {
-        @Bean ComboReviewAuthority controlledReview() {
-            return b->allowedBatches.contains(b.row().batchId())
-                    ?new ComboReviewAuthority.Check(new Policy("INT14_CONTROLLED_REVIEW_POLICY"),new Evidence(true,true),"TEST_FIXTURE_ONLY")
-                    :ComboReviewAuthority.Check.unavailable();
+        @Bean ComboReviewAuthority controlledReview(javax.sql.DataSource ds) {
+            var inspector=new WriterEvidenceReviewAuthority(ds,500,4*1024*1024,b->ComboReviewAuthority.Check.unavailable());
+            return new WriterEvidenceReviewAuthority(ds,500,4*1024*1024,b->{
+                if(!allowedBatches.contains(b.row().batchId()))return ComboReviewAuthority.Check.unavailable();
+                var current=inspector.inspect(b);var expected=reviewRoots.get(b.row().batchId());
+                boolean verified=current.valid() && expected!=null && expected.writerRoot().equals(current.writerRoot()) && expected.protectedFacts().equals(current.protectedFacts());
+                return new ComboReviewAuthority.Check(new Policy("NEXT04_CONTROLLED_REVIEW_POLICY_V1"),new Evidence(verified,verified),"TEST_FIXTURE_POLICY_VERSION_1");
+            });
         }
     }
 }

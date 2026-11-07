@@ -111,6 +111,11 @@ loại trừ. Khi task yêu cầu một nguồn chưa có trong clone:
 
 ## Web Data & Mining contracts
 
+- [Mining run request contract](wdm/mining-request-contract.md): WDM-04.1's
+  four-field configured input, strict JSON/DTO validation and error boundary.
+  Threshold resolution, execution eligibility and production run creation remain
+  later-task obligations; request validation does not close R6.
+
 - [Dataset/CSV contract v1](wdm/dataset-csv-contract.md): WDM-01.1 columns,
   historical sources, period/status/time semantics, raw snapshot lifecycle and
   executable synthetic fixtures. This is a contract; export/upload/validation

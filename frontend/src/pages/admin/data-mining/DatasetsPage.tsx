@@ -1,22 +1,26 @@
 import React from 'react';
-import { SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { Anchor, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { Link } from 'react-router-dom';
 import useTitle from 'hooks/use-title';
 import DatasetExportForm from './DatasetExportForm';
 import DatasetUploadForm from './DatasetUploadForm';
+import useWorkspaceStyles from './workspace.styles';
 
 export default function DatasetsPage() {
   useTitle('Dữ liệu khai phá');
+  const { classes } = useWorkspaceStyles();
   return (
-    <Stack spacing="lg" mb={30}>
-      <Stack spacing={4}>
-        <Text size="sm" color="dimmed">Dữ liệu &amp; Khai phá</Text>
+    <div className={classes.root}><Stack spacing="xl">
+      <Anchor component={Link} to="/admin">Trang chủ Admin / Hướng dẫn thực hiện</Anchor>
+      <Stack spacing="sm" className={classes.hero}>
+        <Text size="sm" color="blue" weight={700}>BƯỚC 1 & 2 · CHUẨN BỊ DỮ LIỆU</Text>
         <Title order={2}>Dữ liệu khai phá</Title>
-        <Text color="dimmed">Xuất lịch sử đơn hàng và lưu CSV thành snapshot để chuẩn bị khai phá mẫu sản phẩm.</Text>
+        <Text>Xuất lịch sử đơn hàng hoặc chọn CSV có sẵn, sau đó upload để tạo snapshot. Bạn sẽ kiểm tra và chuyển đổi dữ liệu tại trang chi tiết.</Text>
       </Stack>
-      <SimpleGrid cols={2} breakpoints={[{ maxWidth: 'sm', cols: 1 }]}>
+      <SimpleGrid cols={2} spacing="lg" breakpoints={[{ maxWidth: 'md', cols: 1 }]} style={{ alignItems: 'start' }}>
         <DatasetExportForm/>
         <DatasetUploadForm/>
       </SimpleGrid>
-    </Stack>
+    </Stack></div>
   );
 }

@@ -1,10 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Group, Paper, Stack, Table, Text, Title } from '@mantine/core';
+import { Alert, Badge, Button, Group, NativeSelect, Paper, SimpleGrid, Skeleton, Stack, Table, Text, Textarea, TextInput, Title } from '@mantine/core';
+import { MiningEmptyState, useMiningAdminStyles } from '../admin/data-mining/MiningAdminUi';
 import { Audit, ComboClient, ComboClientError, ComboDetail, ComboFilters, ComboPage, Decision } from './ComboClient';
 import { comboHttpClient } from './ComboHttpClient';
 
 const statuses: Record<string, string> = { DRAFT: 'Bản nháp', APPROVED: 'Đã duyệt nội bộ', REJECTED: 'Đã từ chối', PUBLISHED: 'Đã công bố', ARCHIVED: 'Đã lưu trữ' };
 const kinds = ['SAME_ORDER_BUNDLE', 'SEQUENTIAL_CROSS_SELL', 'MIXED_SEQUENCE'];
+const kindLabel: Record<string, string> = { SAME_ORDER_BUNDLE: 'Mua cùng đơn', SEQUENTIAL_CROSS_SELL: 'Mua theo thứ tự', MIXED_SEQUENCE: 'Kết hợp nhóm & thứ tự' };
+const blockers: Record<string, string> = {
+  REVIEW_POLICY_UNCONFIRMED: 'Chưa có chính sách duyệt được xác nhận.',
+  REVIEW_EVIDENCE_UNVERIFIED: 'Thông tin làm cơ sở duyệt chưa được xác minh.',
+  WRITER_LOCK_PROTOCOL_UNCONFIRMED: 'Chưa sẵn sàng ghi quyết định an toàn.',
+  ACTION_ELIGIBILITY_UNVERIFIED: 'Chưa đủ điều kiện thực hiện quyết định.',
+  BATCH_NOT_REVIEWABLE: 'Batch không còn ở trạng thái cho phép duyệt.',
+  RUN_NOT_REVIEWABLE: 'Lần khai phá chưa hoàn tất hợp lệ.',
+  PRIMARY_SOURCE_INVALID: 'Chưa xác định được một nguồn chính hợp lệ.',
+  PRIMARY_METRICS_MISMATCH: 'Chỉ số Combo chưa khớp nguồn chính.',
+  DICTIONARY_SNAPSHOT_MISSING: 'Thiếu thông tin sản phẩm của lần khai phá.',
+};
+const statusColor = (status: string) => ({ DRAFT: 'gray', APPROVED: 'teal', REJECTED: 'red', PUBLISHED: 'blue', ARCHIVED: 'gray' } as Record<string, string>)[status] ?? 'orange';
 const batchLabel = (value: string) => ({ DRAFT: 'Batch nháp', ACTIVE: 'Batch đang kích hoạt', ARCHIVED: 'Batch đã lưu trữ' } as Record<string, string>)[value] ?? `Batch không xác định: ${value}`;
 const statusLabel = (value: string) => statuses[value] ?? `Không xác định: ${value}`;
 function failure(error: unknown): string {
@@ -23,10 +37,12 @@ const invalidNoteCharacter = (c: string) => {
   return (code < 32 && code !== 9 && code !== 10 && code !== 13) || (code >= 127 && code <= 159) || (code >= 55296 && code <= 57343);
 };
 function ReviewAudit({ audit }: { audit: Audit }) {
-  return <div><Text>Người review: {audit.reviewerDisplayName ?? audit.reviewedBy ?? 'Chưa có'}{audit.reviewerDisplayName && audit.reviewedBy ? ` (${audit.reviewedBy})` : ''}</Text>
-    <Text>Thời điểm review (UTC): {audit.reviewedAt ?? 'Chưa có'}</Text><Text style={{ whiteSpace: 'pre-wrap' }}>Ghi chú: {audit.reviewNote ?? 'Không có'}</Text></div>;
+  const { classes } = useMiningAdminStyles();
+  return <Stack spacing={4} className={classes.wrap}><Text size="sm">Người review: {audit.reviewerDisplayName ?? audit.reviewedBy ?? 'Chưa có'}{audit.reviewerDisplayName && audit.reviewedBy ? ` (${audit.reviewedBy})` : ''}</Text>
+    <Text size="sm" color="dimmed">Thời điểm review (UTC): {audit.reviewedAt ?? 'Chưa có'}</Text><Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>Ghi chú: {audit.reviewNote ?? 'Không có'}</Text></Stack>;
 }
 export default function ComboAdmin({ client = comboHttpClient }: { client?: ComboClient }) {
+  const { classes } = useMiningAdminStyles();
   const [draft, setDraft] = useState<ComboFilters>({});
   const [query, setQuery] = useState({ filters: {} as ComboFilters, page: 0 });
   const [revision, setRevision] = useState(0);
@@ -112,43 +128,106 @@ export default function ComboAdmin({ client = comboHttpClient }: { client?: Comb
       if (mounted.current && generation === sendGeneration.current) { submitting.current = false; setSending(false); setDecision(null); }
     }
   };
-  return <Stack><Title order={2}>Quản lý Combo</Title>
-    <Paper p="md" withBorder><form onSubmit={e => {
-      e.preventDefault(); if (draft.batchId && (draft.batchId.trim() === '' || Array.from(draft.batchId).length > 40)) { setNotice('Batch ID không hợp lệ.'); return; }
-      changeQuery(draft, 0);
-    }}><Group align="end">
-        <label>Batch ID<input aria-label="Batch ID" value={draft.batchId ?? ''} onChange={e => { const value = e.target.value; setDraft(d => ({ ...d, batchId: value || undefined })); }}/></label>
-        <label>Trạng thái Combo<select aria-label="Trạng thái Combo" value={draft.status ?? ''} onChange={e => { const value = e.target.value; setDraft(d => ({ ...d, status: value || undefined })); }}>
-          <option value="">Tất cả</option>{Object.keys(statuses).map(s => <option key={s} value={s}>{statuses[s]}</option>)}</select></label>
-        <label>Loại Combo<select aria-label="Loại Combo" value={draft.comboKind ?? ''} onChange={e => { const value = e.target.value; setDraft(d => ({ ...d, comboKind: value || undefined })); }}>
-          <option value="">Tất cả</option>{kinds.map(k => <option key={k}>{k}</option>)}</select></label>
-        <Button type="submit">Áp dụng bộ lọc</Button><Button onClick={() => { setDraft({}); changeQuery({}, 0); }}>Bỏ lọc</Button>
-      </Group></form></Paper>
-    {notice && <Alert role="status">{notice}</Alert>}{savedAudit && <ReviewAudit audit={savedAudit}/>}
-    {loading && <Text role="status">Đang tải danh sách…</Text>}
-    {error && <Alert role="alert">{error}<Button onClick={invalidate}>Thử lại danh sách</Button></Alert>}
-    {data && <><Text>Trong phạm vi: {data.scopeTotal}; Khớp bộ lọc: {data.filteredTotal}</Text>
-      {data.items.length === 0 ? <Text>{count(data.scopeTotal) === BigInt(0) ? 'Chưa có Combo trong phạm vi đã chọn.' : 'Không có Combo khớp bộ lọc.'}</Text> :
-        <Table><thead><tr><th>Combo</th><th>Trạng thái Combo</th><th>Batch</th><th>Audit</th></tr></thead><tbody>{data.items.map(s => <tr key={s.data.comboId}>
-          <td><Button variant="subtle" disabled={sending} onClick={() => { if (selected === s.data.comboId) { invalidate(); return; } detailGeneration.current++; setSelected(s.data.comboId); setDetail(null); }}>{s.data.name} ({s.data.comboId})</Button></td>
-          <td>{statusLabel(s.data.comboStatus)}</td><td>{s.data.batchId}: {batchLabel(s.data.batchStatus)}</td><td><ReviewAudit audit={s.data.review}/></td>
-        </tr>)}</tbody></Table>}
-      <Group><Button disabled={query.page === 0} onClick={() => changeQuery(query.filters, query.page - 1)}>Trang trước</Button><Text>Trang {query.page + 1}</Text>
-        <Button disabled={query.page >= 2147483647 || BigInt(query.page + 1) * BigInt(20) >= count(data.filteredTotal)} onClick={() => changeQuery(query.filters, query.page + 1)}>Trang sau</Button></Group></>}
-    {selected && <Paper withBorder p="md"><Group><Title order={3}>Chi tiết Combo {selected}</Title><Button disabled={sending} onClick={() => { detailGeneration.current++; setSelected(null); setDetail(null); }}>Đóng chi tiết</Button></Group>
-      {detailLoading && <Text>Đang tải chi tiết…</Text>}{detailError && <Alert role="alert">{detailError}<Button onClick={invalidate}>Thử lại chi tiết</Button></Alert>}
-      {detail && <Stack><Text>{statusLabel(detail.data.comboStatus)}; {batchLabel(detail.data.batchStatus)}; Run: {detail.data.runId}</Text>
-        <ReviewAudit audit={detail.data.review}/><Text>Loại Combo: {detail.data.comboKind}</Text><Text>Support: {detail.data.metrics.supportAbs}; Weight: {detail.data.metrics.patternWeight ?? 'Không khả dụng'}</Text>
-        {detail.itemsets.map(set => <fieldset key={set.itemsetOrder} aria-label={`Itemset ${set.itemsetOrder}`}><legend>Itemset {set.itemsetOrder}</legend>
-          {set.items.map(i => <Text key={i.itemOrder}>Vị trí {i.itemOrder}: {i.nameSnapshot ?? i.productId} — {i.skuSnapshot ?? 'Thiếu snapshot'}; Số lượng {i.quantity}; Neo: {i.anchorEligible ? 'Có' : 'Không'}</Text>)}</fieldset>)}
-        <Title order={4}>Pattern nguồn</Title>{detail.sources.map(s => <Text key={s.patternId}>{s.primary ? 'Nguồn chính' : 'Nguồn phụ'}: {s.patternId}; Run {s.sourceRunId}; {s.canonicalPattern}; Support {s.metrics.supportAbs}</Text>)}
-        {detail.assessment.blockingIssues.map(i => <Text color="red" key={i.code}>Chặn: {i.code}</Text>)}{detail.assessment.warnings.map(i => <Text key={i.code}>Cảnh báo: {i.code}</Text>)}
-        {(!canReview('APPROVE') && !canReview('REJECT')) && <Text>Chỉ đọc: cần API review, policy, allowedActions và token được server xác minh.</Text>}
-        <Group><Button disabled={!canReview('APPROVE')} onClick={() => setDecision('APPROVE')}>Duyệt</Button><Button disabled={!canReview('REJECT')} onClick={() => setDecision('REJECT')}>Từ chối</Button></Group>
-        {decision && <form onSubmit={e => { e.preventDefault(); void submit(); }}><Text>Xác nhận {decision} cho {detail.data.comboId}</Text>
-          <label>Ghi chú review<textarea aria-label="Ghi chú review" value={note} disabled={sending} onChange={e => setNote(e.target.value)}/></label>
-          <Button type="submit" disabled={sending || !canReview(decision)}>{sending ? 'Đang gửi…' : 'Xác nhận quyết định'}</Button></form>}
-      </Stack>}
-    </Paper>}
+  return <Stack spacing="lg" className={classes.page}>
+    <Stack spacing={4} className={classes.header}><Text size="sm" color="dimmed">Dữ liệu &amp; Khai phá</Text>
+      <Title order={2}>Quản lý Combo</Title>
+      <Text color="dimmed">Xem bộ sản phẩm, kiểm tra nguồn và duyệt các đề xuất.</Text>
+    </Stack>
+    <Paper withBorder className={classes.card}>
+      <form aria-label="Bộ lọc Combo" onSubmit={e => {
+        e.preventDefault(); if (draft.batchId && (draft.batchId.trim() === '' || Array.from(draft.batchId).length > 40)) { setNotice('Batch ID không hợp lệ.'); return; }
+        changeQuery(draft, 0);
+      }}><Stack spacing="md">
+          <Title order={3}>Bộ lọc Combo</Title>
+          <SimpleGrid cols={3} spacing="md" breakpoints={[{ maxWidth: 'md', cols: 2 }, { maxWidth: 'sm', cols: 1 }]}>
+            <TextInput label="Batch ID" placeholder="Nhập mã batch" size="sm" value={draft.batchId ?? ''} onChange={e => { const value = e.target.value; setDraft(d => ({ ...d, batchId: value || undefined })); }}/>
+            <NativeSelect label="Trạng thái Combo" size="sm" value={draft.status ?? ''} onChange={e => { const value = e.target.value; setDraft(d => ({ ...d, status: value || undefined })); }}
+              data={[{ value: '', label: 'Tất cả' }, ...Object.keys(statuses).map(s => ({ value: s, label: statuses[s] }))]}/>
+            <NativeSelect label="Loại Combo" size="sm" value={draft.comboKind ?? ''} onChange={e => { const value = e.target.value; setDraft(d => ({ ...d, comboKind: value || undefined })); }}
+              data={[{ value: '', label: 'Tất cả' }, ...kinds.map(k => ({ value: k, label: kindLabel[k] }))]}/>
+          </SimpleGrid>
+          <Group className={classes.footer}><Button type="submit">Áp dụng bộ lọc</Button><Button variant="default" onClick={() => { setDraft({}); changeQuery({}, 0); }}>Bỏ lọc</Button></Group>
+        </Stack></form>
+    </Paper>
+    <Paper withBorder className={classes.card}>
+      <Stack spacing="md">
+        <Group position="apart"><Title order={3}>Danh sách Combo</Title>{data && <Badge variant="light">{data.filteredTotal} kết quả</Badge>}</Group>
+        {loading && <Stack spacing="sm" role="status"><Text color="dimmed">Đang tải danh sách…</Text>{[1, 2, 3].map(n => <Skeleton key={n} height={48}/>)}</Stack>}
+        {error && <Alert color="red" role="alert">{error}<Group mt="sm"><Button variant="light" onClick={invalidate}>Thử lại danh sách</Button></Group></Alert>}
+        {data && <>
+          <Text size="sm" color="dimmed">Trong phạm vi: {data.scopeTotal}; Khớp bộ lọc: {data.filteredTotal}</Text>
+          {data.items.length === 0 ? <MiningEmptyState title={count(data.scopeTotal) === BigInt(0) ? 'Chưa có Combo trong phạm vi đã chọn.' : 'Không có Combo khớp bộ lọc.'}>
+            {count(data.scopeTotal) === BigInt(0) ? 'Các đề xuất Combo được lưu sẽ xuất hiện tại đây để bạn xem và duyệt.' : 'Thử thay đổi trạng thái, loại Combo hoặc bỏ bộ lọc.'}
+          </MiningEmptyState> :
+            <div className={classes.scroll} role="region" aria-label="Bảng Combo" tabIndex={0}>
+              <Table highlightOnHover className={classes.table}><thead><tr><th>Combo</th><th>Loại</th><th>Trạng thái Combo</th><th>Batch</th><th>Review</th></tr></thead>
+                <tbody>{data.items.map(s => <tr key={s.data.comboId} data-selected={selected === s.data.comboId}>
+                  <td><Button variant="subtle" className={classes.rowButton} aria-label={s.data.name + ' (' + s.data.comboId + ')'} aria-pressed={selected === s.data.comboId} disabled={sending}
+                    onClick={() => { if (selected === s.data.comboId) { invalidate(); return; } detailGeneration.current++; setSelected(s.data.comboId); setDetail(null); }}>
+                    <Text component="span" weight={600}>{s.data.name}</Text><Text component="span" size="xs" color="dimmed" sx={{ display: 'block' }}>({s.data.comboId})</Text>
+                  </Button></td>
+                  <td><Badge variant="light" className={classes.tag}>{kindLabel[s.data.comboKind] ?? s.data.comboKind}</Badge></td>
+                  <td><Badge color={statusColor(s.data.comboStatus)} variant="light" className={classes.tag}>{statusLabel(s.data.comboStatus)}</Badge></td>
+                  <td className={classes.wrap}><Text size="xs" color="dimmed">{s.data.batchId}</Text><Text size="sm">{batchLabel(s.data.batchStatus)}</Text></td>
+                  <td className={classes.wrap}><Text size="sm">{s.data.review.reviewerDisplayName ?? s.data.review.reviewedBy ?? 'Chưa review'}</Text>
+                    {s.data.review.reviewedAt && <Text size="xs" color="dimmed">{s.data.review.reviewedAt}</Text>}</td>
+                </tr>)}</tbody>
+              </Table>
+            </div>}
+          {(query.page > 0 || data.items.length > 0) && <Group position="apart" className={classes.footer}>
+            <Text size="sm" color="dimmed">Trang {query.page + 1}</Text><Group spacing="xs">
+              <Button variant="default" disabled={query.page === 0} onClick={() => changeQuery(query.filters, query.page - 1)}>Trang trước</Button>
+              <Button variant="default" disabled={query.page >= 2147483647 || BigInt(query.page + 1) * BigInt(20) >= count(data.filteredTotal)} onClick={() => changeQuery(query.filters, query.page + 1)}>Trang sau</Button>
+            </Group>
+          </Group>}
+          {query.page === 0 && data.items.length === 0 && <Text size="xs" color="dimmed">Trang 1</Text>}
+        </>}
+      </Stack>
+    </Paper>
+    {notice && <Alert color="blue" role="status" id="combo-review-notice">{notice}</Alert>}
+    {savedAudit && <Paper withBorder className={classes.card}><Title order={4} mb="sm">Quyết định đã lưu</Title><ReviewAudit audit={savedAudit}/></Paper>}
+    {selected && <Paper withBorder className={classes.card}><Stack spacing="lg">
+      <Group position="apart" align="flex-start"><Title order={3} className={classes.wrap}>Chi tiết Combo {selected}</Title><Button variant="default" disabled={sending} onClick={() => { detailGeneration.current++; setSelected(null); setDetail(null); }}>Đóng chi tiết</Button></Group>
+      {detailLoading && <Stack role="status"><Text color="dimmed">Đang tải chi tiết…</Text><Skeleton height={100}/></Stack>}
+      {detailError && <Alert color="red" role="alert">{detailError}<Group mt="sm"><Button variant="light" onClick={invalidate}>Thử lại chi tiết</Button></Group></Alert>}
+      {detail && <>
+        <div><Group spacing="sm" mb="sm">
+          <Badge color={statusColor(detail.data.comboStatus)} variant="light" className={classes.tag}>{statusLabel(detail.data.comboStatus)}</Badge>
+          <Badge variant="outline" className={classes.tag}>{batchLabel(detail.data.batchStatus)}</Badge>
+          <Badge variant="light" className={classes.tag}>{kindLabel[detail.data.comboKind] ?? detail.data.comboKind}</Badge>
+        </Group><Text color="dimmed" size="sm" className={classes.wrap}>Run: {detail.data.runId}</Text>
+        <Text className={classes.wrap} mt="sm">{detail.data.explanation}</Text></div>
+        <SimpleGrid cols={3} breakpoints={[{ maxWidth: 'md', cols: 2 }, { maxWidth: 'xs', cols: 1 }]} spacing="sm">
+          <Text className={classes.wrap}>Support: {detail.data.metrics.supportAbs}; Weight: {detail.data.metrics.patternWeight ?? 'Không khả dụng'}</Text>
+          <Text className={classes.wrap}>Giá tham chiếu: {detail.data.referenceOriginalPrice} {detail.data.currencyCode}</Text>
+          <Text className={classes.wrap}>Loại Combo: {detail.data.comboKind}</Text>
+        </SimpleGrid>
+        <div><Title order={4} mb="sm">Sản phẩm theo thứ tự</Title><Stack spacing="sm">
+          {detail.itemsets.map(set => <fieldset className={classes.itemset} key={set.itemsetOrder} aria-label={'Itemset ' + set.itemsetOrder}><legend>Itemset {set.itemsetOrder}</legend>
+            {set.items.map(i => <Text className={classes.wrap} key={i.itemOrder}>Vị trí {i.itemOrder}: {i.nameSnapshot ?? i.productId} — {i.skuSnapshot ?? 'Thiếu snapshot'}; Số lượng {i.quantity}; Neo: {i.anchorEligible ? 'Có' : 'Không'}</Text>)}
+          </fieldset>)}
+        </Stack></div>
+        <div><Title order={4} mb="sm">Pattern nguồn</Title><Stack spacing="sm">
+          {detail.sources.map(s => <Paper withBorder p="md" radius="sm" key={s.patternId} sx={{ minWidth: 0 }}>
+            <Badge variant={s.primary ? 'filled' : 'light'} mb="xs">{s.primary ? 'Nguồn chính' : 'Nguồn phụ'}</Badge>
+            <Text className={classes.code}>{s.primary ? 'Nguồn chính' : 'Nguồn phụ'}: {s.patternId}; Run {s.sourceRunId}; {s.canonicalPattern}; Support {s.metrics.supportAbs}</Text>
+          </Paper>)}
+        </Stack></div>
+        <div><Title order={4} mb="sm">Lịch sử review</Title><ReviewAudit audit={detail.data.review}/></div>
+        <Paper withBorder p="md" radius="sm"><Stack spacing="sm">
+          <Title order={4}>Review Combo</Title>
+          {detail.assessment.blockingIssues.map(i => <Text color="red" size="sm" className={classes.wrap} key={i.code}>Chặn: {blockers[i.code] ?? i.code}</Text>)}
+          {detail.assessment.warnings.map(i => <Text size="sm" className={classes.wrap} key={i.code}>Cảnh báo: {blockers[i.code] ?? i.code}</Text>)}
+          {(!canReview('APPROVE') && !canReview('REJECT')) && <Text size="sm" color="dimmed">Combo này hiện chỉ có thể xem. Hãy kiểm tra các lý do bên trên.</Text>}
+          <Group><Button color="teal" disabled={!canReview('APPROVE')} onClick={() => setDecision('APPROVE')}>Duyệt</Button><Button variant="light" color="red" disabled={!canReview('REJECT')} onClick={() => setDecision('REJECT')}>Từ chối</Button></Group>
+          {decision && <form onSubmit={e => { e.preventDefault(); void submit(); }}><Stack spacing="sm">
+            <Text weight={500} className={classes.wrap}>Xác nhận {decision === 'APPROVE' ? 'duyệt' : 'từ chối'} cho {detail.data.name}</Text>
+            <Textarea label="Ghi chú review" minRows={3} autosize value={note} disabled={sending} aria-describedby={notice ? 'combo-review-notice' : undefined}
+              error={notice === 'Cần ghi chú từ chối.' || notice === 'Ghi chú không hợp lệ hoặc vượt giới hạn.'} onChange={e => setNote(e.target.value)}/>
+            <Group><Button type="submit" color={decision === 'APPROVE' ? 'teal' : 'red'} disabled={sending || !canReview(decision)}>{sending ? 'Đang gửi…' : 'Xác nhận quyết định'}</Button></Group>
+          </Stack></form>}
+        </Stack></Paper>
+      </>}
+    </Stack></Paper>}
   </Stack>;
 }

@@ -17,7 +17,7 @@ export default function SignInForm({ admin = false }: { admin?: boolean }) {
     const name = Object.keys(serverErrors)[0];
     if (!busy && name) form.current?.querySelector<HTMLInputElement>('[name="' + name + '"]')?.focus();
   }, [busy, serverErrors]);
-  const destination = state.user?.roles.includes('ADMIN') ? '/admin/datasets' : '/';
+  const destination = state.user?.roles.includes('ADMIN') ? '/admin' : '/';
   if (state.status === 'authenticated' && !admin) return <Navigate to={destination} replace/>;
   function focus(fields: AuthFormErrors) {
     const name = Object.keys(fields)[0];
@@ -32,12 +32,15 @@ export default function SignInForm({ admin = false }: { admin?: boolean }) {
     if (Object.keys(invalid).length) { focus(invalid); return; }
     active.current = true;
     setBusy(true); setError('');
+    // The Admin shell replaces this form immediately when identity arrives.
+    // Select its landing route before login so that unmount cannot swallow navigation.
+    if (admin) navigate('/admin', { replace: true });
     try {
       await authSession.login(username, password);
       const user = authSession.useStore.getState().user;
       if (mounted.current) {
         if (admin && !user?.roles.includes('ADMIN')) setError('Tài khoản đã đăng nhập nhưng không có quyền ADMIN.');
-        else navigate(user?.roles.includes('ADMIN') ? '/admin/datasets' : '/', { replace: true });
+        else navigate(user?.roles.includes('ADMIN') ? '/admin' : '/', { replace: true });
       }
     } catch (failure) { if (mounted.current) {
       const fields = authFieldErrors(failure); setServerErrors(fields); setError(authMessage(failure));

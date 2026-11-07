@@ -26,6 +26,7 @@ public enum ErrorCode {
     RESULT_INCONSISTENT(HttpStatus.CONFLICT, "Run results are inconsistent."),
     WEIGHT_FILTER_UNAVAILABLE(HttpStatus.CONFLICT, "Weight filtering is unavailable."),
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "Request validation failed."),
+    UNSUPPORTED_MINING_CONFIGURATION(HttpStatus.valueOf(422), "Mining configuration is outside the supported scope."),
     MALFORMED_REQUEST(HttpStatus.BAD_REQUEST, "Request body or transport is invalid."),
     AUTHENTICATION_REQUIRED(HttpStatus.UNAUTHORIZED, "Authentication is required."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "Access is denied."),

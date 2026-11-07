@@ -2,7 +2,7 @@ import React from 'react';
 import { Alert, AppShell, Button, Stack } from '@mantine/core';
 import { DefaultHeader } from 'components/DefaultHeader/DefaultHeader';
 import { DefaultNavbar } from 'components/DefaultNavbar/DefaultNavbar';
-import { matchPath, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { matchPath, Outlet, useLocation } from 'react-router-dom';
 import AdminSignin from 'pages/admin-signin';
 import AuthGate from 'auth/AuthGate';
 import { authSession, useSharedAuth } from 'auth/session';
@@ -21,8 +21,7 @@ export default function Admin() {
     <Button onClick={() => void authSession.checkIdentity().catch(() => undefined)}>Kiểm tra lại quyền</Button>
     <Button onClick={() => void signOut()}>Đăng xuất</Button>
   </Stack>;
-  if (normalized === '/admin') return <Navigate to="/admin/datasets" replace/>;
-  const supported = ['/admin/datasets', '/admin/mining-runs', '/admin/patterns', '/admin/combos', ManagerPath.ACCOUNT].includes(normalized)
+  const supported = ['/admin', '/admin/datasets', '/admin/mining-runs', '/admin/patterns', '/admin/combos', ManagerPath.ACCOUNT].includes(normalized)
     || matchPath(ManagerPath.DATASETS + '/:snapshotId', normalized) !== null;
   return <AppShell fixed header={<DefaultHeader/>} navbar={<DefaultNavbar/>}>
     {supported ? <Outlet/> : <Alert role="status">Chức năng legacy này chưa được nối với API hiện tại. Phiên đăng nhập đã được xác thực.</Alert>}

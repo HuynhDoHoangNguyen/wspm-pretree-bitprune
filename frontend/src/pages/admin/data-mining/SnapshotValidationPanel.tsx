@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, Button, Group, Paper, Stack, Table, Text, Title } from '@mantine/core';
 import { SnapshotDetail, ValidationDiagnostic, ValidationReport, WdmApiError } from 'api/admin/data-mining';
 import { hasNextValidationPage } from 'api/admin/data-mining/validation-response';
 import { useSnapshotValidation } from './useSnapshotValidation';
+import useWorkspaceStyles from './workspace.styles';
 
 const explanations: Record<string, string> = {
   FIELD_REQUIRED: 'Thiếu giá trị bắt buộc.', FIELD_TOO_LONG: 'Giá trị vượt độ dài cho phép.',
@@ -62,6 +63,7 @@ function Positions({ issue, index }: { issue: ValidationDiagnostic; index: numbe
 }
 
 function Report({ report, busy, read }: { report: ValidationReport; busy: boolean; read: (page: number) => Promise<void> }) {
+  const { classes } = useWorkspaceStyles();
   return <Stack>
     <Alert color={report.validationStatus === 'VALID' ? 'teal' : 'yellow'} title={report.validationStatus === 'VALID'
       ? 'Có dữ liệu sạch sử dụng được' : 'Chưa có dữ liệu sạch sử dụng được'}>
@@ -71,16 +73,16 @@ function Report({ report, busy, read }: { report: ValidationReport; busy: boolea
     {!report.countsComplete && <Alert role="status" color="yellow" title="Chưa đọc hết dataset">
       Đã đọc {report.counts.parsedRecords} bản ghi hoàn chỉnh trước lỗi. Đây là tiền tố đã đọc, không phải tổng dataset; các tổng chưa xác định không được tính là 0.
     </Alert>}
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
-      {counters.map(([key, label]) => <div key={key} role="group" aria-label={label}><Text size="sm" color="dimmed">{label}</Text><Text>{report.counts[key] ?? 'Chưa xác định'}</Text></div>)}
+    <div className="data-metrics">
+      {counters.map(([key, label]) => <div className="data-metric" key={key} role="group" aria-label={label}><Text size="sm" color="dimmed" data-secondary>{label}</Text><Text>{report.counts[key] ?? 'Chưa xác định'}</Text></div>)}
     </div>
     <Text size="sm">Thời điểm kiểm tra (UTC): {report.completedAt}</Text>
-    <Text size="sm">Phiên bản báo cáo: {report.reportVersion}; policy: {report.policyVersion}</Text>
-    <Text size="sm" style={{ overflowWrap: 'anywhere' }}>SHA-256 của dữ liệu đã kiểm tra: {report.rawSha256}</Text>
-    <Text size="sm" color="dimmed">Đọc lại báo cáo không kiểm tra lại tệp vật lý hoặc catalog. Bản ghi 1 là header; vị trí dòng tính cả newline trong quoted field.</Text>
+    <details><summary>Chi tiết báo cáo & checksum</summary><Stack spacing="xs"><Text size="sm">Phiên bản báo cáo: {report.reportVersion}; policy: {report.policyVersion}</Text>
+      <Text size="sm" style={{ overflowWrap: 'anywhere' }}>SHA-256 của dữ liệu đã kiểm tra: {report.rawSha256}</Text>
+      <Text size="sm" color="dimmed" data-secondary>Đọc lại báo cáo không kiểm tra lại tệp vật lý hoặc catalog. Bản ghi 1 là header; vị trí dòng tính cả newline trong quoted field.</Text></Stack></details>
     <Title order={4}>Thông báo kiểm tra</Title>
     {!report.issues.content.length ? <Text>{report.issues.totalElements === '0' ? 'Không có thông báo kiểm tra.' : 'Trang này không có thông báo.'}</Text>
-      : <div style={{ overflowX: 'auto' }}><Table aria-label="Danh sách thông báo kiểm tra">
+      : <div className={classes.table} tabIndex={0} role="region" aria-label="Bảng thông báo có thể cuộn"><Table aria-label="Danh sách thông báo kiểm tra">
         <thead><tr><th>Giai đoạn</th><th>Mã và diễn giải</th><th>Cột</th><th>Vị trí nguồn</th></tr></thead>
         <tbody>{report.issues.content.map((issue, index) => <tr key={report.issues.page + ':' + index + ':' + issue.code}>
           <td>{stageLabels[issue.stage]}</td><td><Text weight={500}>{issue.code}</Text><Text size="sm">{explanations[issue.code] || 'Mã kiểm tra chưa có diễn giải; giữ mã gốc để đối soát.'}</Text></td>
@@ -96,8 +98,10 @@ function Report({ report, busy, read }: { report: ValidationReport; busy: boolea
   </Stack>;
 }
 
-export default function SnapshotValidationPanel({ detail, onComplete }: { detail: SnapshotDetail; onComplete: (signal: AbortSignal) => Promise<void> }) {
+export default function SnapshotValidationPanel({ detail, onComplete, onReportChange, onActivityChange }: { detail: SnapshotDetail; onComplete: (signal: AbortSignal) => Promise<void>; onReportChange?: (report: ValidationReport | null) => void; onActivityChange?: (activity: { busy: boolean; error: boolean }) => void }) {
   const state = useSnapshotValidation(detail, onComplete);
+  useEffect(() => { onReportChange?.(state.report); }, [state.report, onReportChange]);
+  useEffect(() => { onActivityChange?.({ busy: state.busy !== null, error: !!state.error }); }, [state.busy, state.error, onActivityChange]);
   const eligible = detail.validationStatus === 'PENDING' && detail.rawAvailability === 'AVAILABLE'
     && detail.conversionStatus === 'NOT_STARTED' && detail.provenance.contractVersion === 'wdm-order-csv-v1';
   const busy = state.busy !== null;
@@ -114,7 +118,7 @@ export default function SnapshotValidationPanel({ detail, onComplete }: { detail
       <Button variant="light" loading={state.busy === 'read'} disabled={busy} onClick={() => void state.read()}>Kiểm tra lại trạng thái</Button>
     </Group>
     {busy && <Text role="status">{state.busy === 'post' ? 'Đang nhận kết quả kiểm tra và cập nhật metadata…' : 'Đang đọc báo cáo…'}</Text>}
-    <Text size="sm" color="dimmed">Rời trang hoặc ngừng chờ không hủy xử lý trên máy chủ. UI không tự gửi lại POST sau lỗi kết nối.</Text>
+    <Text size="sm" color="dimmed" data-secondary>Rời trang hoặc ngừng chờ không hủy xử lý trên máy chủ. UI không tự gửi lại POST sau lỗi kết nối.</Text>
     {state.report && <Report report={state.report} busy={busy} read={state.read}/>}
   </Stack></Paper>;
 }
