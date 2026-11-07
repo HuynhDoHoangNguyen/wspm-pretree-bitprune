@@ -80,6 +80,11 @@ afterEach(() => {
 const heading = (path: string, label: string) => path === '/admin/patterns' ? 'Khám phá Pattern' : label;
 
 describe('Admin Data & Mining navigation', () => {
+  it.each([null, { roles: ['CUSTOMER'] }])('guards the run detail route for identity %s', user => {
+    setIdentity(user); render(<Feature entries={['/admin/mining-runs/11111111-2222-4333-8444-555555555555']}/>);
+    expect(screen.queryByRole('heading', { name: 'Chi tiết lần chạy khai phá' })).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
   it.each(dataMiningPages)('opens $path directly with the correct page and active link', ({ path, label }) => {
     render(<Feature entries={[path]}/>);
     const nav = screen.getByRole('navigation', { name: 'Dữ liệu & Khai phá' });

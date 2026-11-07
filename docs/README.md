@@ -111,10 +111,40 @@ loại trừ. Khi task yêu cầu một nguồn chưa có trong clone:
 
 ## Web Data & Mining contracts
 
+- [Mining engine boundary](wdm/mining-engine-contract.md): WDM-05.1 synchronous
+  Java request/result contract, public core APIs, typed statistics, retention and
+  measurement ownership; WDM-05.2 adds the concrete adapter, preflight checks,
+  engine dispatch and sampler lifecycle. WDM-05.4 calls this adapter from an
+  opt-in bounded executor; WDM-05.5 integrates fenced DB lifecycle/recovery
+  outside the adapter. Durable pattern persistence remains later work.
+
 - [Mining run request contract](wdm/mining-request-contract.md): WDM-04.1's
-  four-field configured input, strict JSON/DTO validation and error boundary.
-  Threshold resolution, execution eligibility and production run creation remain
-  later-task obligations; request validation does not close R6.
+  four-field input plus accepted WDM-04 resolver/preview/gate evidence. WDM-05.3
+  adds POST run creation, verified preparation and V2 transaction/admission
+  protocol. WDM-05.4 adds opt-in real managed execution and bounded completion
+  retention; default disabled mode remains 503/no insertion. WDM-05.5 adds CAS
+  transitions, safe failures, V3 ownership/lease and conservative recovery.
+  WDM-05.6 adds worker/input timing capture and atomic success+metrics persistence,
+  preserving native counters/algorithm sampled JVM heap. Durable patterns
+  remain later-task obligations. WDM-05.7 implements the ADMIN GET
+  status/config/metrics snapshot with exact BIGINT strings and safe diagnostics;
+  its evidence and the separate owner V3 verification are in the same contract.
+  WDM-05.8 adds explicit create, guarded detail/open-by-ID, bounded GET polling
+  and safe uncertain-outcome handling in the React Admin UI. Browser smoke is
+  UI with mocked HTTP; full engine/browser/API/DB verification remains 05.10.
+  WDM-05.9 renders counts, six timing scopes and sampled heap from the same
+  snapshot, preserving exact strings/nulls and current-vs-legacy provenance.
+  WDM-05.10 adds the real built-UI/Auth/API/MySQL/Flyway engine gate. A test-only
+  same-JVM observer captures original full maps for comparison with direct
+  PreTree/BitPrune and the independent tiny-data oracle. See the execution
+  evidence/AC table in the request contract and reproduction commands in
+  [browser E2E README](../frontend/test/e2e/README.md). This is not WDM-06 durable
+  pattern persistence or a performance benchmark.
+  The authorized workspace follow-up adds server-backed newest-first snapshot/
+  run lists, current backend file locations and instance-local capacity, with a
+  clearer create/history UI. It preserves the WDM-06 persistence boundary and
+  explicitly labels historical publication information as unverified. See the
+  workspace section in the request contract for API/read semantics and evidence.
 
 - [Dataset/CSV contract v1](wdm/dataset-csv-contract.md): WDM-01.1 columns,
   historical sources, period/status/time semantics, raw snapshot lifecycle and
@@ -150,6 +180,11 @@ không còn bảng `LEGACY_V1_*`. Kết quả này không chứng minh trạng t
 khác hoặc tính đúng của toàn bộ dữ liệu nghiệp vụ. Không sửa file V2 runtime đã
 áp dụng vì sẽ làm thay đổi checksum; mọi correction phải đi qua migration phiên
 bản kế tiếp.
+
+WDM-05.7 verification on 2026-11-07 found local `127.0.0.1:3307/wspm_combo`
+already at V3 SUCCESS/checksum `1697070581`. Actual Flyway validate/migrate
+(target 3)/validate passed, executing zero new migrations; V1/V2 checksums
+remain unchanged. This updates the local environment evidence only.
 
 ## Documentation maintenance
 

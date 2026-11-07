@@ -429,7 +429,76 @@ result thuộc `src/pages/admin/data-mining/`. Hợp đồng và evidence:
 `../docs/wdm/mining-request-contract.md`, mục WDM-04.5. Real browser/API/DB gate
 cho cấu hình thuộc WDM-04.6; module tests ở đây dùng mocked HTTP.
 
+## WDM-05.8 — Admin Execution UI
+
+- `/admin/mining-runs`: giữ preview/validation; nút **Tạo lần chạy** chỉ bật với
+  cấu hình hiện tại đã SUPPORTED. POST đúng bốn trường, một flight; không tự replay.
+- `202` hợp lệ mở `/admin/mining-runs/:runId`. Có thể mở run đã biết bằng ID/link;
+  direct navigation/refresh chỉ GET, không có danh sách lịch sử giả.
+- Detail hiển thị config, trạng thái, UTC nguyên chuỗi (giữ microseconds), lỗi an
+  toàn và pattern count cơ bản. BIGINT giữ dạng chuỗi, null khác zero. Metrics
+  chi tiết thuộc WDM-05.9; SUCCEEDED chưa xác nhận durable pattern storage.
+- Polling serial sau 2 giây, budget 2 phút, timeout GET 15 giây/POST 45 giây.
+  Hidden/unmount/Auth change hủy reads/timers; terminal dừng polling. **Đọc lại /
+  Tiếp tục theo dõi** chỉ gửi GET. Dừng theo dõi không hủy mining.
+- Mất POST/503/response không hợp lệ có thể sau commit: giữ submitted config và
+  requestId, hiển thị uncertainty, không tự gửi lại hoặc đoán runId. Tạo yêu cầu
+  mới là thao tác rõ ràng và phải kiểm tra lại cấu hình. Không lưu token/result/
+  SUPPORTED vào localStorage; không thêm cancel/retry/ack API.
+
+API/decoders: `src/api/admin/data-mining/mining-runs.ts`,
+`mining-run-response.ts`. Hooks/pages: `src/pages/admin/data-mining/useMiningRun*`,
+`MiningRunDetailPage`, `MiningRunStatusPanel`, `MiningRunCreationFeedback`.
+Browser UI smoke: `node frontend/test/e2e/execution-ui-smoke.mjs` từ repo root;
+dùng actual components/client/guard với fixture identity và mocked HTTP, không
+khởi động backend hoặc sửa owner DB. Xem `test/e2e/README.md`.
+
+## WDM-05.9 — Metrics UI
+
+Trang chi tiết run dùng cùng snapshot status để hiển thị hai counts, sáu timing
+và sampled heap. Counts/timings/bytes giữ chuỗi thập phân; dấu chấm chỉ phân nhóm
+chữ số, không chuyển qua Number. Timing dùng ms, heap dùng bytes; chưa có số đo
+khác số đo 0. Với contract WDM-05.6, 0 ms có thể do phép đo dưới 1 ms được chia
+nguyên từ nanos.
+
+Scope hiện tại chỉ được giải thích khi measurement descriptor xác nhận WDM-05.6.
+Legacy giữ giá trị đã lưu và thông báo scope chưa được xác minh. Null output I/O
+trong contract hiện tại nghĩa chưa có output stage; null lịch sử chỉ là thiếu số đo.
+PreTree dùng candidateCount, BitPrune dùng generatedExtensions; định nghĩa bộ đếm
+native được giữ nguyên. Heap là sampling used heap dùng chung của JVM trong thuật
+toán; các scope thời gian có phần lồng nhau và không được cộng để suy ra tổng.
+
+Panel không thêm GET/polling, đổi trạng thái hoặc tính thời gian từ timestamps.
+GET lỗi giữ metrics cùng status cũ dưới banner tạm dừng. Browser smoke mở rộng:
+`node frontend/test/e2e/execution-ui-smoke.mjs --metrics` từ root (actual UI với
+identity/HTTP fixtures). Engine/browser/API/DB gate vẫn thuộc WDM-05.10.
+
 ## Quy tắc dọn frontend
+
+The mining workspace follow-up adds the snapshot library at `/admin/datasets`
+and create/history tabs at `/admin/mining-runs?tab=history`. Both lists are
+server-backed, newest-first, paged and URL-filtered. Export/upload remain in
+the "Tạo dữ liệu mới" tab (`?tab=create`); the default "Danh sách dữ liệu" tab
+shows the library. Tab selection and list filters remain in the URL, and form
+inputs are retained when switching tabs. Configuration output uses summary
+cards and distinct backend threshold fields; run detail retains exact metrics.
+
+The capacity card describes slots on the current backend instance, not a DB
+save quota. Completed retained results can still occupy slots. Backend file
+locations show the current snapshot publication metadata; they do not prove
+file integrity or historical run publication identity. The existing verification
+boundaries remain authoritative. Read contracts and limitations are documented
+in `docs/wdm/mining-request-contract.md` (workspace follow-up section).
+
+WDM-05.10 bổ sung gate thật bằng
+`node frontend/test/e2e/engine-run.mjs`: production build, shared Auth, HTTPS,
+backend đã package, MySQL riêng và Flyway V1-V3. Mỗi kết quả gốc được đối chiếu
+đầy đủ pattern/support với hai engine và oracle; metrics được kiểm tra qua
+capture/DB/API/UI. Các ca sửa artifact đang chờ, mất phản hồi 202, hết capacity
+và zero/underflow không dùng response thành công giả. Lệnh tái lập và giới hạn
+nằm tại [E2E README](test/e2e/README.md). Gate cũng phát hiện và sửa allowlist
+`Admin` shell cho trang chi tiết run; `App.test.tsx` bảo vệ route này. Backend,
+mining-core production, schema và dependency versions không đổi.
 
 - Xóa theo feature slice hoàn chỉnh, không xóa file rời chỉ dựa vào tên.
 - Kiểm tra route/import graph trước khi xóa page, model, hook hoặc component.

@@ -90,6 +90,7 @@ class OrderExportRepositoryTest {
             definitions++;
         }
         assertEquals(47, definitions); // 45 CREATEs + 2 final FK ALTERs
+        vn.edu.wspm.backend.testsupport.ExecutionSchema.apply(jdbc);
         assertEquals(45, jdbc.queryForObject("""
                 SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()
                 """, Integer.class));

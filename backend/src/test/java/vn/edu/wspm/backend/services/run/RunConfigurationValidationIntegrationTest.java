@@ -47,6 +47,7 @@ class RunConfigurationValidationIntegrationTest {
         String v2 = new ClassPathResource("db/migration/V2__complete_laptop_combo_schema.sql").getContentAsString(StandardCharsets.UTF_8);
         var definitions = Pattern.compile("(?ms)^(?:CREATE TABLE|ALTER TABLE) `.*?;").matcher(v2);
         int count = 0; while (definitions.find()) { setup.execute(definitions.group()); count++; } assertEquals(47, count);
+        vn.edu.wspm.backend.testsupport.ExecutionSchema.apply(setup);
         p.add("spring.datasource.url", MYSQL::getJdbcUrl); p.add("spring.datasource.username", MYSQL::getUsername);
         p.add("spring.datasource.password", MYSQL::getPassword); p.add("spring.flyway.enabled", () -> false);
         p.add("spring.sql.init.mode", () -> "never"); p.add("spring.jpa.hibernate.ddl-auto", () -> "validate");

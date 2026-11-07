@@ -3,7 +3,7 @@ import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { authSession } from 'auth/session';
 import App from './App';
-import { datasetApi } from 'api/admin/data-mining';
+import { datasetApi, miningRunApi } from 'api/admin/data-mining';
 import { patternHttpClient } from 'pages/pattern/PatternHttpClient';
 jest.mock('./pages/combo/ComboHttpClient', () => ({ comboHttpClient: require('./pages/combo/ComboClient').unavailableComboClient }));
 
@@ -99,4 +99,20 @@ test.each(['/admin/patterns', '/admin/patterns/?page=2#detail'])('actual App ope
   expect(await screen.findByText('Chưa có mining run.')).toBeInTheDocument();
   expect(runs).toHaveBeenCalledTimes(1);
   expect(screen.queryByText('Chức năng đang được chuẩn bị')).not.toBeInTheDocument();
+});
+
+test('run deep URL reaches status reader through the actual authenticated Admin shell', async () => {
+  const id = '11111111-2222-4333-8444-555555555555';
+  authSession.useStore.setState({ status: 'authenticated', accessToken: 'test-token', user: {
+    userId: 'admin-fixture', username: 'fixture', email: null, displayName: 'Fixture admin',
+    status: 'ACTIVE', roles: ['ADMIN'], emailVerified: false,
+  } });
+  Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: jest.fn(() => ({
+    observe: jest.fn(), unobserve: jest.fn(), disconnect: jest.fn(),
+  })) });
+  const read = jest.spyOn(miningRunApi, 'read').mockImplementation(() => new Promise(() => undefined));
+  render(<MemoryRouter initialEntries={['/admin/mining-runs/' + id]}><App/></MemoryRouter>);
+  expect(await screen.findByRole('heading', { name: 'Chi tiết lần chạy khai phá', exact: true })).toBeInTheDocument();
+  expect(read).toHaveBeenCalledWith(id, expect.any(AbortSignal));
+  expect(screen.queryByText(/Chức năng legacy này/)).not.toBeInTheDocument();
 });

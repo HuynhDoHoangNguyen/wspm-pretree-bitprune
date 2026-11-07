@@ -4,6 +4,8 @@ import { createDatasetApi } from './datasets';
 import { createValidationApi } from './validation';
 import { createConversionApi } from './conversion';
 import { createMiningApi } from './mining';
+import { createMiningRunApi } from './mining-runs';
+import { createWorkspaceApi } from './workspace';
 
 let authAdapter: WdmAuthAdapter | null = null;
 
@@ -21,6 +23,9 @@ export const datasetApi = createDatasetApi(wdmApi);
 export const validationApi = createValidationApi(wdmApi);
 export const conversionApi = createConversionApi(wdmApi);
 export const miningApi = createMiningApi(wdmApi);
+export const miningRunApi = createMiningRunApi(wdmApi);
+export const workspaceApi = createWorkspaceApi(wdmApi);
+export type { MiningRunAccepted, MiningRunStatus, MiningRunState } from './mining-run-response';
 export type { MiningRequest, MiningPreview, MiningValidation } from './mining-response';
 export type { ConversionReport, ConversionArtifact, ConversionStatistics } from './conversion-response';
 export type { ValidationReport, ValidationDiagnostic, ValidationPosition } from './validation-response';
