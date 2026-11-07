@@ -46,6 +46,7 @@ docs/auth/*
 !docs/wdm/
 docs/wdm/*
 !docs/wdm/dataset-csv-contract.md
+!docs/wdm/mining-request-contract.md
 !docs/archive/
 !docs/archive/roadmaps/
 !docs/archive/roadmaps/**

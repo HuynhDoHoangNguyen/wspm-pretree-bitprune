@@ -136,7 +136,7 @@ function ClientHeader() {
               onKeyDown={handleSearchInput}
             />
             <Group spacing="xs">
-              {user?.roles.includes('ADMIN') && <Button component={Link} to="/admin/datasets" variant="light" size="sm">Trang quản trị</Button>}
+              {user?.roles.includes('ADMIN') && <Button component={Link} to="/admin" variant="light" size="sm">Trang quản trị</Button>}
               {legacyUser && (
                 <>
                   <Tooltip label="Giỏ hàng" position="bottom">

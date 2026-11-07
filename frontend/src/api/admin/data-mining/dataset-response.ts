@@ -34,7 +34,7 @@ export function readSnapshotDetail(value: unknown, id: string): SnapshotDetail {
   if (!d || typeof d !== 'object' || d.snapshotId !== id || !timestamp(d.createdAt)
     || !nullable(d.sourceType, ['CSV', 'DATABASE']) || !(d.sourceName === null || sourceName(d.sourceName))
     || !nullable(d.validationStatus, ['PENDING', 'VALID', 'INVALID', 'LEGACY_UNVERIFIED'])
-    || !nullable(d.conversionStatus, ['NOT_STARTED']) || !nullable(d.statisticsStatus, ['NOT_COMPUTED', 'COMPUTED'])
+    || !nullable(d.conversionStatus, ['NOT_STARTED', 'RUNNING', 'SUCCEEDED', 'FAILED']) || !nullable(d.statisticsStatus, ['NOT_COMPUTED', 'COMPUTED'])
     || !(d.rawSha256 === null || sha256(d.rawSha256))
     || !(d.rawSizeBytes === null || positiveCount(d.rawSizeBytes))
     || !(d.sequenceCount === null || (d.statisticsStatus === 'COMPUTED' && count(d.sequenceCount)))

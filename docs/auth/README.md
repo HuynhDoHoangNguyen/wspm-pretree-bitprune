@@ -228,7 +228,7 @@ SELECT ROW_COUNT() AS inserted_rows;
 Chỉ khi inserted_rows=1 mới chạy `COMMIT;`. Nếu 0 dòng hoặc lỗi duplicate/FK,
 chạy `ROLLBACK;` và kiểm tra lại; nếu ADMIN đã cấp từ trước thì không cấp lần nữa.
 Sau commit, đăng nhập account này tại [Admin](http://localhost:3000/admin).
-Kết quả: tới `/admin/datasets`; `/admin/account` hiển thị identity có ADMIN.
+Kết quả hiện tại: tới `/admin` (trang hướng dẫn); `/admin/account` hiển thị identity có ADMIN.
 Không cần restart backend. Quyền hiện tại được đọc từ database khi kiểm tra phiên.
 
 ### Bước 8 — Checklist test tay
@@ -479,7 +479,9 @@ R6 và exact-real comparator equivalence vẫn mở như trước.
 
 Owner đã chấp thuận kế hoạch chỉnh UI/điều hướng; đây không phải thay đổi API Auth,
 schema, quyền truy cập hoặc lifecycle token/cookie. Sau `/me` thành công, đăng nhập
-ở Client hay Admin đều dùng role hiện tại: ADMIN → `/admin/datasets`, CUSTOMER → `/`.
+ở Client hay Admin đều dùng role hiện tại: ADMIN → `/admin`, CUSTOMER → `/`.
+Trang đích ADMIN được cập nhật sang trang hướng dẫn trong đợt cải thiện UI/UX
+sau WDM-03.8; hợp đồng API và vòng đời shared session giữ nguyên.
 Header Client có Trang quản trị khi có ADMIN; header Admin có Về cửa hàng trong
 cùng tab và cùng session, không truyền token trên URL. Shortcut cũ cũng tuân theo
 role hiện tại thay vì hiển thị Admin cho mọi người.

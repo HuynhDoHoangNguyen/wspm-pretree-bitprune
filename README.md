@@ -102,6 +102,21 @@ không được public qua web. Giữ storage và metadata MySQL cùng nhau khi 
 đổi cấu hình không tự di chuyển artifact đã lưu. Chi tiết response, giới hạn
 upload và xử lý lỗi: [CSV/snapshot contract](docs/wdm/dataset-csv-contract.md).
 
+WDM-03.5 bổ sung service nội bộ lưu `sequences.spmf` và `mapping.json` dưới
+`<snapshotId>/conversions/<attemptId>/` trong cùng private storage root. Mỗi file
+bị giới hạn bởi `WDM_CONVERSION_MAX_ARTIFACT_BYTES` (mặc định 67.108.864 bytes).
+Backup phải giữ nguyên artifact cùng metadata/hash MySQL; không sửa/xóa file đã
+công bố. Claim `RUNNING` bị bỏ dở hoặc commit chưa xác định cần reconciliation,
+không tự chiếm lại/xóa thư mục. Endpoint conversion chưa nối service này; API
+tạo/xem/tải kết quả thuộc WDM-03.6.
+
+WDM-03.6 đã nối API Admin: `POST /api/v1/admin/dataset-snapshots/{id}/conversion`
+chạy đồng bộ và trả 200 khi đã xác minh kết quả; `GET` cùng URL đọc trạng thái.
+Tải artifact qua `GET .../{id}/artifacts/sequence` hoặc `.../artifacts/mapping`,
+cùng shared ADMIN Bearer Auth. Không truyền body/query, token trong URL, `force`
+hoặc retry FAILED/RUNNING. GET/download chỉ đọc và xác minh integrity; file thiếu/
+bị sửa không tự sửa hoặc chuyển đổi lại. Giao diện conversion thuộc WDM-03.7.
+
 > [!IMPORTANT]
 > **Bạn KHÔNG CẦN phải mở MySQL Workbench để chạy script tạo bảng thủ công!**
 > 

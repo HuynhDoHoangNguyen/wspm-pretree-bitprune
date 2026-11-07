@@ -81,7 +81,7 @@ describe('Admin Data & Mining navigation', () => {
     expect(screen.getByRole('heading', { level: 2, name: label })).toBeInTheDocument();
     expect(within(nav).getByRole('link', { name: label })).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getAllByRole('link')).toHaveLength(3);
-    expect(screen.queryByText('Chức năng đang được chuẩn bị') !== null).toBe(path !== '/admin/datasets');
+    expect(screen.queryByText('Chức năng đang được chuẩn bị') !== null).toBe(path === '/admin/patterns');
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.queryByText(/không có dữ liệu/i)).not.toBeInTheDocument();
   });
@@ -137,7 +137,7 @@ describe('Admin Data & Mining navigation', () => {
   it('integrates with the actual DefaultNavbar while retaining legacy links and child navigation', () => {
     render(<Feature fullNavbar/>);
     expect(screen.getByRole('navigation', { name: 'Dữ liệu & Khai phá' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Trang chủ' })).toHaveAttribute('href', '/admin');
+    expect(screen.getByRole('link', { name: 'Trang chủ Admin' })).toHaveAttribute('href', '/admin');
     expect(screen.getByRole('link', { name: 'Sản phẩm' })).toHaveAttribute('href', '/admin/product');
     fireEvent.click(screen.getByRole('link', { name: 'Sản phẩm' }));
     expect(screen.getByRole('link', { name: 'Danh mục sản phẩm' })).toHaveAttribute('href', '/admin/category');
