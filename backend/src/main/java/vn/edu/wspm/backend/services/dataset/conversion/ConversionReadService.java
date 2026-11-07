@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
+import java.util.function.LongSupplier;
 
 import static vn.edu.wspm.backend.services.dataset.conversion.ConversionArtifactCodec.invalid;
 
@@ -82,6 +83,12 @@ public class ConversionReadService {
     }
 
     public VerifiedBundle verified(String id) {
+        return verifiedMeasured(id, System::nanoTime).bundle();
+    }
+
+    /** Measures only the existing verified storage calls, excluding DB reads and codec parsing. */
+    public MeasuredBundle verifiedMeasured(String id, LongSupplier ticker) {
+        java.util.Objects.requireNonNull(ticker);
         StoredValidationReport.canonicalId(id);
         if (!capacity.tryAcquire()) throw unavailable();
         long start = System.nanoTime();
@@ -89,21 +96,39 @@ public class ConversionReadService {
             var snapshot = repository.read(id);
             var result = repository.completed(snapshot);
             Instant started = time(operation(snapshot), "startedAt"), completed = time(operation(snapshot), "completedAt");
-            raw.verifiedBytes(id, snapshot.getRawFilePath(), snapshot.getRawSha256(), StoredValidationReport.rawSize(snapshot)); budget(start);
+            long ioStart = ticker.getAsLong();
+            raw.verifiedBytes(id, snapshot.getRawFilePath(), snapshot.getRawSha256(), StoredValidationReport.rawSize(snapshot));
+            long ioNanos = elapsed(ticker, ioStart); budget(start);
+            ioStart = ticker.getAsLong();
             byte[] sequence = storage.read(id, result.attemptId(), "sequences.spmf", result.sequence());
-            byte[] mapping = storage.read(id, result.attemptId(), "mapping.json", result.mapping()); budget(start);
+            ioNanos = Math.addExact(ioNanos, elapsed(ticker, ioStart));
+            ioStart = ticker.getAsLong();
+            byte[] mapping = storage.read(id, result.attemptId(), "mapping.json", result.mapping());
+            ioNanos = Math.addExact(ioNanos, elapsed(ticker, ioStart)); budget(start);
             var verified = codec.verify(sequence, mapping); budget(start);
             var current = repository.read(id);
             if (!verified.statistics().equals(result.statistics()) || !result.equals(repository.completed(current))
                     || !started.equals(time(operation(current), "startedAt")) || !completed.equals(time(operation(current), "completedAt"))) throw invalid();
             log.debug("Conversion read verified: snapshotId={}, sequenceBytes={}, mappingBytes={}", id, sequence.length, mapping.length);
-            return new VerifiedBundle(result, mapper.completed(result, started, completed), sequence, mapping);
+            return new MeasuredBundle(new VerifiedBundle(result, mapper.completed(result, started, completed), sequence, mapping), ioNanos);
         } catch (ApplicationException expected) { throw expected; }
         catch (Exception failure) {
             var safe = new IllegalStateException("Conversion read failed: " + failure.getClass().getSimpleName());
             safe.setStackTrace(failure.getStackTrace()); log.error("Conversion read unavailable: snapshotId={}", id, safe);
             throw unavailable();
         } finally { capacity.release(); }
+    }
+
+    private static long elapsed(LongSupplier ticker, long start) {
+        long duration = ticker.getAsLong() - start;
+        if (duration < 0) throw new IllegalArgumentException("Monotonic input ticker required");
+        return duration;
+    }
+    public record MeasuredBundle(VerifiedBundle bundle, long datasetIoNanos) {
+        public MeasuredBundle {
+            java.util.Objects.requireNonNull(bundle);
+            if (datasetIoNanos < 0) throw new IllegalArgumentException("Nonnegative input I/O required");
+        }
     }
 
     private void budget(long start) {

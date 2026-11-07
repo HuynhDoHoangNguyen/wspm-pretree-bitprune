@@ -2,7 +2,8 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { useSharedAuth } from 'auth/session';
-import { miningApi, MiningPreview, MiningValidation, WdmApiError } from 'api/admin/data-mining';
+import { miningApi, miningRunApi, MiningPreview, MiningValidation, WdmApiError } from 'api/admin/data-mining';
+import { acceptedRun } from 'api/admin/data-mining/mining-run-test-data';
 import MiningConfigForm from './MiningConfigForm';
 jest.mock('auth/session', () => ({ useSharedAuth: jest.fn() }));
 const identity = useSharedAuth as unknown as jest.Mock;
@@ -16,6 +17,7 @@ function page() { return <MantineProvider><MiningConfigForm initialSnapshotId={i
 function value(text = '14') { fireEvent.change(screen.getByLabelText(/Giá trị minsup/), { target: { value: text } }); }
 const viewButton = () => screen.getByRole('button', { name: 'Xem trước dữ liệu' });
 const checkButton = () => screen.getByRole('button', { name: 'Kiểm tra cấu hình' });
+const createButton = () => screen.getByRole('button', { name: 'Tạo lần chạy' });
 beforeEach(() => {
   Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: jest.fn(() => ({ observe: jest.fn(), unobserve: jest.fn(), disconnect: jest.fn() })) });
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: jest.fn(() => ({ matches: false, addListener: jest.fn(), removeListener: jest.fn(), addEventListener: jest.fn(), removeEventListener: jest.fn() })) });
@@ -23,6 +25,24 @@ beforeEach(() => {
   read = jest.spyOn(miningApi, 'preview').mockResolvedValue(preview()); validate = jest.spyOn(miningApi, 'validate').mockResolvedValue(checked());
 });
 afterEach(() => jest.restoreAllMocks());
+it('requires current supported config, creates once, locks input and retains unknown result until explicit reset', async () => {
+  let reject!: (error: unknown) => void;
+  const post = jest.spyOn(miningRunApi, 'create').mockReturnValue(new Promise((resolve, r) => { reject = r; }));
+  render(page()); value(); expect(createButton()).toBeDisabled(); fireEvent.click(checkButton());
+  await waitFor(() => expect(createButton()).toBeEnabled()); fireEvent.click(createButton()); fireEvent.click(createButton());
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1)); expect(screen.getByLabelText(/Snapshot ID/)).toBeDisabled();
+  await act(async () => { reject(new WdmApiError('http', 503, 'SERVICE_UNAVAILABLE', 'private')); });
+  expect(await screen.findByText('Chưa xác định kết quả tạo run')).toBeVisible(); expect(createButton()).toBeDisabled();
+  value('15'); expect(screen.getByText('Chưa xác định kết quả tạo run')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: /Tạo yêu cầu mới/ })); expect(createButton()).toBeDisabled();
+});
+it('invalidates create eligibility on config edit and passes confirmed acceptance to parent', async () => {
+  const onAccepted = jest.fn(); jest.spyOn(miningRunApi, 'create').mockResolvedValue(acceptedRun());
+  render(<MantineProvider><MiningConfigForm initialSnapshotId={id} onAccepted={onAccepted}/></MantineProvider>); value();
+  fireEvent.click(checkButton()); await waitFor(() => expect(createButton()).toBeEnabled());
+  value('15'); expect(createButton()).toBeDisabled(); value('14'); fireEvent.click(checkButton());
+  await waitFor(() => expect(createButton()).toBeEnabled()); fireEvent.click(createButton()); await waitFor(() => expect(onAccepted).toHaveBeenCalledWith(acceptedRun()));
+});
 it('selects both algorithm and absolute mode and sends a fractional configured value', async () => {
   validate.mockResolvedValue({ ...checked(), algorithm: 'WSPM_BITPRUNE', minimumSupport: { mode: 'ABSOLUTE', configuredValue: 0.25, relativeFraction: null, effectiveThreshold: 0.25 } });
   render(page());

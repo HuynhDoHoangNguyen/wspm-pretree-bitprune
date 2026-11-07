@@ -73,6 +73,7 @@ class ProductItemMappingIntegrationTest {
         int count = 0;
         while (definitions.find()) { jdbc.execute(definitions.group()); count++; }
         assertEquals(47, count);
+        vn.edu.wspm.backend.testsupport.ExecutionSchema.apply(jdbc);
         jdbc.update("INSERT INTO CATEGORY(category_id,name,slug) VALUES ('cat','Test','test')");
         for (String id : List.of("a", "b", "c", "d", "é", " exact ")) {
             jdbc.update("INSERT INTO PRODUCT(product_id,sku,name,slug,category_id,current_price,status) VALUES (?,?,?,?,'cat',1,'DISCONTINUED')",

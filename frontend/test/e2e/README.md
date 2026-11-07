@@ -1,5 +1,127 @@
 # Browser E2E gates
 
+## WDM-05.10 real Engine E2E Gate
+
+Use existing pinned dependencies, JDK 21, Maven, Node, Docker/MySQL 8.4 and
+Microsoft Edge. From repository root, build to a **fresh** output directory:
+
+```powershell
+$env:BUILD_PATH='../.agent-workspace/phase-wdm/WDM-05.10-build-' + [guid]::NewGuid().ToString('N')
+$env:CI='false'
+npm --prefix frontend run build
+mvn -B -pl backend -am package -DskipTests
+$env:WDM_E2E_BUILD_DIR=$env:BUILD_PATH.Substring(3)
+$env:WDM_ENGINE_REGRESSION='1'
+node frontend/test/e2e/engine-run.mjs
+```
+
+`-DskipTests` still compiles the test-only helpers; do not use
+`-Dmaven.test.skip=true` or `clean`. A normal production build retains existing
+lint warnings; strict `CI=true` currently rejects unrelated legacy warnings.
+The regression flag runs the full core/backend suites serially on this gate's
+owned datasource after browser cases. Without the flag, that regression is
+not executed and must be reported separately. Run frontend regression/type/lint
+checks separately; the runner never changes dependency versions.
+
+This runner serves the actual CRA build over loopback HTTPS with Secure cookies
+and real shared Auth. A new labelled disposable MySQL starts empty and receives
+actual Flyway V1, V2, V3 and Hibernate validation. It uses neither the earlier
+definitions-only dataset bootstrap nor a mocked Auth/HTTP success harness.
+Owner `.env`, database, running processes and storage are not modified.
+
+Production classes/dependencies are extracted from the exact backend JAR.
+Only four explicitly allowed E2E helper classes, compiled from backend test
+sources outside production component scan, are added to that application's
+classpath. No JUnit/test-library classpath or public observation route is added.
+The original retained result is read non-destructively in the same JVM using a
+bounded, atomically published run-ID inbox. A transparent test-only engine
+delegate captures actual structural input and supports a bounded first-call
+latch. It always calls the real engine; it never substitutes results or metrics.
+Neither helper nor the core oracle bridge may occur in production JARs.
+
+Eight base browser groups cover the real CSV upload/validation/conversion and
+downloads, both engines at ABSOLUTE 0.1/PERCENT 14/PERCENT 100, queued-artifact
+tamper, loss of an actual committed 202, and zero/underflow refusal. Each JVM
+retains at most two runs; each positive pair also proves a third POST gets 503
+without insertion. JVMs restart between batches; no automatic acknowledgement
+or durable pattern storage is introduced. Hidden tabs are brought forward for
+UI assertions because the real client deliberately pauses background polling.
+
+Every successful original full canonical `Pattern.serialize() -> exact support`
+map/count is compared against both direct engines and the existing independent
+tiny-database oracle. The separate Java verifier uses byte-identical packaged
+core code, confirms downloaded publication hashes, actual engine input structure,
+configured/resolved raw double bits and per-run native metrics vs DB/API/UI.
+Copied support/structural/deletion/one-ULP corruption controls must fail. Any
+unexpected mining disagreement stops the gate; never adjust thresholds or core
+to make it pass. R6 stays open; zero controls never enter an engine.
+
+Evidence goes to a unique ignored `.agent-workspace/phase-wdm/WDM-05.10-*`
+directory: `PREPARATION.json` (source/build/helper/tool hashes), `FLYWAY.tsv`,
+`RESULT.json`, downloaded synthetic artifacts, complete `.map.tsv`/`.properties`
+captures, verifier/negative-control/service logs and desktop/mobile screenshots.
+Original files and failed attempts remain for review. No passwords, JWTs, cookie
+jars or Auth storage dumps are written. Private staging/TLS/storage is removed
+only after absolute-path ownership checks; only this invocation's labelled
+container and spawned JVM/browser are stopped. Timing/heap observations under
+test instrumentation are correctness evidence, not performance benchmarks.
+
+The real gate also covers the actual Admin shell's run-detail route. The former
+mocked smoke entry did not include that shell and could not catch its missing
+run-detail allowlist; `src/App.test.tsx` now provides a focused regression.
+
+The workspace follow-up extends this same real gate with snapshot rediscovery
+after URL-filtered refresh, current SPMF/mapping storage metadata, denial of all
+four new read endpoints to anonymous clients, newest-first run history, and
+full retained capacity without release. It captures storage/history desktop/
+mobile and full-capacity screenshots. Select the "Tạo dữ liệu mới" tab before file-picker
+upload in the library. The extra group gives eight browser groups plus the
+optional ninth reactor-regression group. Timestamp decoders accept live Instant
+nanoseconds as well as persisted DATETIME microseconds. Legacy display/ID
+limitations are covered by focused MySQL and frontend tests, without manually
+seeding mining results or changing the real browser acquisition fixture.
+
+## WDM-05.9 metrics UI extension (mocked HTTP)
+
+From repository root:
+
+```powershell
+node frontend/test/e2e/execution-ui-smoke.mjs --metrics
+```
+
+This preserves the six execution UI groups and adds four metrics groups: both
+verified algorithm identifiers/native-counter labels, historical unknown scopes,
+missing versus measured zero/output absence, and stale metrics on failed GET.
+Synthetic values test full unsigned precision and presentation, not mining output
+or benchmark performance. One request produces one status/metrics snapshot;
+the panel must not issue its own GET.
+
+The flag retains separate evidence in a fresh `.agent-workspace/phase-wdm/WDM-05.9-browser-*` directory,
+including measured desktop/mobile/legacy screenshots and RESULT.json. The default
+05.8 mode/output path remains supported. Both modes use fixture identity in the
+real client/store/guard and intercepted HTTP, not a real backend/Auth/DB gate.
+
+## WDM-05.8 browser UI smoke (mocked HTTP)
+
+Run from repository root with existing pinned E2E dependencies installed:
+
+```powershell
+node frontend/test/e2e/execution-ui-smoke.mjs
+```
+
+The test-only entry bundles actual Admin configuration/detail routes, guard,
+hooks and shared API client with esbuild. It installs a synthetic identity in
+the real in-memory store and intercepts HTTP through Playwright; this does not
+verify real backend/shared-Auth/database integration or replace WDM-05.10.
+No production test hook, dependency update, real account or owner DB is used.
+
+Six groups cover SUPPORTED create/double click, queued/running/succeeded polling,
+direct refresh GET only, GET error retaining the last snapshot, lost POST without
+replay and CUSTOMER guard. Desktop/mobile screenshots (including a 390px
+horizontal-overflow check) and RESULT.json are retained under ignored
+`.agent-workspace/phase-wdm/WDM-05.8-browser-*`. Every invocation preserves prior evidence. The local server uses an ephemeral
+loopback port; browser/server are closed after the run, with no artifact deletion.
+
 ## WDM-04.6 configuration gate
 
 Dataset mode now runs **25 cases: the existing 17 plus 8 configuration groups**.
@@ -233,3 +355,12 @@ Admin home, upload receipt, Admin account, snapshot desktop/mobile/dark and clie
 account. These are review evidence, not screenshots of development/user data or
 a claim of complete WCAG/cross-browser certification. Auth mode retains its
 separate session-race harness and optional CRA proxy check.
+
+Run-detail header polish keeps these fixture-only smoke modes. It adds a grouped
+summary, compact run ID with exact full-URL copying, readable UTC+07 update time
+(raw UTC retained in the time element), and dataset/history navigation buttons.
+The smoke also intercepts read-only workspace capacity/dataset/storage requests;
+these fixtures do not prove real backend availability. Desktop/mobile screenshots
+in the fresh evidence directory cover the header and unchanged metrics rendering.
+`header-desktop.png` and `header-mobile.png` are cropped summary previews;
+`completed*.png` includes dataset navigation and the full detail page.

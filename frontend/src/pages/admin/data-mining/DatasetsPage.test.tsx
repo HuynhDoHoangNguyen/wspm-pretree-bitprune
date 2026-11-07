@@ -2,7 +2,7 @@ import React from 'react';
 import { runInThisContext } from 'vm';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { useSharedAuth } from 'auth/session';
 import { setWdmAuthAdapter } from 'api/admin/data-mining';
 import DataMiningGuard from './DataMiningGuard';
@@ -21,7 +21,7 @@ let fetchMock: jest.Mock, unauthorized: jest.Mock, forbidden: jest.Mock;
 let session: AbortController;
 
 function page() {
-  return <MemoryRouter><MantineProvider><DataMiningGuard><DatasetsPage/></DataMiningGuard></MantineProvider></MemoryRouter>;
+  return <MemoryRouter initialEntries={['/admin/datasets?tab=create']}><MantineProvider><DataMiningGuard><DatasetsPage/></DataMiningGuard></MantineProvider></MemoryRouter>;
 }
 function exportForm() { return screen.getByRole('form', { name: 'Xuất dữ liệu đơn hàng' }); }
 function uploadForm() { return screen.getByRole('form', { name: 'Upload CSV' }); }
@@ -62,6 +62,34 @@ beforeEach(() => {
     onUnauthorized: unauthorized, onForbidden: forbidden });
 });
 afterEach(() => { setWdmAuthAdapter(null); jest.restoreAllMocks(); });
+
+it('separates list/create tabs, preserves list filters and form input across switching/back', () => {
+  function History() {
+    const location = useLocation(), navigate = useNavigate();
+    return <><output aria-label="Địa chỉ đang mở">{location.search}</output><button onClick={() => navigate(-1)}>Quay lại</button></>;
+  }
+  render(<MemoryRouter initialEntries={['/admin/datasets?search=orders&page=2']}><MantineProvider><History/><DatasetsPage/></MantineProvider></MemoryRouter>);
+  const list = screen.getByRole('tab', { name: 'Danh sách dữ liệu' });
+  const create = screen.getByRole('tab', { name: 'Tạo dữ liệu mới · Xuất đơn hàng hoặc upload CSV' });
+  expect(list).toHaveAttribute('aria-selected', 'true');
+  expect(screen.queryByRole('form', { name: 'Upload CSV' })).not.toBeInTheDocument();
+  fireEvent.click(create); expect(create).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByLabelText('Địa chỉ đang mở')).toHaveTextContent('search=orders&page=2&tab=create');
+  expect(uploadForm()).toBeVisible();
+  fireEvent.change(screen.getByLabelText(/Từ ngày/), { target: { value: '2026-11-01' } });
+  fireEvent.click(list); expect(screen.getByLabelText('Tìm tên file hoặc Snapshot ID')).toHaveValue('orders');
+  fireEvent.click(screen.getByRole('button', { name: 'Quay lại', exact: true }));
+  expect(create).toHaveAttribute('aria-selected', 'true'); expect(screen.getByLabelText(/Từ ngày/)).toHaveValue('2026-11-01');
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+it('supports keyboard tab selection without submitting either form', () => {
+  render(page());
+  const create = screen.getByRole('tab', { name: 'Tạo dữ liệu mới · Xuất đơn hàng hoặc upload CSV' });
+  fireEvent.keyDown(create, { key: 'Home' });
+  expect(screen.getByRole('tab', { name: 'Danh sách dữ liệu' })).toHaveFocus();
+  fireEvent.keyDown(screen.getByRole('tab', { name: 'Danh sách dữ liệu' }), { key: 'ArrowRight' });
+  expect(create).toHaveFocus(); expect(uploadForm()).toBeVisible(); expect(fetchMock).not.toHaveBeenCalled();
+});
 
 it('renders real forms without unsolicited API calls or unsupported pipeline actions', () => {
   render(page());

@@ -22,7 +22,8 @@ export default function Admin() {
     <Button onClick={() => void signOut()}>Đăng xuất</Button>
   </Stack>;
   const supported = ['/admin', '/admin/datasets', '/admin/mining-runs', '/admin/patterns', ManagerPath.ACCOUNT].includes(normalized)
-    || matchPath(ManagerPath.DATASETS + '/:snapshotId', normalized) !== null;
+    || matchPath(ManagerPath.DATASETS + '/:snapshotId', normalized) !== null
+    || matchPath(ManagerPath.MINING_RUNS + '/:runId', normalized) !== null;
   return <AppShell fixed header={<DefaultHeader/>} navbar={<DefaultNavbar/>}>
     {supported ? <Outlet/> : <Alert role="status">Chức năng legacy này chưa được nối với API hiện tại. Phiên đăng nhập đã được xác thực.</Alert>}
   </AppShell>;

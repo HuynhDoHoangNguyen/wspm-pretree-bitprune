@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { authSession } from 'auth/session';
 import App from './App';
-import { datasetApi } from 'api/admin/data-mining';
+import { datasetApi, miningRunApi } from 'api/admin/data-mining';
 
 
 
@@ -63,5 +63,21 @@ test('snapshot deep URL reaches detail through the actual authenticated Admin sh
   render(<MemoryRouter initialEntries={['/admin/datasets/' + id]}><App/></MemoryRouter>);
   expect(await screen.findByRole('heading', { name: 'Chi tiết snapshot', exact: true })).toBeInTheDocument();
   expect(detail).toHaveBeenCalledWith(id, expect.any(AbortSignal));
+  expect(screen.queryByText(/Chức năng legacy này/)).not.toBeInTheDocument();
+});
+
+test('run deep URL reaches status reader through the actual authenticated Admin shell', async () => {
+  const id = '11111111-2222-4333-8444-555555555555';
+  authSession.useStore.setState({ status: 'authenticated', accessToken: 'test-token', user: {
+    userId: 'admin-fixture', username: 'fixture', email: null, displayName: 'Fixture admin',
+    status: 'ACTIVE', roles: ['ADMIN'], emailVerified: false,
+  } });
+  Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: jest.fn(() => ({
+    observe: jest.fn(), unobserve: jest.fn(), disconnect: jest.fn(),
+  })) });
+  const read = jest.spyOn(miningRunApi, 'read').mockImplementation(() => new Promise(() => undefined));
+  render(<MemoryRouter initialEntries={['/admin/mining-runs/' + id]}><App/></MemoryRouter>);
+  expect(await screen.findByRole('heading', { name: 'Chi tiết lần chạy khai phá', exact: true })).toBeInTheDocument();
+  expect(read).toHaveBeenCalledWith(id, expect.any(AbortSignal));
   expect(screen.queryByText(/Chức năng legacy này/)).not.toBeInTheDocument();
 });

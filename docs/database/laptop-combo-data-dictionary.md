@@ -1,6 +1,6 @@
 # Từ điển dữ liệu hệ thống gợi ý combo cửa hàng laptop
 
-**Trạng thái:** V2 SCHEMA CONTRACT — application implementation còn từng phần
+**Trạng thái:** V2 SCHEMA CONTRACT + additive V3 execution ownership — application implementation còn từng phần
 
 Schema 45 bảng đã được đưa vào Flyway V2. Kiểm tra read-only database local ngày
 2026-11-03 xác nhận V2 thành công, checksum khớp và tập bảng thực tế khớp toàn bộ
@@ -8,7 +8,8 @@ Schema 45 bảng đã được đưa vào Flyway V2. Kiểm tra read-only databa
 `flyway_schema_history`. Việc bảng tồn tại không đồng nghĩa entity, DTO, API hoặc
 frontend tương ứng đã hoàn tất.
 
-Tài liệu này là danh mục đầy đủ các bảng và trường của schema V2. Nó phải được
+Tài liệu này là danh mục đầy đủ các bảng và trường của schema V2, bổ sung
+ownership V3 tại mục 8.3. Nó phải được
 đọc cùng `laptop-combo-system-redesign.md`. Các kiểu dữ liệu đã được hiện thực
 cho MySQL 8.4 trong V2; mọi điều chỉnh tiếp theo phải dùng migration V3+ và không
 được thay đổi mining semantics hoặc làm mất khả năng tái lập.
@@ -657,6 +658,32 @@ Mục đích: cấu hình, trạng thái, kết quả tổng và phép đo một
 | `legacy_metadata_json` | `JSON` nullable | Chỉ giữ provenance V1 không ánh xạ được; run mới để null |
 | `error_message` | `VARCHAR(2000)` nullable | Lỗi đã lọc dữ liệu nhạy cảm |
 | `created_at`, `started_at`, `finished_at` | `DATETIME(6)` | Audit vòng đời |
+| `execution_owner_id` | `VARCHAR(40)` nullable | V3: UUID của coordinator nhận run |
+| `execution_attempt_id` | `VARCHAR(40)` nullable | V3: UUID của lần nhận; fence cùng owner |
+| `execution_lease_until` | `DATETIME(6)` nullable | V3: hạn lease theo UTC DB clock |
+
+V3 yêu cầu ba trường ownership cùng null hoặc cùng có giá trị, index
+`(status, execution_lease_until)`, không backfill hoặc sửa status run V2.
+Runtime migration: `backend/src/main/resources/db/migration/V3__mining_run_execution_ownership.sql`.
+Chỉ run có ownership và lease hết hạn, ở QUEUED/RUNNING mới thuộc recovery.
+Run legacy/unowned giữ nguyên. WDM-05.5 dùng mã lỗi enum cố định trong
+`error_message`; SUCCEEDED chưa xác nhận durable pattern storage. Upgrade V3
+đã được kiểm thử trên MySQL riêng; trạng thái database owner vẫn NOT VERIFIED.
+
+Cập nhật WDM-05.7 (2026-11-07): đã xác minh local `127.0.0.1:3307/wspm_combo`
+có V3 SUCCESS/checksum `1697070581`; Flyway validate/migrate(target=3)/validate
+PASS, 0 migration mới vì V3 đã có trước lượt này. Ba cột nullable, CHECK cùng
+null/cùng có giá trị và index lease đều tồn tại. Không chạy lại DDL hoặc repair.
+
+WDM-05.6 dùng các cột metrics V2 hiện có, không thêm migration. Với run mới thành
+công, status/timestamps và toàn bộ metrics commit cùng CAS ownership/lease:
+dataset_io_ms đo ba verified storage read (raw/sequence/mapping) trong worker;
+preprocessing/dfs/complete_algorithm lấy nguyên phép đo core. total_execution_ms
+đo từ sau claim, trước refresh đến engine return, loại trừ queue, pre-admission
+và terminal DB finalization. Các scope có phần lồng nhau, không cộng tất cả.
+Nanos chuyển millis bằng chia nguyên 1.000.000. output_io_ms vẫn null; failure
+không có complete metrics thì để null. Peak heap là JVM-wide sampling trong
+thuật toán, không phải toàn worker hoặc RAM riêng. Không backfill dữ liệu cũ.
 
 Không có `top_k`, `minWeight`, hệ số ranking hoặc ComboScore trong run.
 

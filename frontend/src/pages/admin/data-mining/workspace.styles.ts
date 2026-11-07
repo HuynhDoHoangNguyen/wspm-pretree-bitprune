@@ -61,6 +61,8 @@ export default createStyles(theme => {
         borderColor: dark ? theme.colors.blue[6] : theme.colors.blue[3], color: dark ? theme.white : theme.colors.blue[8], boxShadow: theme.shadows.xs },
       '@media (max-width: 600px)': { fontSize: 13, padding: '10px 4px', flexDirection: 'column', gap: 4 },
     },
+    executionGrid: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 24, alignItems: 'start',
+      '@media (max-width: 1000px)': { gridTemplateColumns: 'minmax(0, 1fr)' }, '& > *': { minWidth: 0 } },
     table: {
       overflow: 'auto', maxHeight: 480, border: `1px solid ${dark ? theme.colors.dark[3] : theme.colors.gray[4]}`, borderRadius: 0,
       '& table': { minWidth: 650, borderCollapse: 'separate', borderSpacing: 0, fontFamily: 'inherit' },

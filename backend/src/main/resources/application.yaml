@@ -59,6 +59,14 @@ logging:
     org.hibernate.orm.jdbc.bind: "OFF"
 
 wdm:
+  execution:
+    enabled: ${WDM_EXECUTION_ENABLED:false}
+    parallelism: ${WDM_EXECUTION_PARALLELISM:1}
+    queue-capacity: ${WDM_EXECUTION_QUEUE_CAPACITY:1}
+    shutdown-grace-millis: ${WDM_EXECUTION_SHUTDOWN_GRACE_MILLIS:30000}
+    lease-millis: ${WDM_EXECUTION_LEASE_MILLIS:60000}
+    heartbeat-millis: ${WDM_EXECUTION_HEARTBEAT_MILLIS:10000}
+    recovery-batch: ${WDM_EXECUTION_RECOVERY_BATCH:100}
   conversion:
     max-artifact-bytes: ${WDM_CONVERSION_MAX_ARTIFACT_BYTES:67108864}
   validation:

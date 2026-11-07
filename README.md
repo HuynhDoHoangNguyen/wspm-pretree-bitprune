@@ -117,12 +117,46 @@ cùng shared ADMIN Bearer Auth. Không truyền body/query, token trong URL, `fo
 hoặc retry FAILED/RUNNING. GET/download chỉ đọc và xác minh integrity; file thiếu/
 bị sửa không tự sửa hoặc chuyển đổi lại. Giao diện conversion thuộc WDM-03.7.
 
+WDM-05.3 bổ sung `POST /api/v1/admin/mining-runs` với đúng bốn trường cấu hình
+đã chốt. Backend xác minh publication, chuẩn bị input và weights bằng mining-core,
+và mặc định **trả 503, không tạo run** vì `WDM_EXECUTION_ENABLED=false`.
+WDM-05.4 thêm provider thật; có thể opt-in bằng `WDM_EXECUTION_ENABLED=true`.
+Mặc định `WDM_EXECUTION_PARALLELISM=1`, `WDM_EXECUTION_QUEUE_CAPACITY=1`,
+`WDM_EXECUTION_SHUTDOWN_GRACE_MILLIS=30000`. HTTP 202 chỉ sau durable commit và
+admission acknowledgement, không chờ mining; không tự retry POST.
+
+Executor giữ complete result trong bộ nhớ để bàn giao, chưa lưu patterns xuống DB.
+Reservation, queued/running job và outcome chưa acknowledge cùng dùng tối đa hai
+slot theo cấu hình mặc định. Hết slot trả 503 kể cả worker đã rảnh; chưa có consumer
+production để tự acknowledge. Không có TTL/discard để nhận thêm job. WDM-05.5
+cập nhật DB bằng CAS QUEUED → RUNNING → SUCCEEDED/FAILED, có ownership/attempt
+fencing, heartbeat và recovery run hết lease. Mặc định lease 60 giây, heartbeat
+10 giây, recovery tối đa 100 run/lượt; lease không phải timeout mining.
+WDM-05.6 ghi counts, timing và sampled JVM heap cùng lần chuyển SUCCEEDED.
+Total đo worker refresh+engine, không gồm queue/claim/finalization DB; heap là
+sample trong thuật toán. Output I/O để null khi chưa có bước ghi patterns.
+SUCCEEDED chưa có nghĩa patterns đã được lưu xuống DB (WDM-06). Kết quả chưa
+durable qua restart; đây chưa phải workflow vận hành hoàn chỉnh.
+Chi tiết/evidence: [Run creation and execution contract](docs/wdm/mining-request-contract.md).
+
+WDM-05.7 thêm `GET /api/v1/admin/mining-runs/{runId}` (shared ADMIN Bearer),
+không query/body. GET đọc status/config/timestamps/metrics trong DB, hoạt động
+cả khi execution tắt; counts/timing/bytes BIGINT trả chuỗi thập phân, chưa đo là
+null. GET không chạy engine hoặc acknowledge kết quả. SUCCEEDED chưa xác nhận
+patterns đã được lưu bền vững.
+
 > [!IMPORTANT]
 > **Bạn KHÔNG CẦN phải mở MySQL Workbench để chạy script tạo bảng thủ công!**
 > 
 > Hệ thống tích hợp sẵn **Flyway Migration** và quét `classpath:db/migration` khi
 > Backend khởi động. Nhánh hiện tại chứa `V1__initial_schema.sql` và
-> `V2__complete_laptop_combo_schema.sql`; V2 chuyển schema 12 bảng của V1 sang
+> `V2__complete_laptop_combo_schema.sql` và `V3__mining_run_execution_ownership.sql`.
+> V3 bổ sung ba cột ownership/lease nullable cho MINING_RUN; đã kiểm thử upgrade
+> trên MySQL riêng, chưa áp dụng vào database của owner trong task WDM-05.5.
+> Trong WDM-05.7 (2026-11-07), đã xác minh database local `127.0.0.1:3307/wspm_combo`
+> có V3 SUCCESS, checksum `1697070581`. Flyway validate/migrate(target=3)/validate
+> PASS; migrate thực hiện 0 migration vì V3 đã tồn tại trước lượt kiểm tra này.
+> Backend cần schema V3 để Hibernate validate. V2 chuyển schema 12 bảng của V1 sang
 > schema đích 45 bảng. Kiểm tra read-only database local ngày 2026-11-03 xác nhận
 > V1 và V2 đều có `success = 1` trong `flyway_schema_history`; checksum V2
 > `727165286` khớp file runtime, đủ đúng 45 bảng và không còn bảng

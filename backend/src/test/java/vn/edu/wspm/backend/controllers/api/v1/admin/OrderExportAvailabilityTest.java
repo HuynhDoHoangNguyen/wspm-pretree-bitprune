@@ -53,6 +53,7 @@ class OrderExportAvailabilityTest {
         int count = 0;
         while (definitions.find()) { setup.execute(definitions.group()); count++; }
         assertEquals(47, count);
+        vn.edu.wspm.backend.testsupport.ExecutionSchema.apply(setup);
         properties.add("spring.datasource.url", MYSQL::getJdbcUrl);
         properties.add("spring.datasource.username", MYSQL::getUsername);
         properties.add("spring.datasource.password", MYSQL::getPassword);

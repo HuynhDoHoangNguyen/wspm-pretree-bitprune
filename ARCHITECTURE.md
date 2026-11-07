@@ -296,6 +296,70 @@ AuthSessionService keeps explicit TransactionTemplate boundaries and
 account-before-session locks, with named methods for session creation, rotation,
 revocation and current-identity checks.
 
+WDM-05.1/05.2 introduce the synchronous `services/run/engine/MiningEngine`
+boundary and `CoreMiningEngineAdapter`, preserving full pattern/support maps,
+native metrics and per-invocation sampler ownership. WDM-05.3 adds ADMIN POST
+`/api/v1/admin/mining-runs`: `RunPreparationService` verifies publication bytes,
+parses through the accepted codec and computes weights/resolved support with core
+calculators. `repositories/run/RunCreationRepository` locks/rebinds the snapshot
+and commits QUEUED in a short REQUIRES_NEW transaction. `RunCreationService`
+activates a reserved `RunExecutionAdmission` only after that commit. WDM-05.4
+supplies opt-in `RunExecutionConfiguration` / `ManagedRunExecutionAdmission`:
+fixed workers, bounded queue and one bounded registry spanning reservation through
+completed-result acknowledgement. It verifies committed run metadata before submit
+and reverifies actual publication bytes before calling the engine outside DB
+transactions. Completion stages/read/ack are internal Java APIs, not HTTP routes.
+Default execution.enabled=false preserves 503/no insertion; enabled creation can
+return 202 before mining completes. Outcomes are in memory and retain capacity
+until explicit handoff acknowledgement; no automatic consumer or pattern
+persistence exists. WDM-05.5 binds owner/attempt/lease in the creation transaction
+and uses fenced CAS transitions QUEUED -> RUNNING -> SUCCEEDED/FAILED in short
+REQUIRES_NEW transactions. A separate maintenance scheduler renews live queued
+and running leases and reconciles uncertain finalization through DB readback;
+it never reruns the engine. Bounded recovery fails only expired owned nonterminal
+rows, leaving unowned and legacy rows untouched. Success status alone cannot
+acknowledge or discard the complete in-memory result. New lifecycle times use
+Instant/UTC and the DB clock over DATETIME(6); legacy getter signatures remain.
+
+WDM-05.6 adds immutable RunMetricsCapture and MeasuredRunPreparation outside the
+unchanged engine boundary. ConversionReadService times only its three verified
+storage calls; worker refresh propagates this observation without extra reads.
+The worker total spans refresh through engine return after claim; queue wait,
+pre-admission preparation, claim and terminal DB reconciliation are excluded.
+Native core preprocessing/DFS/complete timing and algorithm JVM-wide sampled
+heap are preserved. Times stay nanos internally and are independently floored
+to milliseconds for existing V2 columns; missing output I/O is null. Success
+CAS writes the complete metric payload atomically with SUCCEEDED, and readback
+must match the entire expected payload before handoff confirmation. Retried DB
+finalization retains the original result and capture, never remeasures or mines.
+
+WDM-05.7 adds ADMIN GET /api/v1/admin/mining-runs/{runId} through a dedicated
+controller/service/mapper/read repository. A single PK query projects only
+status/config/times/counts/metrics and internal diagnostic/provenance evidence;
+no live entity escapes the short read transaction. UTC DATETIME values are
+formatted in SQL before Instant parsing to avoid JDBC default-zone shifts.
+BIGINT counts/times/bytes become exact decimal strings, including unsigned values
+above Long.MAX_VALUE. Public errors use fixed allowlisted messages; raw diagnostics,
+owner/attempt/lease, tokens and artifacts are absent. GET is independent of the
+execution flag/registry and never renews, recovers, acknowledges or invokes mining.
+
+WDM-05.8 consumes POST creation and GET status in the existing Admin React slice.
+Strict execution decoders project public fields and retain nullable BIGINT
+decimal strings/UTC microseconds. The configuration form grants an explicit
+single-flight create only for its current SUPPORTED binding; a confirmed 202
+navigates to a guarded detail route. Bounded serial polling is GET-only and
+Auth/run/controller-fenced, with hidden-page/unmount cleanup and manual resume.
+Unknown POST outcomes retain submitted configuration without replay or guessed
+run identity. Last-confirmed status survives transient GET errors with a stale
+label. Durable pattern handoff remains 06.
+
+WDM-05.9 adds MiningRunMetricsPanel using that exact report, with a pure row/scope
+and decimal-string presentation helper. Two counters, six timing rows (ms) and
+algorithm sampled heap (bytes) retain null/zero and full unsigned precision.
+Known WDM-05.6 descriptors authorize current scope explanations; historical
+values stay visible with unknown scope. Digit grouping is string-only; there
+is no recomputation, extra request/polling or derived benchmark claim.
+
 Application code must not copy mining logic into controllers/services. Future
 combo use cases should call a deliberate application boundary around
 `mining-core` and map scientific results into API-specific DTOs.
@@ -305,7 +369,15 @@ combo use cases should call a deliberate application boundary around
 `compose.yaml` creates a local MySQL 8.4 service and persistent named volume.
 Hibernate uses `ddl-auto: validate`; schema ownership therefore belongs to an
 explicit, reviewed schema/migration process. The active Flyway classpath under
-`backend/src/main/resources/db/migration/` contains V1 and V2. V2 promotes the
+`backend/src/main/resources/db/migration/` contains V1, V2 and additive V3
+execution ownership/attempt/lease columns. V3 was verified with actual Flyway
+upgrade on isolated MySQL; the owner database was not migrated in WDM-05.5.
+WDM-05.7 separately inspected the local owner DB 127.0.0.1:3307/wspm_combo and
+ran actual Flyway validate -> migrate(target=3) -> validate. V3 was already
+SUCCESS (checksum 1697070581); migrate executed zero migrations. Its columns,
+ownership CHECK and lease index were verified, with MINING_RUN row count zero
+before/after. No repair/clean/baseline or application startup was performed.
+V2 promotes the
 12-table V1 schema to the 45-table target schema. A read-only verification of
 the local development database on 2026-11-03 found successful V1 and V2 rows in
 `flyway_schema_history`, a V2 checksum of `727165286` matching the runtime file,
@@ -404,6 +476,24 @@ Other browser engines, real production deployment and export-capacity benchmarks
 are not established by this gate; owner acceptance is recorded in the checklist.
 
 ## Dependency rules
+
+Mining workspace read projections add newest-first paginated snapshot/run
+metadata queries, Admin-only current publication file paths and a synchronized
+instance-local registry capacity view. They do not read mining maps, acknowledge
+outcomes, execute work or persist patterns. Storage projection is metadata only;
+historical run input publication is not inferred from current snapshot paths.
+UI auxiliary reads use the existing Auth adapter and abort on session changes.
+
+WDM-05.10's dedicated `frontend/test/e2e/engine-run.mjs` verifies actual packaged
+application classes/dependencies, built CRA UI/shared Auth, HTTPS, disposable
+MySQL 8.4 and Flyway V1-V3. Backend test sources outside production scan observe
+the original retained full maps non-destructively; a separate test-only core
+bridge compares them to both direct miners and the existing brute-force oracle.
+Fresh JVM batches preserve the two-result/no-auto-ack boundary. No result route
+or durable pattern persistence is added. Test instrumentation is not benchmark
+evidence. Reproduction and evidence schema: `frontend/test/e2e/README.md`.
+The actual Admin shell now admits `/admin/mining-runs/:runId`, with a regression
+through `App`; the earlier isolated mocked-HTTP UI entry did not cover this shell.
 
 - `mining-core` must not depend on Spring, the backend, frontend or database.
 - `backend` may depend on `mining-core`; the reverse dependency is forbidden.
