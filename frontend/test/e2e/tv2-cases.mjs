@@ -7,6 +7,7 @@ import path from 'node:path';
 export async function runTv2Cases({ browser, httpsOrigin: origin, sql, temp, logDirectory }) {
   const fixture = JSON.parse(readFileSync(path.join(temp, 'tv2-metadata.json'), 'utf8'));
   assert.equal(fixture.label, 'TEST_FIXTURE_NOT_MINING_OUTPUT');
+  assert.equal(fixture.comboCreation, 'COMBO_GENERATION_SERVICE_AND_EXECUTABLE_WRITER');
   const password = process.env.TV2_INT14_BROWSER_PASSWORD || randomBytes(18).toString('base64url');
   const users = {}, contexts = [], cases = [];
   const evidence = { label: fixture.label, browser: browser.version(), status: 'RUNNING', cases, realMining: 'NOT VERIFIED', productionAuthority: 'NOT VERIFIED' };
@@ -74,7 +75,10 @@ export async function runTv2Cases({ browser, httpsOrigin: origin, sql, temp, log
     const value = sql(`SET SESSION group_concat_max_len=1048576;
       SELECT combo_id,batch_id,name,combo_kind,currency_code,reference_original_price,reference_sale_price,CAST(support_abs AS CHAR),support_ratio,pattern_weight,explanation,discount_type,stacking_policy FROM COMBO WHERE combo_id='${safeId(id)}';
       SELECT itemset_order,item_order,product_id,quantity,unit_price_snapshot,is_anchor_eligible,is_discount_eligible FROM COMBO_ITEM WHERE combo_id='${safeId(id)}' ORDER BY itemset_order,item_order;
-      SELECT s.pattern_id,s.is_primary,p.canonical_pattern,CAST(p.support_abs AS CHAR),p.support_ratio,p.pattern_weight FROM COMBO_SOURCE s JOIN PATTERN p ON p.pattern_id=s.pattern_id WHERE s.combo_id='${safeId(id)}' ORDER BY s.pattern_id;
+      SELECT s.pattern_id,s.is_primary,p.canonical_pattern,CAST(p.support_abs AS CHAR),p.support_ratio,p.weighted_support,p.pattern_weight,p.pattern_weight_policy FROM COMBO_SOURCE s JOIN PATTERN p ON p.pattern_id=s.pattern_id WHERE s.combo_id='${safeId(id)}' ORDER BY s.pattern_id;
+      SELECT pi.pattern_id,pi.itemset_order,pi.item_order,pi.item_id FROM PATTERN_ITEM pi JOIN COMBO_SOURCE s ON s.pattern_id=pi.pattern_id WHERE s.combo_id='${safeId(id)}' ORDER BY pi.pattern_id,pi.itemset_order,pi.item_order;
+      SELECT d.run_id,d.item_id,d.product_id,d.product_name_snapshot,d.sku_snapshot,d.occurrence_count,d.sequence_support,d.item_weight FROM RUN_ITEM_STATISTIC d JOIN COMBO_BATCH b ON b.run_id=d.run_id JOIN COMBO c ON c.batch_id=b.batch_id WHERE c.combo_id='${safeId(id)}' ORDER BY d.item_id;
+      SELECT HEX(m.receipt_digest),HEX(m.input_digest),m.pattern_count,m.pattern_item_count,m.dictionary_count FROM MINING_RUN_COMPLETION m JOIN COMBO_BATCH b ON b.run_id=m.run_id JOIN COMBO c ON c.batch_id=b.batch_id WHERE c.combo_id='${safeId(id)}';
       SELECT HEX(e.content_digest),HEX(e.evidence_digest),HEX(e.representation_digest) FROM COMBO_BATCH_WRITE_EVIDENCE e JOIN COMBO c ON c.batch_id=e.batch_id WHERE c.combo_id='${safeId(id)}';`);
     return createHash('sha256').update(value).digest('hex');
   }
@@ -87,14 +91,16 @@ export async function runTv2Cases({ browser, httpsOrigin: origin, sql, temp, log
     }
     assert.equal(sql('SELECT COUNT(*) FROM COMBO_BATCH_WRITE_EVIDENCE;'), '8');assert.equal(sql('SELECT COUNT(*) FROM COMBO;'), '24');
     assert.equal(sql(`SELECT CAST(support_abs AS CHAR) FROM PATTERN WHERE pattern_id=18446744073709551615;`), '9007199254740993');
-    evidence.fixture = { batches: 8, combos: 24, patternRun: fixture.patternRun, patternCount: 23, migrations: sql('SELECT GROUP_CONCAT(version ORDER BY installed_rank) FROM flyway_schema_history WHERE success=1;') };
+    evidence.fixture = { batches: 8, combos: 24, comboCreation: fixture.comboCreation, patternRun: fixture.patternRun, patternCount: 23, migrations: sql('SELECT GROUP_CONCAT(version ORDER BY installed_rank) FROM flyway_schema_history WHERE success=1;') };
   });
   await test('anonymous and Customer UI gates plus real server 401/403', async () => {
     const anon = await context(), p = await anon.newPage();await p.goto(origin + '/admin/patterns');await p.locator('input[name=username]').waitFor();
     for (const route of ['/api/v1/admin/combos', '/api/v1/admin/mining-runs']) assert.equal((await anon.request.get(origin + route)).status(), 401);
+    assert.equal((await anon.request.post(origin + '/api/v1/admin/combos/missing/review', { data: {} })).status(), 401);
     const customer = await login('tv2.customer');await customer.page.goto(origin + '/admin/combos');await customer.page.getByText(/không có quyền ADMIN/i).waitFor();
     for (const route of ['/api/v1/admin/combos', '/api/v1/admin/mining-runs']) assert.equal((await customer.c.request.get(origin + route, { headers: { Authorization: 'Bearer ' + customer.token } })).status(), 403);
     assert.equal((await customer.c.request.post(origin + '/api/v1/admin/combos/missing/review', { headers: { Authorization: 'Bearer ' + customer.token }, data: {} })).status(), 403);
+    await customer.page.goto(origin + '/admin/patterns');await customer.page.getByText(/không có quyền ADMIN/i).waitFor();
   });
   await test('Pattern exact IDs/itemsets/dictionary ALL filter/support bounds/paging/capability', async () => {
     const { page } = await login();await page.goto(origin + '/admin/patterns');await page.getByRole('combobox', { name: 'Mining run', exact: true }).waitFor();
@@ -119,6 +125,8 @@ export async function runTv2Cases({ browser, httpsOrigin: origin, sql, temp, log
     assert.equal(await page.getByRole('combobox', { name: 'Mining run', exact: true }).inputValue(), '');await page.getByText('Trang run 2', { exact: true }).waitFor();
     const back = adminApi(page, '/api/v1/admin/mining-runs');await page.getByRole('button', { name: 'Run trước', exact: true }).click();await back;
     assert.equal((await selectRun(page, fixture.emptyRun)).runPatternTotal, '0');await page.getByText('Run thành công, không có Pattern.', { exact: true }).waitFor();
+    const notReady = await selectRun(page, fixture.notReadyRun);assert.equal(notReady.resultState, 'NOT_READY');assert.equal(notReady.runPatternTotal, null);
+    await page.getByText('Run đang chờ hoặc đang chạy, chưa có kết quả sử dụng được.', { exact: true }).waitFor();
     await selectRun(page, fixture.patternRun);await page.getByLabel('Support tối thiểu (sequence)', { exact: true }).fill('999999999999999999');
     const none = adminApi(page, `/api/v1/admin/mining-runs/${fixture.patternRun}/patterns`);await page.getByRole('button', { name: 'Áp dụng', exact: true }).click();const empty = await none;assert.equal(envelope(empty, await empty.json()).filteredTotal, '0');await page.getByText('Không có Pattern khớp bộ lọc.', { exact: true }).waitFor();
     await selectRun(page, fixture.emptyRun);sql(`UPDATE MINING_RUN SET pattern_count=24 WHERE run_id='${fixture.patternRun}';`);
@@ -149,13 +157,35 @@ export async function runTv2Cases({ browser, httpsOrigin: origin, sql, temp, log
     await page.getByLabel('Ghi chú review', { exact: true }).fill('TEST_FIXTURE rejection reason');const reply = adminApi(page, '/api/v1/admin/combos/' + row.comboId + '/review', 'POST');await page.getByRole('button', { name: 'Xác nhận quyết định', exact: true }).click();assert.equal((await reply).status(), 200);
     assert.equal(stored(row.comboId).status, 'REJECTED');assert.equal(stored(row.comboId).note, 'TEST_FIXTURE rejection reason');assert.equal(protectedState(row.comboId), before);
   });
-  await test('two browser Admin contexts preserve winner audit on opposite stale decision', async () => {
+  await test('two Admin contexts preserve winner audit on opposite conflict and same-decision retry', async () => {
     const a = await login('tv2.admin1'), b = await login('tv2.admin2');await a.page.goto(origin + '/admin/combos');await b.page.goto(origin + '/admin/combos');
     const list = await comboList(a.page, fixture.batches[3], 'DRAFT', 'MIXED_SEQUENCE');const row = list.items[0].data,before = protectedState(row.comboId);await comboList(b.page, fixture.batches[3], 'DRAFT', 'MIXED_SEQUENCE');
     const da = await openCombo(a.page, row),db = await openCombo(b.page, row);assert.equal(da.reviewToken, db.reviewToken);
     await review(a.page, row, 'APPROVE');const winner = stored(row.comboId);const conflict = await review(b.page, row, 'REJECT', 'TEST_FIXTURE opposite', 409);assert.equal(conflict.code, 'REVIEW_DECISION_CONFLICT');
     await b.page.getByText('Quyết định hoặc dữ liệu đã thay đổi. Đang tải lại.', { exact: true }).waitFor();await b.page.getByText('Không có Combo khớp bộ lọc.', { exact: true }).waitFor();assert.deepEqual(stored(row.comboId), winner);assert.equal(winner.reviewer, users['tv2.admin1']);assert.equal(protectedState(row.comboId), before);
-    evidence.concurrent = { comboId: row.comboId, conflictStatus: 409, winnerId: winner.reviewer, protectedDigest: before };
+    const retry = await b.c.request.post(origin + '/api/v1/admin/combos/' + row.comboId + '/review', {
+      headers: { Authorization: 'Bearer ' + b.token }, data: { decision: 'APPROVE', reviewNote: 'TEST_FIXTURE retry must not replace audit', expectedReviewToken: db.reviewToken },
+    });assert.equal(retry.status(), 200);const repeated = envelope(retry, await retry.json());assert.equal(repeated.outcome, 'ALREADY_DECIDED');
+    assert.deepEqual(stored(row.comboId), winner);assert.equal(protectedState(row.comboId), before);
+    evidence.concurrent = { comboId: row.comboId, conflictStatus: 409, sameDecision: 'ALREADY_DECIDED', winnerId: winner.reviewer, protectedDigest: before };
+  });
+  await test('current catalog freshness blocks stale submit and refreshed allowedActions consistently', async () => {
+    const { page } = await login();await page.goto(origin + '/admin/combos');const list = await comboList(page, fixture.batches[4], 'DRAFT', 'MIXED_SEQUENCE');
+    const row = list.items[0].data, before = protectedState(row.comboId), detail = await openCombo(page, row);
+    const product = safeId(detail.itemsets[0].items[0].productId);
+    const original = JSON.parse(sql(`SELECT JSON_OBJECT('version',CAST(version AS CHAR),'updated',CAST(updated_at AS CHAR)) FROM PRODUCT WHERE product_id='${product}';`));
+    assert.match(original.version, /^[0-9]+$/);assert.match(original.updated, /^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:.]+$/);
+    sql(`UPDATE PRODUCT SET version=version+1 WHERE product_id='${product}';`);
+    try {
+      const blocked = await review(page, row, 'APPROVE', undefined, 409);assert.equal(blocked.code, 'REVIEW_BLOCKED');
+      await page.getByText('Quyết định hoặc dữ liệu đã thay đổi. Đang tải lại.', { exact: true }).waitFor();
+      await comboList(page, fixture.batches[4], 'DRAFT', 'MIXED_SEQUENCE');const refreshed = await openCombo(page, row);
+      assert.deepEqual(refreshed.assessment.allowedActions, []);assert.ok(refreshed.assessment.blockingIssues.some(i => i.code === 'REVIEW_EVIDENCE_UNVERIFIED'));
+      assert.equal(await page.getByRole('button', { name: 'Duyệt', exact: true }).isDisabled(), true);
+      assert.equal(stored(row.comboId).status, 'DRAFT');assert.equal(stored(row.comboId).reviewer, null);assert.equal(protectedState(row.comboId), before);
+      await page.screenshot({ path: path.join(logDirectory, 'review-freshness-blocked.png'), fullPage: true });
+      evidence.freshness = { comboId: row.comboId, staleSubmit: 409, refreshedActions: [], protectedDigest: before };
+    } finally {sql(`UPDATE PRODUCT SET version=${original.version},updated_at='${original.updated}' WHERE product_id='${product}';`);}
   });
   await test('last DRAFT page recovers finitely and clears removed detail', async () => {
     const { page } = await login();await page.goto(origin + '/admin/combos');const list = await comboList(page, '', 'DRAFT');assert.equal(list.filteredTotal, '21');

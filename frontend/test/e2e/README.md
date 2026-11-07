@@ -3,7 +3,7 @@
 TV2 Pattern/Combo fixture gate: `node frontend/test/e2e/tv2-run.mjs` from root.
 It uses a test-classpath backend, actual application build and owned disposable
 MySQL with V1–V4. It does not use the running demo server or fake HTTP responses.
-See [INT-14 manual setup and mining handoff](../../../docs/research/TV2-INT-14_manual_and_mining_handoff.md)
+See [NEXT-04 manual setup and mining handoff](../../../docs/research/TV2-NEXT-04_manual_and_mining_handoff.md)
 for compilation/classpath prerequisites, optional manual mode, expected results
 and cleanup. Its fixture acceptance is separate from real mining acceptance.
 

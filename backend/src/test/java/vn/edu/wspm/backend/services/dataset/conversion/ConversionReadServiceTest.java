@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -70,6 +71,30 @@ class ConversionReadServiceTest {
     private void noWrites() {
         verify(repository, never()).claim(any(), anyString()); verify(repository, never()).publish(any(), any());
         verify(repository, never()).fail(any());
+    }
+
+    @Test void internalBundleBindsRawProvenanceAndChecksConsumerCapsBeforeCopy() throws Exception {
+        var publication=published();
+        var bundle=reads.verified(ID);
+        assertEquals(HASH,bundle.rawSha256());assertEquals("4",bundle.rawSizeBytes());
+        assertThrows(ApplicationException.class,()->bundle.sequenceBytes(1));
+        assertThrows(ApplicationException.class,()->bundle.mappingBytes(1));
+        byte[] copy=bundle.sequenceBytes(Math.toIntExact(publication.sequence().sizeBytes()));copy[0]='9';
+        assertEquals('1',bundle.sequenceBytes()[0]);noWrites();
+    }
+
+    @Test void actualVerifiedReadFeedsAdapterWithoutConvertingOrChangingPublication() throws Exception {
+        var publication=published();
+        var adapter=new vn.edu.wspm.backend.services.mining.handoff.WdmMiningInputAdapter(reads,codec,
+                new vn.edu.wspm.backend.services.mining.handoff.WdmMiningInputAdapter.Limits(10000,100,100),
+                a->vn.edu.wspm.backend.services.mining.handoff.WdmMiningInputAdapter.Labels.missing(),Optional::empty);
+        var result=adapter.prepare(ID,new vn.edu.wspm.backend.services.mining.handoff.WdmMiningInputAdapter.Configuration(
+                "WSPM_PRETREE",vn.edu.wspm.config.MinimumSupport.absolute(.4)));
+        assertEquals(Map.of(1,"p"),result.artifacts().products());
+        assertEquals(publication.mapping().sha256(),result.artifacts().binding().mappingSha256());
+        assertEquals(publication.validationSha256(),result.artifacts().binding().validationSha256());
+        assertEquals(HASH,result.artifacts().binding().rawSha256());
+        assertTrue(result.minerInput().isEmpty());noWrites();
     }
 
     @Test void notStartedStateNeedsNoArtifactIoAndDoesNotMutateMetadata() throws Exception {
