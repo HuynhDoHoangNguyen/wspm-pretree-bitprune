@@ -40,12 +40,12 @@ function translate(error: unknown): never {
 
 /** Uses the existing shared-auth carrier, parser, denial handling and session/request cancellation. */
 export function createPatternHttpClient(transport: Transport = wdmApi): PatternClient {
-  const runPath = (runId: string) => '/v1/admin/mining-runs/' + encodeURIComponent(runId);
+  const runPath = (runId: string) => '/v1/admin/pattern-runs/' + encodeURIComponent(runId);
   const bound = (value?: string) => value === '' ? undefined : value;
   return {
     async runs(page, size, options) {
       try {
-        const data = await transport.get<unknown>('/v1/admin/mining-runs', { query: { page, size }, signal: options?.signal, expectedStatus: 200 });
+        const data = await transport.get<unknown>('/v1/admin/pattern-runs', { query: { page, size }, signal: options?.signal, expectedStatus: 200 });
         requireData(paged(data, page, size) && count(data.total));
         const items = (data.items as unknown[]).map(item => {
           requireData(object(item) && text(item.runId) && !!item.runId && nullableText(item.snapshotId)

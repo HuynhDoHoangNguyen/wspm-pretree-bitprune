@@ -42,8 +42,7 @@ class DraftBatchWriterMySqlTest {
         mysql=new OwnedMySql();ds=mysql.dataSource();jdbc=new JdbcTemplate(ds);
         try {
             Path base=Files.isDirectory(Path.of("backend/migration-review"))?Path.of("backend/migration-review"):Path.of("migration-review");
-            var configuration=Flyway.configure().dataSource(ds).locations("classpath:db/migration",
-                    "filesystem:"+base.resolve("TV2-INT-08F").toAbsolutePath(),"filesystem:"+base.resolve("INT-09_10").toAbsolutePath())
+            var configuration=Flyway.configure().dataSource(ds).resourceProvider(vn.edu.wspm.backend.testsupport.LegacyComboMigrations.provider(true))
                     .callbacks(new NullablePatternMetricPreflight()).cleanDisabled(true);
             assertEquals(3,configuration.target("3").load().migrate().migrationsExecuted);
             jdbc.update("INSERT INTO DATASET_SNAPSHOT(snapshot_id,source_type,source_name,validation_status,conversion_report_json,sequence_count) VALUES('migration-reference','CSV','fixture','VALID','{}',1)");

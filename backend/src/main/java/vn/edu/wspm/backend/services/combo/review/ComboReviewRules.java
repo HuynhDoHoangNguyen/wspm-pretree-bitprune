@@ -9,6 +9,14 @@ import static vn.edu.wspm.backend.services.combo.review.ComboReview.*;
 
 /** Shared read/submit eligibility, independent of the unresolved auth/token/storage adapters. */
 public final class ComboReviewRules {
+    public Assessment assess(Bundle bundle,ComboReviewAuthority.Check check){
+        var assessment=assess(bundle,check.policy(),check.evidence());
+        if("DRAFT".equals(bundle.row().comboStatus())&&"CATALOG_PRICE_OR_ELIGIBILITY_CHANGED".equals(check.binding())){
+            var issues=new ArrayList<>(assessment.blockingIssues());issues.add(new Issue("CATALOG_PRICE_OR_ELIGIBILITY_CHANGED"));
+            return new Assessment(assessment.primaryPatternId(),assessment.sourceCount(),List.of(),issues,assessment.warnings());
+        }
+        return assessment;
+    }
     public Assessment assess(Bundle bundle,Policy policy,Evidence evidence) {
         var base=new ComboReviewReadiness().diagnostics(bundle);
         var issues=new ArrayList<>(base.blockingIssues());

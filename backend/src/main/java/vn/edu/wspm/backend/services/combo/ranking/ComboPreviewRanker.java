@@ -21,8 +21,9 @@ public final class ComboPreviewRanker {
     public Result preview(CandidateGrouping.Result input,Context context,String anchorProductId,Configuration config) {
         var errors=new TreeSet<String>();
         if(input==null || !input.completed() || !input.errors().isEmpty()) errors.add("GROUPING_NOT_COMPLETED");
-        if(blank(anchorProductId) || anchorProductId.codePointCount(0,anchorProductId.length())>40
-                || !StandardCharsets.UTF_8.newEncoder().canEncode(anchorProductId)) errors.add("INVALID_ANCHOR");
+        boolean all=context!=null&&vn.edu.wspm.backend.services.combo.generation.ProductSelection.flexiblePolicy(context.evaluationPolicyVersion())&&blank(anchorProductId);
+        if(!all&&(blank(anchorProductId) || anchorProductId.codePointCount(0,anchorProductId.length())>40
+                || !StandardCharsets.UTF_8.newEncoder().canEncode(anchorProductId))) errors.add("INVALID_ANCHOR");
         if(config==null) errors.add("CONFIGURATION_REQUIRED");
         else {
             if(!"SUPPORT_THEN_PATTERN_WEIGHT_V1".equals(config.rankingPolicy())) errors.add("UNSUPPORTED_RANKING_POLICY");
@@ -72,7 +73,10 @@ public final class ComboPreviewRanker {
             for(var set:group.itemsets()) for(var item:set.items()) flags.add(new AnchorFlag(set.itemsetOrder(),item.itemOrder(),
                     item.productId(),group.comboKind()==ComboKind.SAME_ORDER_BUNDLE || set.itemsetOrder()==first));
             eligibility.add(new GroupEligibility(group,flags));
-            if(flags.stream().anyMatch(flag->flag.anchorEligible() && flag.productId().equals(anchorProductId))) eligible.add(group);
+            // Category-selection preview filters membership across the whole Combo.
+            // Structural anchor flags remain first-itemset facts for persistence/review.
+            boolean categoryView=vn.edu.wspm.backend.services.combo.generation.CategorySelection.VERSION.equals(context.evaluationPolicyVersion());
+            if(all||flags.stream().anyMatch(flag->(categoryView||flag.anchorEligible()) && flag.productId().equals(anchorProductId))) eligible.add(group);
         }
         eligible.sort((a,b)->CandidateGrouper.primaryOrder().compare(a.primary(),b.primary()));
         int limit=config.k().min(BigInteger.valueOf(eligible.size())).intValueExact();

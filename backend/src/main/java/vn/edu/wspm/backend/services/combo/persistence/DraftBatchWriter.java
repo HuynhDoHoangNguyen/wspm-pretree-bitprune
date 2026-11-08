@@ -38,7 +38,7 @@ public final class DraftBatchWriter {
         var limits=store.limits();
         if(request==null)return result("INVALID","INPUT_INVALID",null);
         if(!bounded(request,limits))return result("INVALID","RESOURCE_LIMIT_EXCEEDED",null);
-        var serverRequest=new Request(request.grouping(),request.context(),request.preview(),request.writeIdentity(),request.batchId(),request.createdBy(),clock.instant().truncatedTo(ChronoUnit.MICROS),request.fields());
+        var serverRequest=new Request(request.grouping(),request.context(),request.preview(),request.writeIdentity(),request.batchId(),request.createdBy(),clock.instant().truncatedTo(ChronoUnit.MICROS),request.fields(),request.bounds());
         final DraftBatchWrite.Validation validation;
         try {validation=new DraftBatchPlanner().plan(serverRequest);}
         catch(IllegalArgumentException | NullPointerException invalid){return result("INVALID","INPUT_INVALID",null);}
@@ -48,7 +48,8 @@ public final class DraftBatchWriter {
             // Planner/ranker already canonicalize groups; sort the caller enumeration for identity hashing too.
             var grouping=new vn.edu.wspm.backend.services.combo.grouping.CandidateGrouping.Result(true,List.of(),request.grouping().groups().stream()
                     .sorted(Comparator.comparing(g->g.structureKey().serialized())).toList());
-            byte[] content=BatchCanonical.encode(JdbcDraftBatchStore.map("version","COMBO_DRAFT_CONTENT_V1","grouping",grouping,"plan",plan),limits.maxContentBytes());
+            byte[] content=store.nativeProtocol()?NativeComboContent.encode(grouping,plan,limits.maxContentBytes())
+                    :BatchCanonical.encode(JdbcDraftBatchStore.map("version","COMBO_DRAFT_CONTENT_V1","grouping",grouping,"plan",plan),limits.maxContentBytes());
             final DraftBatchAuthority.Decision decision;
             try {decision=authority.authorize(serverRequest,plan,JdbcDraftBatchStore.hash(content));}
             catch(RuntimeException unavailable) {log.error("Draft batch authority unavailable");return result("BLOCKED","AUTHORITY_UNAVAILABLE",plan);}
@@ -58,11 +59,14 @@ public final class DraftBatchWriter {
             if(!valid(auth,plan,JdbcDraftBatchStore.hash(content),limits))return result("BLOCKED","AUTHORITY_BINDING_INVALID",plan);
             byte[] evidence=BatchCanonical.encode(JdbcDraftBatchStore.map("version","COMBO_DRAFT_EVIDENCE_V1","runId",plan.context().runId(),
                     "miningReference",plan.context().publishedEvidenceRef(),"authorization",auth),limits.maxEvidenceBytes());
-            var outcome=reconcile?store.reconcile(plan,content,evidence):store.persist(serverRequest,plan,auth,content,evidence);
+            var outcome=reconcile?(store.nativeProtocol()?store.reconcile(plan,content,evidence,auth.resolvedEvidence()):store.reconcile(plan,content,evidence)):store.persist(serverRequest,plan,auth,content,evidence);
             log.info("Draft batch operation completed: status={}, combos={}",outcome.status(),plan.combos().size());
             return outcome;
         }catch(JdbcDraftBatchStore.Rejected invalid){return result("BLOCKED",invalid.code(),plan);}
-        catch(IllegalArgumentException invalid){return result("INVALID","PAYLOAD_OR_EVIDENCE_INVALID",plan);}
+        catch(IllegalArgumentException invalid){
+            log.warn("Draft batch encoding rejected: type={}","PAYLOAD_LIMIT_EXCEEDED".equals(invalid.getMessage())?"RESOURCE_LIMIT":"INVALID_CONTENT");
+            return result("INVALID","PAYLOAD_LIMIT_EXCEEDED".equals(invalid.getMessage())?"GENERATION_RESOURCE_LIMIT_EXCEEDED":"PAYLOAD_OR_EVIDENCE_INVALID",plan);
+        }
         catch(org.springframework.dao.DataAccessException | org.springframework.transaction.TransactionException unavailable) {
             log.error("Draft batch authority/database unavailable");return result("BLOCKED","AUTHORITY_OR_DATABASE_UNAVAILABLE",plan);
         }
@@ -75,18 +79,20 @@ public final class DraftBatchWriter {
                 &&p.context().policyConfirmationRef().equals(v.evaluationRef())&&c.weightPolicy().confirmationRef().equals(v.weightRef())
                 &&c.rankingConfirmationRef().equals(v.rankingRef())&&c.anchorConfirmationRef().equals(v.anchorRef())
                 &&text(v.commercialPolicyRef())&&p.context().catalogSnapshotRef().equals(v.catalogRef())
-                &&DraftBatchAuthority.miningReference(p.context().runId(),a.miningReceiptDigest()).equals(p.context().publishedEvidenceRef());
+                &&(DraftBatchAuthority.miningReference(p.context().runId(),a.miningReceiptDigest()).equals(p.context().publishedEvidenceRef())
+                    ||DraftBatchAuthority.nativeReference(p.context().runId(),a.miningReceiptDigest()).equals(p.context().publishedEvidenceRef()));
     }
     private static boolean bounded(Request r,JdbcDraftBatchStore.Limits l) {
+        int maximum=r.context()!=null&&vn.edu.wspm.backend.services.combo.generation.ProductSelection.flexiblePolicy(r.context().evaluationPolicyVersion())?Math.min(l.maxItems(),vn.edu.wspm.backend.services.combo.generation.ProductSelection.MAX_PRODUCTS):4;
         if(r.grouping()!=null) {
             if(r.grouping().groups().size()>l.maxGroups())return false;long sources=0;
             for(var g:r.grouping().groups()) {
                 sources+=g.sources().size();if(sources>l.maxSources())return false;
                 for(var s:g.sources()) {
                     var c=s.candidate();if(c==null)continue;
-                    if(c.itemsets().size()>4||c.source()==null||c.source().itemsets().size()>4)return false;
-                    if(c.itemsets().stream().mapToLong(set->set.items().size()).sum()>4
-                            ||c.source().itemsets().stream().mapToLong(set->set.items().size()).sum()>4)return false;
+                    if(c.itemsets().size()>maximum||c.source()==null||c.source().itemsets().size()>maximum)return false;
+                    if(c.itemsets().stream().mapToLong(set->set.items().size()).sum()>maximum
+                            ||c.source().itemsets().stream().mapToLong(set->set.items().size()).sum()>maximum)return false;
                 }
             }
         }

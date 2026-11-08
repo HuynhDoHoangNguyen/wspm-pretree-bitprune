@@ -27,12 +27,15 @@ export interface ComboDetail extends ComboSummary {
 export interface ReviewCommand { decision: Decision; reviewNote: string | null; expectedReviewToken: string }
 export interface ReviewResult { outcome: string; currentStatus: string | null; storedAudit: Audit | null; issues: string[] }
 export interface ComboClient {
+  batches?(page: number, size: number, options?: { signal?: AbortSignal }): Promise<BatchPage>;
   readonly reviewReady: boolean;
   readonly notePolicy?: { confirmed: boolean; rejectRequired: boolean; maxCodePoints: number };
   list(filters: ComboFilters, page: number, size: number, options?: { signal?: AbortSignal }): Promise<ComboPage>;
   detail(comboId: string, options?: { signal?: AbortSignal }): Promise<ComboDetail>;
   review(comboId: string, command: ReviewCommand, options?: { signal?: AbortSignal }): Promise<ReviewResult>;
 }
+export interface BatchSummary { batchId: string; runId: string; status: string; createdAt: string; comboCount: string; draftCount: string; approvedCount: string; rejectedCount: string }
+export interface BatchPage { page: number; size: number; total: string; items: BatchSummary[] }
 export class ComboClientError extends Error {
   constructor(public readonly status: number, public readonly code: string, public readonly requestId?: string | null,
     public readonly details?: unknown, public readonly path?: string | null) {

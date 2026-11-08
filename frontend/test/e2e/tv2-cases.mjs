@@ -43,16 +43,17 @@ export async function runTv2Cases({ browser, httpsOrigin: origin, sql, temp, log
   }
   const adminApi = (p, pathname, method = 'GET') => responseFor(p, r => new URL(r.url()).pathname === pathname && r.request().method() === method);
   async function selectRun(page, id) {
-    const reply = adminApi(page, `/api/v1/admin/mining-runs/${id}/patterns`);await page.getByRole('combobox', { name: 'Mining run', exact: true }).selectOption(id);
+    const reply = adminApi(page, `/api/v1/admin/pattern-runs/${id}/patterns`);await page.getByRole('combobox', { name: 'Mining run', exact: true }).selectOption(id);
     const response = await reply;assert.equal(response.status(), 200);return envelope(response, await response.json());
   }
   async function comboList(page, batch = '', status = '', kind = '') {
-    await page.getByLabel('Batch ID', { exact: true }).fill(batch);
+    assert.ok(batch,'Combo list must be scoped to a saved batch');
+    await page.goto(origin+'/admin/combos?batchId='+encodeURIComponent(batch));
     await page.getByLabel('Trạng thái Combo', { exact: true }).selectOption(status);
     await page.getByLabel('Loại Combo', { exact: true }).selectOption(kind);
     const reply = responseFor(page, r => {
-      const url = new URL(r.url());return url.pathname === '/api/v1/admin/combos' && r.request().method() === 'GET'
-        && (url.searchParams.get('batchId') || '') === batch && (url.searchParams.get('status') || '') === status
+      const url = new URL(r.url());return url.pathname === '/api/v1/admin/combos/batches/'+encodeURIComponent(batch)+'/combos' && r.request().method() === 'GET'
+        && (url.searchParams.get('status') || '') === status
         && (url.searchParams.get('comboKind') || '') === kind;
     });await page.getByRole('button', { name: 'Áp dụng bộ lọc', exact: true }).click();
     const response = await reply;assert.equal(response.status(), 200);return envelope(response, await response.json());
@@ -94,46 +95,46 @@ export async function runTv2Cases({ browser, httpsOrigin: origin, sql, temp, log
     evidence.fixture = { batches: 8, combos: 24, comboCreation: fixture.comboCreation, patternRun: fixture.patternRun, patternCount: 23, migrations: sql('SELECT GROUP_CONCAT(version ORDER BY installed_rank) FROM flyway_schema_history WHERE success=1;') };
   });
   await test('anonymous and Customer UI gates plus real server 401/403', async () => {
-    const anon = await context(), p = await anon.newPage();await p.goto(origin + '/admin/patterns');await p.locator('input[name=username]').waitFor();
-    for (const route of ['/api/v1/admin/combos', '/api/v1/admin/mining-runs']) assert.equal((await anon.request.get(origin + route)).status(), 401);
+    const anon = await context(), p = await anon.newPage();await p.goto(origin + '/admin/pattern-explorer');await p.locator('input[name=username]').waitFor();
+    for (const route of ['/api/v1/admin/combos', '/api/v1/admin/pattern-runs']) assert.equal((await anon.request.get(origin + route)).status(), 401);
     assert.equal((await anon.request.post(origin + '/api/v1/admin/combos/missing/review', { data: {} })).status(), 401);
     const customer = await login('tv2.customer');await customer.page.goto(origin + '/admin/combos');await customer.page.getByText(/không có quyền ADMIN/i).waitFor();
-    for (const route of ['/api/v1/admin/combos', '/api/v1/admin/mining-runs']) assert.equal((await customer.c.request.get(origin + route, { headers: { Authorization: 'Bearer ' + customer.token } })).status(), 403);
+    for (const route of ['/api/v1/admin/combos', '/api/v1/admin/pattern-runs']) assert.equal((await customer.c.request.get(origin + route, { headers: { Authorization: 'Bearer ' + customer.token } })).status(), 403);
     assert.equal((await customer.c.request.post(origin + '/api/v1/admin/combos/missing/review', { headers: { Authorization: 'Bearer ' + customer.token }, data: {} })).status(), 403);
-    await customer.page.goto(origin + '/admin/patterns');await customer.page.getByText(/không có quyền ADMIN/i).waitFor();
+    await customer.page.goto(origin + '/admin/pattern-explorer');await customer.page.getByText(/không có quyền ADMIN/i).waitFor();
   });
   await test('Pattern exact IDs/itemsets/dictionary ALL filter/support bounds/paging/capability', async () => {
-    const { page } = await login();await page.goto(origin + '/admin/patterns');await page.getByRole('combobox', { name: 'Mining run', exact: true }).waitFor();
+    const { page } = await login();await page.goto(origin + '/admin/pattern-explorer');await page.getByRole('combobox', { name: 'Mining run', exact: true }).waitFor();
     const initial = await selectRun(page, fixture.patternRun);assert.equal(initial.runPatternTotal, '23');assert.equal(initial.items.length, 20);assert.equal(initial.weightFilter.enabled, false);
     assert.equal(await page.getByLabel('Trọng số mẫu tối thiểu', { exact: true }).isDisabled(), true);
-    const next = adminApi(page, `/api/v1/admin/mining-runs/${fixture.patternRun}/patterns`);await page.getByRole('button', { name: 'Trang sau', exact: true }).click();assert.equal(envelope(await next, await (await next).json()).items.length, 3);
+    const next = adminApi(page, `/api/v1/admin/pattern-runs/${fixture.patternRun}/patterns`);await page.getByRole('button', { name: 'Trang sau', exact: true }).click();assert.equal(envelope(await next, await (await next).json()).items.length, 3);
     await page.getByRole('button', { name: 'Trang trước', exact: true }).click();await page.getByRole('button', { name: '18446744073709551615', exact: true }).waitFor();
     await page.getByRole('button', { name: '18446744073709551615', exact: true }).click();await page.getByRole('group', { name: 'Itemset 1', exact: true }).getByText(/Laptop snapshot/).waitFor();
     assert.equal(await page.getByRole('group', { name: 'Itemset 2', exact: true }).count(), 0);await page.getByText('Support (sequence): 9007199254740993', { exact: true }).waitFor();
     const search = page.getByLabel('Tìm sản phẩm theo tên hoặc SKU snapshot', { exact: true });await search.fill('SKU-T14-L');await page.getByRole('checkbox', { name: /Laptop snapshot/ }).check();
     await search.fill('SKU-T14-M');await page.getByRole('checkbox', { name: /Mouse snapshot/ }).check();
-    const all = adminApi(page, `/api/v1/admin/mining-runs/${fixture.patternRun}/patterns`);await page.getByRole('button', { name: 'Áp dụng', exact: true }).click();const allResponse = await all;
+    const all = adminApi(page, `/api/v1/admin/pattern-runs/${fixture.patternRun}/patterns`);await page.getByRole('button', { name: 'Áp dụng', exact: true }).click();const allResponse = await all;
     assert.deepEqual(new URL(allResponse.url()).searchParams.getAll('itemId').sort(), ['1', '2']);assert.equal(envelope(allResponse, await allResponse.json()).filteredTotal, '22');
     await page.getByLabel('Support tối thiểu (sequence)', { exact: true }).fill('8');await page.getByLabel('Support tối đa (sequence)', { exact: true }).fill('8');
-    const bounded = adminApi(page, `/api/v1/admin/mining-runs/${fixture.patternRun}/patterns`);await page.getByRole('button', { name: 'Áp dụng', exact: true }).click();const boundResponse = await bounded;const data = envelope(boundResponse, await boundResponse.json());assert.equal(data.filteredTotal, '1');assert.equal(data.items[0].canonicalPattern, '<(1)(2)>');
+    const bounded = adminApi(page, `/api/v1/admin/pattern-runs/${fixture.patternRun}/patterns`);await page.getByRole('button', { name: 'Áp dụng', exact: true }).click();const boundResponse = await bounded;const data = envelope(boundResponse, await boundResponse.json());assert.equal(data.filteredTotal, '1');assert.equal(data.items[0].canonicalPattern, '<(1)(2)>');
     await page.getByRole('button', { name: '9007199254740993', exact: true }).click();await page.getByRole('group', { name: 'Itemset 2', exact: true }).getByText(/Mouse snapshot/).waitFor();
     assert.equal(sql(`SELECT COUNT(DISTINCT pattern_id) FROM PATTERN_ITEM WHERE item_id IN (1,2) AND pattern_id IN (SELECT pattern_id FROM PATTERN WHERE run_id='${fixture.patternRun}' AND support_abs=8);`), '1');
   });
   await test('Pattern run source paging/reset, empty/no-match and real backend error/retry', async () => {
-    const { page } = await login();await page.goto(origin + '/admin/patterns');await page.getByRole('combobox', { name: 'Mining run', exact: true }).waitFor();await selectRun(page, fixture.patternRun);
-    const source = adminApi(page, '/api/v1/admin/mining-runs');await page.getByRole('button', { name: 'Run sau', exact: true }).click();const response = await source;assert.equal(envelope(response, await response.json()).page, 1);
+    const { page } = await login();await page.goto(origin + '/admin/pattern-explorer');await page.getByRole('combobox', { name: 'Mining run', exact: true }).waitFor();await selectRun(page, fixture.patternRun);
+    const source = adminApi(page, '/api/v1/admin/pattern-runs');await page.getByRole('button', { name: 'Run sau', exact: true }).click();const response = await source;assert.equal(envelope(response, await response.json()).page, 1);
     assert.equal(await page.getByRole('combobox', { name: 'Mining run', exact: true }).inputValue(), '');await page.getByText('Trang run 2', { exact: true }).waitFor();
-    const back = adminApi(page, '/api/v1/admin/mining-runs');await page.getByRole('button', { name: 'Run trước', exact: true }).click();await back;
+    const back = adminApi(page, '/api/v1/admin/pattern-runs');await page.getByRole('button', { name: 'Run trước', exact: true }).click();await back;
     assert.equal((await selectRun(page, fixture.emptyRun)).runPatternTotal, '0');await page.getByText('Run thành công, không có Pattern.', { exact: true }).waitFor();
     const notReady = await selectRun(page, fixture.notReadyRun);assert.equal(notReady.resultState, 'NOT_READY');assert.equal(notReady.runPatternTotal, null);
     await page.getByText('Run đang chờ hoặc đang chạy, chưa có kết quả sử dụng được.', { exact: true }).waitFor();
     await selectRun(page, fixture.patternRun);await page.getByLabel('Support tối thiểu (sequence)', { exact: true }).fill('999999999999999999');
-    const none = adminApi(page, `/api/v1/admin/mining-runs/${fixture.patternRun}/patterns`);await page.getByRole('button', { name: 'Áp dụng', exact: true }).click();const empty = await none;assert.equal(envelope(empty, await empty.json()).filteredTotal, '0');await page.getByText('Không có Pattern khớp bộ lọc.', { exact: true }).waitFor();
+    const none = adminApi(page, `/api/v1/admin/pattern-runs/${fixture.patternRun}/patterns`);await page.getByRole('button', { name: 'Áp dụng', exact: true }).click();const empty = await none;assert.equal(envelope(empty, await empty.json()).filteredTotal, '0');await page.getByText('Không có Pattern khớp bộ lọc.', { exact: true }).waitFor();
     await selectRun(page, fixture.emptyRun);sql(`UPDATE MINING_RUN SET pattern_count=24 WHERE run_id='${fixture.patternRun}';`);
     try {
-      const failed = adminApi(page, `/api/v1/admin/mining-runs/${fixture.patternRun}/patterns`);await page.getByRole('combobox', { name: 'Mining run', exact: true }).selectOption(fixture.patternRun);assert.equal((await failed).status(), 409);await page.getByRole('button', { name: 'Tải lại danh sách', exact: true }).waitFor();
+      const failed = adminApi(page, `/api/v1/admin/pattern-runs/${fixture.patternRun}/patterns`);await page.getByRole('combobox', { name: 'Mining run', exact: true }).selectOption(fixture.patternRun);assert.equal((await failed).status(), 409);await page.getByRole('button', { name: 'Tải lại danh sách', exact: true }).waitFor();
     } finally { sql(`UPDATE MINING_RUN SET pattern_count=23 WHERE run_id='${fixture.patternRun}';`); }
-    const retry = adminApi(page, `/api/v1/admin/mining-runs/${fixture.patternRun}/patterns`);await page.getByRole('button', { name: 'Tải lại danh sách', exact: true }).click();assert.equal((await retry).status(), 200);
+    const retry = adminApi(page, `/api/v1/admin/pattern-runs/${fixture.patternRun}/patterns`);await page.getByRole('button', { name: 'Tải lại danh sách', exact: true }).click();assert.equal((await retry).status(), 200);
   });
   await test('Combo blocked DRAFT has explicit missing authority and no enabled actions', async () => {
     const { page } = await login();await page.goto(origin + '/admin/combos');await page.getByRole('heading', { name: 'Quản lý Combo', exact: true }).waitFor();
@@ -187,10 +188,15 @@ export async function runTv2Cases({ browser, httpsOrigin: origin, sql, temp, log
       evidence.freshness = { comboId: row.comboId, staleSubmit: 409, refreshedActions: [], protectedDigest: before };
     } finally {sql(`UPDATE PRODUCT SET version=${original.version},updated_at='${original.updated}' WHERE product_id='${product}';`);}
   });
-  await test('last DRAFT page recovers finitely and clears removed detail', async () => {
-    const { page } = await login();await page.goto(origin + '/admin/combos');const list = await comboList(page, '', 'DRAFT');assert.equal(list.filteredTotal, '21');
-    const next = adminApi(page, '/api/v1/admin/combos');await page.getByRole('button', { name: 'Trang sau', exact: true }).click();const response = await next;const tail = envelope(response, await response.json());assert.equal(tail.page, 1);assert.equal(tail.items.length, 1);
-    const row = tail.items[0].data;await openCombo(page, row);await review(page, row, 'APPROVE');await page.getByText('Trang 1', { exact: true }).waitFor();await page.getByText('Trong phạm vi: 24; Khớp bộ lọc: 20', { exact: true }).waitFor();assert.equal(await page.getByRole('heading', { name: 'Chi tiết Combo ' + row.comboId, exact: true }).count(), 0);assert.equal(stored(row.comboId).status, 'APPROVED');
+  await test('batch history loads parents only and scoped review clears removed detail', async () => {
+    const { page } = await login();const requests=[];const observe=r=>requests.push(new URL(r.url()).pathname);page.on('request',observe);
+    const history=adminApi(page,'/api/v1/admin/combos/batches');await page.goto(origin+'/admin/combos');
+    const reply=await history;const batches=envelope(reply,await reply.json());assert.equal(batches.items.length,8);page.off('request',observe);
+    assert.ok(!requests.includes('/api/v1/admin/combos'));
+    const list=await comboList(page,fixture.batches[5],'DRAFT');assert.equal(list.filteredTotal,'3');
+    const row=list.items[0].data;await openCombo(page,row);await review(page,row,'APPROVE');
+    await page.getByText('Trong phạm vi: 3; Khớp bộ lọc: 2',{exact:true}).waitFor();
+    assert.equal(await page.getByRole('heading',{name:'Chi tiết Combo '+row.comboId,exact:true}).count(),0);assert.equal(stored(row.comboId).status,'APPROVED');
   });
   if (process.argv.includes('--ui')) {
     evidence.viewports = [];
@@ -199,7 +205,7 @@ export async function runTv2Cases({ browser, httpsOrigin: origin, sql, temp, log
       assert.ok(size.documentWidth <= size.width + 1, 'No horizontal page overflow');
     }
     for (const width of [1440, 1024, 390]) await test('UI populated layout, keyboard and screenshots at ' + width + 'px', async () => {
-      const { page } = await login();await page.setViewportSize({ width, height: 1000 });await page.goto(origin + '/admin/patterns');
+      const { page } = await login();await page.setViewportSize({ width, height: 1000 });await page.goto(origin + '/admin/pattern-explorer');
       await selectRun(page, fixture.patternRun);await page.getByRole('button', { name: '18446744073709551615', exact: true }).click();
       await page.getByRole('group', { name: 'Itemset 1', exact: true }).waitFor();await fits(page);
       const controls = await page.getByRole('combobox', { name: 'Mining run', exact: true }).boundingBox();assert.ok(controls.height >= 35 && controls.height <= 40);
@@ -222,10 +228,10 @@ export async function runTv2Cases({ browser, httpsOrigin: origin, sql, temp, log
         'MINING_RUN_COMPLETION', 'MINING_RUN_OWNERSHIP', 'MINING_RUN_INPUT_BINDING', 'MINING_RUN', 'SNAPSHOT_CONVERSION_SEAL', 'DATASET_SNAPSHOT']) sql('DELETE FROM ' + table + ';');
       const { page } = await login();
       for (const width of [1440, 1024, 390]) {
-        await page.setViewportSize({ width, height: 1000 });await page.goto(origin + '/admin/patterns');await page.getByText('Chưa có mining run.', { exact: true }).waitFor();await fits(page);
+        await page.setViewportSize({ width, height: 1000 });await page.goto(origin + '/admin/pattern-explorer');await page.getByText('Chưa có mining run.', { exact: true }).waitFor();await fits(page);
         assert.equal(await page.getByRole('combobox', { name: 'Mining run', exact: true }).isDisabled(), true);
         await page.screenshot({ path: path.join(logDirectory, 'patterns-empty-' + width + '.png'), fullPage: true });
-        await page.goto(origin + '/admin/combos');await page.getByText('Chưa có Combo trong phạm vi đã chọn.', { exact: true }).waitFor();await fits(page);
+        await page.goto(origin + '/admin/combos');await page.getByText('Chưa có lần lưu Combo nào', { exact: true }).waitFor();await fits(page);
         await page.screenshot({ path: path.join(logDirectory, 'combos-empty-' + width + '.png'), fullPage: true });
       }
     });

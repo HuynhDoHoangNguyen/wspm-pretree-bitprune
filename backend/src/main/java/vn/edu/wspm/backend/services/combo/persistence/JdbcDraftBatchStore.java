@@ -33,7 +33,14 @@ public final class JdbcDraftBatchStore {
     private final JdbcTemplate jdbc;
     private final TransactionTemplate writeTx,readTx;
     private final Limits limits;
+    private final java.util.function.BiFunction<String,Boolean,MiningBinding> nativeBinding;
     public JdbcDraftBatchStore(DataSource dataSource,Limits limits) {
+        this(dataSource,limits,null);
+    }
+    /** Native verifier runs on this transaction's JDBC connection; never starts an independent read. */
+    public JdbcDraftBatchStore(DataSource dataSource,Limits limits,
+            java.util.function.BiFunction<String,Boolean,MiningBinding> nativeBinding) {
+        this.nativeBinding=nativeBinding;
         this.limits=Objects.requireNonNull(limits);jdbc=new JdbcTemplate(dataSource);
         var manager=new DataSourceTransactionManager(dataSource);
         writeTx=new TransactionTemplate(manager);readTx=new TransactionTemplate(manager);
@@ -44,9 +51,11 @@ public final class JdbcDraftBatchStore {
         readTx.setReadOnly(true);
     }
     public Limits limits(){return limits;}
+    public boolean nativeProtocol(){return nativeBinding!=null;}
     /** Change-detection fingerprint ONLY, not a mining completion issuer or approval provider. */
     public MiningBinding miningBinding(String runId) {return readTx.execute(tx->binding(runId,false));}
     private MiningBinding binding(String runId,boolean lock) {
+        if(nativeBinding!=null)return nativeBinding.apply(runId,lock);
         String suffix=lock?" FOR SHARE":"";
         var run=rows("SELECT * FROM MINING_RUN WHERE run_id=?"+suffix,runId);
         if(run.size()!=1||!runId.equals(run.getFirst().get("run_id"))||!"SUCCEEDED".equals(run.getFirst().get("status")))throw reject("RUN_NOT_PUBLISH_COMPLETE");
@@ -70,11 +79,16 @@ public final class JdbcDraftBatchStore {
                 // Parent lock serializes cooperating writers of the same run before identity lookup.
                 var run=rows("SELECT run_id,snapshot_id FROM MINING_RUN WHERE run_id=? FOR UPDATE",plan.context().runId());
                 if(run.size()!=1||!plan.context().snapshotId().equals(run.getFirst().get("snapshot_id")))throw reject("SOURCE_RUN_MISMATCH");
+                if(nativeBinding!=null){
+                    var nativeNow=binding(plan.context().runId(),true);
+                    if(!nativeNow.factsDigest().equals(auth.runFactsDigest())||!nativeNow.receiptDigest().equals(auth.miningReceiptDigest()))throw reject("MINING_EVIDENCE_CHANGED");
+                }
                 var old=rows("SELECT * FROM COMBO_BATCH_WRITE_EVIDENCE WHERE request_identity=? FOR UPDATE",key(plan));
-                if(!old.isEmpty())return reuse(plan,content,evidence,old.getFirst());
+                if(!old.isEmpty())return contextMatches(old.getFirst(),auth.resolvedEvidence())?reuse(plan,content,evidence,old.getFirst()):failure("CONFLICT","RESOLVED_CONTEXT_CHANGED",plan);
                 var current=binding(plan.context().runId(),true);
                 if(!current.factsDigest().equals(auth.runFactsDigest())||!current.receiptDigest().equals(auth.miningReceiptDigest()))throw reject("MINING_EVIDENCE_CHANGED");
-                if(!miningReference(plan.context().runId(),current.receiptDigest()).equals(plan.context().publishedEvidenceRef()))throw reject("MINING_REFERENCE_MISMATCH");
+                String reference=nativeBinding==null?miningReference(plan.context().runId(),current.receiptDigest()):nativeReference(plan.context().runId(),current.receiptDigest());
+                if(!reference.equals(plan.context().publishedEvidenceRef()))throw reject("MINING_REFERENCE_MISMATCH");
                 verifySourcesAndCatalog(request,plan);
                 insert(plan);
                 byte[] expected=representation(plan);
@@ -87,8 +101,11 @@ public final class JdbcDraftBatchStore {
                     VALUES(?,?,?,1,?,?,?,?,?,?,?,?)
                     """,key(plan),plan.batch().batchId(),plan.context().runId(),digest(content),content,digest(evidence),evidence,
                         HexFormat.of().parseHex(auth.miningReceiptDigest()),actual,digest(actual),utc(plan.batch().createdAt()));
+                if(nativeBinding!=null)jdbc.update("UPDATE COMBO_BATCH_WRITE_EVIDENCE SET resolved_context=? WHERE batch_id=?",
+                        auth.resolvedEvidence(),plan.batch().batchId());
                 // Read the durable envelope too, before the transaction is allowed to commit.
                 var stored=rows("SELECT * FROM COMBO_BATCH_WRITE_EVIDENCE WHERE request_identity=?",key(plan));
+                if(!contextMatches(stored.getFirst(),auth.resolvedEvidence()))throw reject("WRITE_READBACK_MISMATCH");
                 var checked=reuse(plan,content,evidence,stored.getFirst());
                 if(!"NO_OP".equals(checked.status()))throw reject("WRITE_READBACK_MISMATCH");
                 bodyCompleted.set(true);
@@ -99,7 +116,7 @@ public final class JdbcDraftBatchStore {
             // Body completed => commit/cleanup may have failed. Never infer rollback or write FAILED.
             if(bodyCompleted.get())return failure("UNKNOWN","COMMIT_OUTCOME_UNKNOWN",plan);
             if(failure instanceof DataIntegrityViolationException) {
-                var found=reconcile(plan,content,evidence);
+                var found=reconcile(plan,content,evidence,auth.resolvedEvidence());
                 return "UNKNOWN".equals(found.status())?failure("CONFLICT","STORAGE_CONSTRAINT_CONFLICT",plan):found;
             }
             return failure(failure instanceof DataAccessException?"ROLLED_BACK":"UNKNOWN",
@@ -108,13 +125,20 @@ public final class JdbcDraftBatchStore {
     }
     /** Independent connection/transaction; never writes, inserts missing children or resets lifecycle. */
     public WriteResult reconcile(Plan plan,byte[] content,byte[] evidence) {
+        return reconcile(plan,content,evidence,null);
+    }
+    public WriteResult reconcile(Plan plan,byte[] content,byte[] evidence,byte[] expectedContext) {
         try {
             return readTx.execute(tx->{
+                if(nativeBinding!=null){var nativeNow=binding(plan.context().runId(),false);
+                    if(!nativeReference(plan.context().runId(),nativeNow.receiptDigest()).equals(plan.context().publishedEvidenceRef()))return failure("CONFLICT","MINING_EVIDENCE_CHANGED",plan);}
                 var found=rows("SELECT * FROM COMBO_BATCH_WRITE_EVIDENCE WHERE request_identity=?",key(plan));
-                return found.isEmpty()?failure("UNKNOWN","NO_DURABLE_WRITE_RECEIPT",plan):reuse(plan,content,evidence,found.getFirst());
+                return found.isEmpty()?failure("UNKNOWN","NO_DURABLE_WRITE_RECEIPT",plan):contextMatches(found.getFirst(),expectedContext)
+                    ?reuse(plan,content,evidence,found.getFirst()):failure("CONFLICT","RESOLVED_CONTEXT_CHANGED",plan);
             });
         } catch(DataAccessException | TransactionException | Rejected failure) {return failure("UNKNOWN","RECONCILIATION_UNAVAILABLE",plan);}
     }
+    private boolean contextMatches(Map<String,Object> saved,byte[] expected){return nativeBinding==null||expected!=null&&Arrays.equals(expected,(byte[])saved.get("resolved_context"));}
     private WriteResult reuse(Plan p,byte[] content,byte[] evidence,Map<String,Object> stored) {
         if(!p.batch().batchId().equals(stored.get("batch_id"))||!p.context().runId().equals(stored.get("run_id"))
                 ||!Arrays.equals(content,(byte[])stored.get("content_bytes"))||!Arrays.equals(evidence,(byte[])stored.get("evidence_bytes")))
@@ -131,6 +155,7 @@ public final class JdbcDraftBatchStore {
         if(plan.batch().createdBy()!=null) {
             var actor=rows("SELECT user_id,status FROM USER_ACCOUNT WHERE user_id=? FOR SHARE",plan.batch().createdBy());
             if(actor.size()!=1||!plan.batch().createdBy().equals(actor.getFirst().get("user_id"))||!"ACTIVE".equals(actor.getFirst().get("status")))throw reject("ACTOR_UNAVAILABLE");
+            if(nativeBinding!=null&&rows("SELECT r.code FROM USER_ROLE u JOIN ROLE r ON r.role_id=u.role_id WHERE u.user_id=? FOR SHARE",plan.batch().createdBy()).stream().noneMatch(r->"ADMIN".equals(r.get("code"))))throw reject("ACTOR_UNAVAILABLE");
         }
         for(var group:request.grouping().groups())for(var link:group.sources()) {
             var candidate=link.candidate();var source=candidate.source();
@@ -176,6 +201,15 @@ public final class JdbcDraftBatchStore {
                 rows("SELECT i.* FROM COMBO_ITEM i JOIN COMBO c ON c.combo_id=i.combo_id WHERE c.batch_id=?",batchId),
                 rows("SELECT s.* FROM COMBO_SOURCE s JOIN COMBO c ON c.combo_id=s.combo_id WHERE c.batch_id=?",batchId));
     }
+    /** Review normalizes only its own mutable status/audit; all other columns stay protected. */
+    public byte[] reviewRepresentation(String batchId) {
+        var combos=rows("SELECT * FROM COMBO WHERE batch_id=?",batchId);
+        for(var c:combos){if(!Set.of("DRAFT","APPROVED","REJECTED").contains(c.get("status")))throw reject("COMBO_LIFECYCLE_UNSUPPORTED");
+            c.put("status","DRAFT");c.put("reviewed_at",null);c.put("reviewed_by",null);c.put("review_note",null);}
+        return encodeRepresentation(rows("SELECT * FROM COMBO_BATCH WHERE batch_id=?",batchId),combos,
+                rows("SELECT i.* FROM COMBO_ITEM i JOIN COMBO c ON c.combo_id=i.combo_id WHERE c.batch_id=?",batchId),
+                rows("SELECT s.* FROM COMBO_SOURCE s JOIN COMBO c ON c.combo_id=s.combo_id WHERE c.batch_id=?",batchId));
+    }
     private byte[] representation(Plan p) {
         var b=p.batch();var batch=map("batch_id",b.batchId(),"run_id",b.runId(),"ranking_policy",b.rankingPolicy(),"pattern_weight_policy",b.patternWeightPolicy(),"top_k",b.topK(),
                 "category_filter_enabled",b.categoryFilterEnabled(),"min_product_count",b.minProductCount(),"max_product_count",b.maxProductCount(),"status",b.status(),"created_by",b.createdBy(),"activated_by",null,"created_at",b.createdAt(),"activated_at",null);
@@ -187,6 +221,7 @@ public final class JdbcDraftBatchStore {
         for(var s:p.sources())sources.add(map("combo_id",s.comboId(),"pattern_id",new BigInteger(s.patternId()),"is_primary",s.primary()));
         return encodeRepresentation(List.of(batch),combos,items,sources);
     }
+    public byte[] plannedRepresentation(Plan plan){return representation(plan);}
     private byte[] encodeRepresentation(List<Map<String,Object>> batch,List<Map<String,Object>> combos,List<Map<String,Object>> items,List<Map<String,Object>> sources) {
         return BatchCanonical.encode(map("version","COMBO_DB_REPRESENTATION_V1","batch",sorted(batch),"combos",sorted(combos),"items",sorted(items),"sources",sorted(sources)),limits.maxRepresentationBytes());
     }

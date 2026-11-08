@@ -132,7 +132,9 @@ public final class CandidateGrouper {
                 total++;
             }
         }
-        return total==source.patternItemCount() && setOrder==source.itemsetCount() && products.size()>=2 && products.size()<=4;
+        return total==source.patternItemCount() && setOrder==source.itemsetCount() && products.size()>=2 && products.size()<=(
+                vn.edu.wspm.backend.services.combo.generation.ProductSelection.flexiblePolicy(c.evaluationPolicyVersion())?
+                vn.edu.wspm.backend.services.combo.generation.ProductSelection.MAX_PRODUCTS:4);
     }
     private static boolean validContext(Context c) {
         return c!=null && !blank(c.runId()) && !blank(c.snapshotId()) && !blank(c.evaluationPolicyVersion())

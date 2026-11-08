@@ -25,6 +25,14 @@ public final class ComboManagementController {
         principals.require(request);query(request,Set.of("batchId","status","comboKind","page","size"));
         return success(service.list(request.getParameter("batchId"),request.getParameter("status"),request.getParameter("comboKind"),integer(request,"page"),integer(request,"size")),request);
     }
+    @GetMapping("/batches") public ApiResponse<Object> batches(HttpServletRequest request) {
+        principals.require(request);query(request,Set.of("page","size"));
+        return success(service.batches(integer(request,"page"),integer(request,"size")),request);
+    }
+    @GetMapping("/batches/{batchId}/combos") public ApiResponse<Object> batchCombos(@PathVariable("batchId") String id,HttpServletRequest request) {
+        principals.require(request);query(request,Set.of("status","comboKind","page","size"));
+        return success(service.batchCombos(id,request.getParameter("status"),request.getParameter("comboKind"),integer(request,"page"),integer(request,"size")),request);
+    }
     @GetMapping("/{comboId}") public ApiResponse<Object> detail(@PathVariable("comboId") String id,HttpServletRequest request) {
         principals.require(request);query(request,Set.of());return success(service.detail(id),request);
     }

@@ -1,0 +1,11 @@
+order_id,order_item_id,customer_code,ordered_at,status,product_id,sku_snapshot,product_name_snapshot,quantity,list_unit_price,allocated_discount_amount,line_total,currency_code
+numeric-order-1,1,numeric-customer-1,2000-01-01T00:00:00.000000Z,COMPLETED,numeric-p1,SYN,Synthetic,1,100.00,0.00,100.00,VND
+numeric-order-2,2,numeric-customer-2,2000-01-01T00:00:00.000000Z,COMPLETED,numeric-p2,SYN,Synthetic,1,100.00,0.00,100.00,VND
+numeric-order-3,3,numeric-customer-3,2000-01-01T00:00:00.000000Z,COMPLETED,numeric-p3,SYN,Synthetic,1,100.00,0.00,100.00,VND
+numeric-order-4,4,numeric-customer-4,2000-01-01T00:00:00.000000Z,COMPLETED,numeric-p4,SYN,Synthetic,1,100.00,0.00,100.00,VND
+numeric-order-5,5,numeric-customer-5,2000-01-01T00:00:00.000000Z,COMPLETED,numeric-p5,SYN,Synthetic,1,100.00,0.00,100.00,VND
+numeric-order-6,6,numeric-customer-6,2000-01-01T00:00:00.000000Z,COMPLETED,numeric-p6,SYN,Synthetic,1,100.00,0.00,100.00,VND
+numeric-order-7,7,numeric-customer-7,2000-01-01T00:00:00.000000Z,COMPLETED,numeric-p7,SYN,Synthetic,1,100.00,0.00,100.00,VND
+numeric-order-8,8,numeric-customer-8,2000-01-01T00:00:00.000000Z,COMPLETED,numeric-p8,SYN,Synthetic,1,100.00,0.00,100.00,VND
+numeric-order-9,9,numeric-customer-9,2000-01-01T00:00:00.000000Z,COMPLETED,numeric-p9,SYN,Synthetic,1,100.00,0.00,100.00,VND
+numeric-order-10,10,numeric-customer-10,2000-01-01T00:00:00.000000Z,COMPLETED,numeric-p10,SYN,Synthetic,1,100.00,0.00,100.00,VND

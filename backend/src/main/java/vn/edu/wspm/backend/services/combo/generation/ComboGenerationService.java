@@ -60,6 +60,32 @@ public final class ComboGenerationService {
     private final JdbcDraftBatchStore store;
     private final Clock clock;
     private final List<String> unavailable;
+    private NativeComboGeneration nativeGeneration;
+    public ComboGenerationService connectNative(NativeComboGeneration nativeGeneration){this.nativeGeneration=Objects.requireNonNull(nativeGeneration);return this;}
+    public NativeComboGeneration.Preview previewPublished(String run,String anchor,Integer k,String identity,vn.edu.wspm.backend.web.auth.AdminPrincipal actor){
+        if(nativeGeneration==null)throw new IllegalStateException("NATIVE_GENERATION_UNAVAILABLE");
+        return nativeGeneration.preview(run,anchor,k,identity,actor);
+    }
+    public NativeComboGeneration.Outcome writePublished(String token,vn.edu.wspm.backend.web.auth.AdminPrincipal actor,boolean reconcile){
+        if(nativeGeneration==null)throw new IllegalStateException("NATIVE_GENERATION_UNAVAILABLE");
+        return nativeGeneration.submit(token,actor,reconcile);
+    }
+    public NativeComboGeneration.Preview previewSelected(String run,String anchor,Integer k,String identity,vn.edu.wspm.backend.web.auth.AdminPrincipal actor,ProductSelection selection){
+        if(nativeGeneration==null)throw new IllegalStateException("NATIVE_GENERATION_UNAVAILABLE");
+        return nativeGeneration.preview(run,anchor,k,identity,actor,Objects.requireNonNull(selection));
+    }
+    public NativeComboGeneration.Options selectionOptions(String run,vn.edu.wspm.backend.web.auth.AdminPrincipal actor){
+        if(nativeGeneration==null)throw new IllegalStateException("NATIVE_GENERATION_UNAVAILABLE");
+        return nativeGeneration.options(run,actor);
+    }
+    public NativeComboGeneration.CategoryOptions categoryOptions(String run,vn.edu.wspm.backend.web.auth.AdminPrincipal actor){
+        if(nativeGeneration==null)throw new IllegalStateException("NATIVE_GENERATION_UNAVAILABLE");
+        return nativeGeneration.categoryOptions(run,actor);
+    }
+    public NativeComboGeneration.Preview previewCategories(String run,String anchor,Integer k,String identity,vn.edu.wspm.backend.web.auth.AdminPrincipal actor,CategorySelection selection){
+        if(nativeGeneration==null)throw new IllegalStateException("NATIVE_GENERATION_UNAVAILABLE");
+        return nativeGeneration.previewCategories(run,anchor,k,identity,actor,selection);
+    }
     private ComboGenerationService(List<String> unavailable) {this.unavailable=List.copyOf(unavailable);source=null;business=null;witnesses=null;store=null;clock=null;}
     public ComboGenerationService(PersistedMiningResultBoundary source,BusinessAuthority business,WriterWitnessResolver witnesses,
                                   JdbcDraftBatchStore store,Clock serverClock) {

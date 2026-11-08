@@ -25,4 +25,5 @@ public interface DraftBatchAuthority {
     static String miningReference(String runId,String receiptDigest) {
         return "MINING_RUN_COMPLETION:"+Base64.getUrlEncoder().withoutPadding().encodeToString(runId.getBytes(StandardCharsets.UTF_8))+":"+receiptDigest;
     }
+    static String nativeReference(String runId,String digest){return "WDM_RESULT_MANIFEST:"+runId+":"+digest;}
 }

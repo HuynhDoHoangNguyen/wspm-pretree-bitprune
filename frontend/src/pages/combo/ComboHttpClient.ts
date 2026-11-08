@@ -1,5 +1,5 @@
 import { wdmApi, WdmApiError } from '../../api/admin/data-mining';
-import { ComboClient, ComboClientError, ComboDetail, ComboPage, ReviewResult } from './ComboClient';
+import { BatchPage, ComboClient, ComboClientError, ComboDetail, ComboPage, ReviewResult } from './ComboClient';
 import { z } from 'zod';
 
 const text = z.string(), nullable = text.nullable();
@@ -21,6 +21,8 @@ const detail = summary.extend({ reviewToken: nullable, notePolicy: z.object({ co
 const pageSchema = z.object({ page: z.number().int(), size: z.number().int(), scopeTotal: count, filteredTotal: count,
   appliedFilters: z.object({ batchId: nullable.optional(), status: nullable.optional(), comboKind: nullable.optional() }), items: z.array(summary) });
 const reviewSchema = z.object({ outcome: z.enum(['APPLIED', 'ALREADY_DECIDED', 'UNKNOWN']), currentStatus: nullable, storedAudit: audit.nullable(), issues: z.array(text) });
+const batchPageSchema = z.object({ page: z.number().int().min(0), size: z.number().int().min(1).max(100), total: count,
+  items: z.array(z.object({ batchId: text, runId: text, status: text, createdAt: text, comboCount: count, draftCount: count, approvedCount: count, rejectedCount: count })) });
 export function createComboHttpClient(transport = wdmApi): ComboClient {
   async function call<T>(operation: () => Promise<unknown>, valid: (v: unknown) => boolean): Promise<T> {
     try {
@@ -33,8 +35,11 @@ export function createComboHttpClient(transport = wdmApi): ComboClient {
   const path = (id: string) => '/v1/admin/combos/' + encodeURIComponent(id);
   return {
     reviewReady: true, // Transport capability only. Every action also needs detail policy/token/allowedActions.
-    list: (filters, page, size, options) => call<ComboPage>(() => transport.get('/v1/admin/combos', { ...options, query: { ...filters, page, size } }),
-      v => { const parsed = pageSchema.safeParse(v); return parsed.success && parsed.data.page === page && parsed.data.size === size
+    batches: (page, size, options) => call<BatchPage>(() => transport.get('/v1/admin/combos/batches', { ...options, query: { page, size } }),
+      v => { const parsed = batchPageSchema.safeParse(v); return parsed.success && parsed.data.page === page && parsed.data.size === size && parsed.data.items.length <= size; }),
+    list: (filters, page, size, options) => call<ComboPage>(() => transport.get(filters.batchId ? '/v1/admin/combos/batches/' + encodeURIComponent(filters.batchId) + '/combos' : '/v1/admin/combos',
+      { ...options, query: filters.batchId ? { status: filters.status, comboKind: filters.comboKind, page, size } : { ...filters, page, size } }),
+    v => { const parsed = pageSchema.safeParse(v); return parsed.success && parsed.data.page === page && parsed.data.size === size
         && (['batchId', 'status', 'comboKind'] as const).every(k => (parsed.data.appliedFilters[k] ?? undefined) === filters[k]); }),
     detail: (id, options) => call<ComboDetail>(() => transport.get(path(id), options), v => { const parsed = detail.safeParse(v); return parsed.success && parsed.data.data.comboId === id
       && parsed.data.itemsets.every(s => s.items.every(i => i.itemsetOrder === s.itemsetOrder)); }),

@@ -22,7 +22,7 @@ class NullableMetricMigrationMySqlTest {
         return (Files.isDirectory(p)?p:Path.of("migration-review/TV2-INT-08F")).toAbsolutePath().normalize();
     }
     static Flyway flyway(DataSource ds,String target) {
-        return Flyway.configure().dataSource(ds).locations("classpath:db/migration","filesystem:"+review())
+        return Flyway.configure().dataSource(ds).resourceProvider(vn.edu.wspm.backend.testsupport.LegacyComboMigrations.provider(false))
                 .target(target).callbacks(new NullablePatternMetricPreflight()).cleanDisabled(true).load();
     }
     static void fixture(JdbcTemplate jdbc) {
@@ -61,6 +61,17 @@ class NullableMetricMigrationMySqlTest {
         }
     }
     static void validateOrmAndWriteNullPair(DataSource ds,JdbcTemplate jdbc) {
+        // Current RunEntity also maps WDM execution ownership. Apply that exact
+        // additive runtime script for ORM compatibility, after historical Flyway
+        // assertions above; its V3 identity is not mixed into the legacy chain.
+        try (var connection=ds.getConnection()) {
+            var resources=new org.springframework.core.io.support.PathMatchingResourcePatternResolver()
+                    .getResources("classpath:db/migration/V3__*.sql");
+            assertEquals(1,resources.length);
+            org.springframework.jdbc.datasource.init.ScriptUtils.executeSqlScript(connection,resources[0]);
+        } catch (java.sql.SQLException | java.io.IOException e) {
+            throw new IllegalStateException("ORM_COMPATIBILITY_SETUP_FAILED",e);
+        }
         var cfg=new Configuration().addAnnotatedClass(PatternEntity.class).addAnnotatedClass(RunEntity.class);
         cfg.getProperties().put("hibernate.connection.datasource",ds);
         cfg.setProperty("hibernate.hbm2ddl.auto","validate");cfg.setProperty("hibernate.show_sql","false");

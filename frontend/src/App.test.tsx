@@ -3,7 +3,7 @@ import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { authSession } from 'auth/session';
 import App from './App';
-import { datasetApi } from 'api/admin/data-mining';
+import { datasetApi, miningRunApi, runResultApi } from 'api/admin/data-mining';
 import { patternHttpClient } from 'pages/pattern/PatternHttpClient';
 jest.mock('./pages/combo/ComboHttpClient', () => ({ comboHttpClient: require('./pages/combo/ComboClient').unavailableComboClient }));
 
@@ -90,7 +90,7 @@ test('Customer cannot enter the Combo Admin outlet', () => {
   expect(screen.queryByRole('heading', { name: 'Quản lý Combo' })).not.toBeInTheDocument();
 });
 
-test.each(['/admin/patterns', '/admin/patterns/?page=2#detail'])('actual App opens the shared Pattern route at %s', async path => {
+test.each(['/admin/pattern-explorer', '/admin/pattern-explorer/?page=2#detail'])('actual App opens the shared Pattern route at %s', async path => {
   const runs = jest.spyOn(patternHttpClient, 'runs').mockResolvedValue({ page: 0, size: 20, total: '0', items: [] });
   authSession.useStore.setState({ status: 'authenticated', forbidden: false,
     user: { userId: 'fixture-admin', username: 'fixture', email: null, displayName: 'Fixture', roles: ['ADMIN'], status: 'ACTIVE', emailVerified: false } });
@@ -99,4 +99,36 @@ test.each(['/admin/patterns', '/admin/patterns/?page=2#detail'])('actual App ope
   expect(await screen.findByText('Chưa có mining run.')).toBeInTheDocument();
   expect(runs).toHaveBeenCalledTimes(1);
   expect(screen.queryByText('Chức năng đang được chuẩn bị')).not.toBeInTheDocument();
+});
+
+test('run deep URL reaches status reader through the actual authenticated Admin shell', async () => {
+  const id = '11111111-2222-4333-8444-555555555555';
+  authSession.useStore.setState({ status: 'authenticated', accessToken: 'test-token', user: {
+    userId: 'admin-fixture', username: 'fixture', email: null, displayName: 'Fixture admin',
+    status: 'ACTIVE', roles: ['ADMIN'], emailVerified: false,
+  } });
+  Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: jest.fn(() => ({
+    observe: jest.fn(), unobserve: jest.fn(), disconnect: jest.fn(),
+  })) });
+  const read = jest.spyOn(miningRunApi, 'read').mockImplementation(() => new Promise(() => undefined));
+  render(<MemoryRouter initialEntries={['/admin/mining-runs/' + id]}><App/></MemoryRouter>);
+  expect(await screen.findByRole('heading', { name: 'Chi tiết lần chạy khai phá', exact: true })).toBeInTheDocument();
+  expect(read).toHaveBeenCalledWith(id, expect.any(AbortSignal));
+  expect(screen.queryByText(/Chức năng legacy này/)).not.toBeInTheDocument();
+});
+
+test('published pattern deep URL reaches detail reader through the actual Admin shell', async () => {
+  const id = '11111111-2222-4333-8444-555555555555', patternId = '18446744073709551615';
+  authSession.useStore.setState({ status: 'authenticated', accessToken: 'test-token', user: {
+    userId: 'admin-fixture', username: 'fixture', email: null, displayName: 'Fixture admin',
+    status: 'ACTIVE', roles: ['ADMIN'], emailVerified: false,
+  } });
+  Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: jest.fn(() => ({
+    observe: jest.fn(), unobserve: jest.fn(), disconnect: jest.fn(),
+  })) });
+  const read = jest.spyOn(runResultApi, 'detail').mockImplementation(() => new Promise(() => undefined));
+  render(<MemoryRouter initialEntries={['/admin/patterns/' + id + '/' + patternId + '?view=published']}><App/></MemoryRouter>);
+  expect(await screen.findByRole('heading', { name: 'Chi tiết pattern', exact: true })).toBeInTheDocument();
+  expect(read).toHaveBeenCalledWith(id, patternId, expect.any(AbortSignal), 'published');
+  expect(screen.queryByText(/Chức năng legacy này/)).not.toBeInTheDocument();
 });
