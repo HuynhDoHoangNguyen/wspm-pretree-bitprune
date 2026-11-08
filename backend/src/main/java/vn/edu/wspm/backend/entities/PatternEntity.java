@@ -23,6 +23,24 @@ public class PatternEntity {
     @JoinColumn(name = "run_id")
     private RunEntity run;
 
+    @Column(name = "canonical_pattern", nullable = false, columnDefinition = "TEXT")
+    private String canonicalPattern;
+
+    @Column(name = "canonical_pattern_hash", nullable = false, columnDefinition = "CHAR(64)")
+    private String canonicalPatternHash;
+
+    @Column(name = "support_ratio", nullable = false)
+    private Double supportRatio;
+
+    @Column(name = "weighted_support", nullable = false)
+    private Double weightedSupport;
+
+    @Column(name = "itemset_count", nullable = false)
+    private Integer itemsetCount;
+
+    @Column(name = "pattern_weight_policy", nullable = false, length = 80)
+    private String patternWeightPolicy;
+
     @Column(name = "support_abs")
     private Long support;
 
@@ -43,6 +61,16 @@ public class PatternEntity {
         this.support = support;
         this.weight = weight;
         this.patternLength = patternLength;
+    }
+
+    /** Complete storage mapping; production values are validated by the persistence projector. */
+    public PatternEntity(RunEntity run, String canonicalPattern, String canonicalPatternHash, Long support,
+            Double supportRatio, Double weightedSupport, Integer patternLength, Integer itemsetCount,
+            Double weight, String patternWeightPolicy) {
+        this(run, support, weight, patternLength);
+        this.canonicalPattern = canonicalPattern; this.canonicalPatternHash = canonicalPatternHash;
+        this.supportRatio = supportRatio; this.weightedSupport = weightedSupport;
+        this.itemsetCount = itemsetCount; this.patternWeightPolicy = patternWeightPolicy;
     }
 
     public Long getPatternId() {
@@ -88,4 +116,11 @@ public class PatternEntity {
     public Integer getPatternLength() {
         return patternLength;
     }
+
+    public String getCanonicalPattern() { return canonicalPattern; }
+    public String getCanonicalPatternHash() { return canonicalPatternHash; }
+    public Double getSupportRatio() { return supportRatio; }
+    public Double getWeightedSupport() { return weightedSupport; }
+    public Integer getItemsetCount() { return itemsetCount; }
+    public String getPatternWeightPolicy() { return patternWeightPolicy; }
 }

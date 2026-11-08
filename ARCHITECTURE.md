@@ -311,8 +311,8 @@ and reverifies actual publication bytes before calling the engine outside DB
 transactions. Completion stages/read/ack are internal Java APIs, not HTTP routes.
 Default execution.enabled=false preserves 503/no insertion; enabled creation can
 return 202 before mining completes. Outcomes are in memory and retain capacity
-until explicit handoff acknowledgement; no automatic consumer or pattern
-persistence exists. WDM-05.5 binds owner/attempt/lease in the creation transaction
+until explicit handoff acknowledgement; automatic persistence/handoff is not
+wired. The explicit WDM-06.3 PATTERN seam is described below. WDM-05.5 binds owner/attempt/lease in the creation transaction
 and uses fenced CAS transitions QUEUED -> RUNNING -> SUCCEEDED/FAILED in short
 REQUIRES_NEW transactions. A separate maintenance scheduler renews live queued
 and running leases and reconciles uncertain finalization through DB readback;
@@ -369,8 +369,84 @@ combo use cases should call a deliberate application boundary around
 `compose.yaml` creates a local MySQL 8.4 service and persistent named volume.
 Hibernate uses `ddl-auto: validate`; schema ownership therefore belongs to an
 explicit, reviewed schema/migration process. The active Flyway classpath under
-`backend/src/main/resources/db/migration/` contains V1, V2 and additive V3
-execution ownership/attempt/lease columns. V3 was verified with actual Flyway
+`backend/src/main/resources/db/migration/` contains V1, V2, additive V3
+execution ownership/attempt/lease columns, and additive V4 run metadata.
+V4 adds RUN_PROVENANCE (versioned immutable input descriptors) and
+RUN_RESULT_PUBLICATION (separate publication state). RunCreationRepository
+inserts the run and both metadata rows in one transaction; execution verification
+checks the stored provenance before mining. Completed outcomes retain only the
+small input-descriptor context needed for later handoff. WDM-06.3 adds an explicit
+internal PatternPersistenceService with artifact re-preparation, an immutable
+dictionary/weight context, bounded canonical projection and a MANDATORY-transaction
+PatternPersistenceRepository. The service opens a 30-second transaction after I/O;
+later temporal/statistics writers can join the same repository transaction. It
+locks/rechecks the successful run and provenance, inserts or exactly reconciles
+the entire PATTERN set, and verifies readback. No automatic consumer, registry
+acknowledgement or production COMMITTED transition exists yet. WDM-06.4 adds
+TemporalPatternProjector, TemporalPatternPersistenceRepository and an explicit
+TemporalPatternPersistenceService. It composes PATTERN and PATTERN_ITEM in one
+transaction after verified preparation, obtains verified generated parent IDs,
+and compares complete reconstructed pattern/support maps. A parent-only 06.3
+stage can gain all temporal rows; nonempty partial/conflicting temporal stages
+are rejected. Existing entity mappings and schema stay unchanged. No automatic
+consumer, complete publication or acknowledgement is added.
+WDM-06.5 adds an explicit RunItemStatisticsPersistenceService composing all three
+tables in one 30-second REQUIRES_NEW transaction. RunItemStatisticsProjector uses
+the immutable core statistics retained by PatternPersistenceContext; no formulas
+or engine behavior are changed. Its MANDATORY repository rechecks the complete
+temporal map/run/provenance before item writes. On first insertion it captures
+PRODUCT name/SKU under shared locks; existing complete statistics retain those
+snapshots even after catalog changes. Nonempty partial/conflicting statistics
+are rejected. Limits are 10,000 items and 8 MiB of statistics accounting (192 bytes
+per row plus UTF-8 product/name/SKU), separate from the unchanged temporal bounds.
+Empty pattern output still retains all input-item statistics. This remains
+staging: no automatic consumer, COMMITTED transition, eviction or acknowledgement.
+WDM-06.7 adds RunResultController -> services/run/query ->
+RunResultQueryRepository, a JDBC-only read slice with repeatable-read transactions.
+Existing history/status APIs remain unchanged. New metadata/page/detail/JSON-export
+routes expose exact integer strings, temporal structure and historical same-run
+catalog snapshots. Explicit view=staging is inspection only; default published
+reads reject until a supported complete-publication verifier exists. Reads do not
+call engine/writer/registry seams. Export is bounded and prepared before HTTP
+commit; wdm.result-query.max-export-bytes defaults to 16 MiB. Contract and evidence:
+docs/wdm/mining-request-contract.md, WDM-06.7 section.
+WDM-06.11 extends this boundary with ResultManifestCodec,
+RunResultPublicationRepository/Service and an opt-in RunResultPublicationConsumer.
+It reuses existing projections and three-table writers in one transaction before
+marking V4 COMMITTED. Only a confirmed commit permits registry acknowledgement.
+The bounded consumer reads fresh lifecycle-confirmed outcomes outside registry
+locks, retries transient failures with capped backoff and retains rejected results.
+Published readers verify the complete stored manifest in their repeatable-read
+transaction and require no live Outcome/source files. Export V2 includes all
+run-item snapshots; PublishedMiningResultProvider exposes the same immutable
+verified bundle for future Combo generation, without writing Combo tables.
+WDM-06.8 consumes only the metadata route through frontend run-results.ts and
+RunResultMetadataPanel on the existing run detail page. History retains server
+pagination/filter/back navigation, adds a snapshot filter form and distinguishes
+engine counts from stored counts. The result read uses useWorkspaceRead's
+identity/token/abort boundary, independently of status polling; no per-row metadata
+fan-out, pattern/export UI or new write is added.
+WDM-06.9 implements the existing /admin/patterns route as a staging-only Explorer.
+It reads the 06.7 parent page through runResultApi.patterns with explicit
+view=staging and size=20, retaining exact decimal IDs/counts and canonical
+itemset boundaries. Run/page/session changes use the same useWorkspaceRead
+abort boundary. The metadata panel links to Explorer only while stagingReadable;
+Explorer/detail/history navigation preserves the originating history state.
+No per-row temporal query, product lookup, export, publication writer or Combo
+handoff is introduced. Full temporal/item detail remains WDM-06.10.
+WDM-06.10 adds the guarded /admin/patterns/:runId/:patternId route and
+runResultApi.detail over the existing explicit staging detail endpoint. It
+reuses parent-summary validation, checks ordered itemset/item DTO structure and
+historical same-run snapshots, and preserves exact decimal IDs/counters. The
+detail response supplies both provenance and item statistics without catalog or
+per-item requests. PatternStructure renders 10 itemsets per local page and 50
+items per itemset page; the complete supported detail is still fetched once.
+Explorer page is carried in the detail URL; router state preserves run/history
+return context. No export, Combo handoff, publication or mining change is added.
+The two native-SQL metadata tables
+bring the V4 application schema to 47 tables and require explicit migration
+verification beyond Hibernate validation. V4 is tested on isolated MySQL only;
+owner deployment remains separate. V3 was verified with actual Flyway
 upgrade on isolated MySQL; the owner database was not migrated in WDM-05.5.
 WDM-05.7 separately inspected the local owner DB 127.0.0.1:3307/wspm_combo and
 ran actual Flyway validate -> migrate(target=3) -> validate. V3 was already

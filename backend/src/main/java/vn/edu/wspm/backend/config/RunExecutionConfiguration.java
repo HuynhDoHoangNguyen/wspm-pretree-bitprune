@@ -11,6 +11,12 @@ import vn.edu.wspm.backend.repositories.run.RunLifecycleRepository;
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "wdm.execution.enabled", havingValue = "true")
 public class RunExecutionConfiguration {
+    @Bean(initMethod = "start", destroyMethod = "close")
+    @ConditionalOnProperty(name = "wdm.result-publication.enabled", havingValue = "true")
+    public RunResultPublicationConsumer resultPublicationConsumer(ManagedRunExecutionAdmission admission,
+            vn.edu.wspm.backend.services.run.persistence.RunResultPublicationService publication) {
+        return new RunResultPublicationConsumer(admission, publication);
+    }
     @Bean public LifecycleLimits lifecycleLimits(@Value("${wdm.execution.lease-millis:60000}") long lease,
             @Value("${wdm.execution.heartbeat-millis:10000}") long heartbeat,
             @Value("${wdm.execution.recovery-batch:100}") int batch) { return new LifecycleLimits(lease, heartbeat, batch); }

@@ -10,10 +10,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { runEngineCases } from './engine-cases.mjs';
+import { runPublicationCases } from './publication-cases.mjs';
+import { runFinalResultCases } from './final-result-cases.mjs';
 
 // Dedicated opt-in gate: actual packaged application + test-only same-JVM observer.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const label = 'WDM-05.10', prefix = 'wspm-wdm0510-', name = prefix + randomBytes(6).toString('hex');
+const finalResultGate = process.env.WDM_FINAL_RESULT_GATE === '1';
+const publicationGate = finalResultGate || process.env.WDM_RESULT_PUBLICATION_GATE === '1';
+const label = finalResultGate ? 'WDM-06.12' : publicationGate ? 'WDM-06.11' : 'WDM-05.10', prefix = 'wspm-wdm0510-', name = prefix + randomBytes(6).toString('hex');
 const temp = mkdtempSync(path.join(tmpdir(), prefix));
 const logBase = path.join(root, '.agent-workspace/phase-wdm'); mkdirSync(logBase, { recursive: true });
 const logDirectory = mkdtempSync(path.join(logBase, label + '-'));
@@ -24,7 +28,12 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const digest = file => hash(readFileSync(file));
 function command(exe, args, options = {}) {
-  return execFileSync(exe, args, { cwd: root, encoding: 'utf8', timeout: 60000, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], ...options }).trim();
+  try {
+    return execFileSync(exe, args, { cwd: root, encoding: 'utf8', timeout: 60000, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], ...options }).trim();
+  } catch (error) {
+    // execFileSync's default message embeds argv (including ephemeral MYSQL_PWD).
+    throw new Error('Command unavailable: ' + exe + '; exit=' + (error.status ?? 'unknown'));
+  }
 }
 function verifyContainer() {
   assert.match(name, /^wspm-wdm0510-[a-f0-9]+$/);
@@ -70,7 +79,8 @@ console.log('Evidence directory: ' + path.relative(root, logDirectory));
 try {
   const buildRoot = realpathSync(path.resolve(root, process.env.WDM_E2E_BUILD_DIR || 'frontend/build'));
   assert.ok(buildRoot.startsWith(realpathSync(root) + path.sep));
-  const backendJar = path.join(root, 'backend/target/backend-1.0-SNAPSHOT.jar');
+  const backendJar = realpathSync(path.resolve(root, process.env.WDM_E2E_BACKEND_JAR || 'backend/target/backend-1.0-SNAPSHOT.jar'));
+  assert.ok(backendJar.startsWith(realpathSync(root) + path.sep), 'Backend artifact must be inside the workspace');
   const coreJar = path.join(root, 'mining-core/target/mining-core-1.0-SNAPSHOT.jar');
   const jarEntries = command('jar', ['tf', backendJar]);
   assert.equal(/vn\/edu\/wspm\/e2e\//.test(jarEntries), false, 'Test helpers must not enter production JAR');
@@ -79,18 +89,21 @@ try {
   command('jar', ['xf', backendJar], { cwd: stage });
   const nestedCore = path.join(stage, 'BOOT-INF/lib/mining-core-1.0-SNAPSHOT.jar');
   assert.equal(digest(nestedCore), digest(coreJar), 'Direct verifier must use the exact packaged core bytes');
-  const helperSource = path.join(root, 'backend/target/test-classes/vn/edu/wspm/e2e');
+  const helperSource = path.join(root, process.env.WDM_E2E_BACKEND_TEST_CLASSES || 'backend/target/test-classes', 'vn/edu/wspm/e2e');
   const helperTarget = path.join(stage, 'test-classes/vn/edu/wspm/e2e');
   mkdirSync(helperTarget, { recursive: true });
   // Explicit allowlist excludes JUnit test classes and any unrelated backend test support.
   const helpers = ['EngineE2EApplication', 'EngineE2ETestConfiguration', 'EngineExecutionGate', 'EngineRunEvidenceObserver'];
   for (const file of helpers) cpSync(path.join(helperSource, file + '.class'), path.join(helperTarget, file + '.class'));
   const classpath = [path.join(stage, 'BOOT-INF/classes'), path.join(stage, 'BOOT-INF/lib/*'), path.join(stage, 'test-classes')].join(path.delimiter);
-  const verifierClasspath = [nestedCore, path.join(root, 'mining-core/target/test-classes')].join(path.delimiter);
+  const verifierClasspath = [nestedCore, path.join(root, 'mining-core/target/test-classes'),
+    ...(finalResultGate ? [path.join(stage, 'BOOT-INF/classes'), path.join(stage, 'BOOT-INF/lib/*')] : [])].join(path.delimiter);
   const preparation = { gate: label, gitHead: command('git', ['rev-parse', 'HEAD']), node: process.version,
     java: command('java', ['--version']).split('\n')[0], buildDirectory: path.relative(root, buildRoot),
     indexSha256: digest(path.join(buildRoot, 'index.html')), manifestSha256: digest(path.join(buildRoot, 'asset-manifest.json')),
-    backendJarSha256: digest(backendJar), packagedCoreSha256: digest(nestedCore), directCoreSha256: digest(coreJar),
+    backendJar: path.relative(root,backendJar), backendJarSha256: digest(backendJar), packagedCoreSha256: digest(nestedCore), directCoreSha256: digest(coreJar),
+    ...(finalResultGate ? { fixtureHashes: Object.fromEntries(['round-trip.csv','round-trip-expected.json','multipage.csv','numeric-item-order.csv'].map(file =>
+      [file,digest(path.join(root,'backend/src/test/resources/wdm/csv-v1',file))])) } : {}),
     helperClasses: Object.fromEntries(readdirSync(helperTarget).map(file => [file, digest(path.join(helperTarget, file))])), sources: sourceInventory() };
   writeFileSync(path.join(logDirectory, 'PREPARATION.json'), JSON.stringify(preparation, null, 2));
   containerId = command('docker', ['run', '--detach', '--rm', '--name', name, '--label', 'codex-task=' + label,
@@ -127,16 +140,17 @@ try {
     'auth.jwt.secret': jwtSecret, 'auth.jwt.issuer': 'https://wdm0510.example.test', 'auth.jwt.key-id': 'wdm0510-test-key',
     'auth.allowed-origins': origin, 'auth.cookie-secure': true, 'wdm.snapshot-storage.root': path.join(temp, 'snapshots'),
     'wdm.execution.enabled': true, 'wdm.execution.parallelism': 1, 'wdm.execution.queue-capacity': 1,
+    'wdm.result-publication.enabled': publicationGate, 'engine.e2e.max-calls': finalResultGate ? 64 : publicationGate ? 4 : 2,
     'wdm.execution.shutdown-grace-millis': 30000, 'wdm.execution.lease-millis': 60000, 'wdm.execution.heartbeat-millis': 10000, 'wdm.execution.recovery-batch': 100,
   };
-  async function startBatch(batch, hold = false) {
+  async function startBatch(batch, hold = false, overrides = {}) {
     await stopBatch(); backendPort = await freePort();
     const directory = path.join(logDirectory, batch); mkdirSync(directory);
     if (hold) writeFileSync(path.join(directory, 'HOLD'), 'test-only');
-    const config = { ...configuration, 'server.port': backendPort, 'engine.e2e.directory': directory };
+    const config = { ...configuration, ...overrides, 'server.port': backendPort, 'engine.e2e.directory': directory };
     const child = launch(['-cp', classpath, 'vn.edu.wspm.e2e.EngineE2EApplication', ...Object.entries(config).map(([key, value]) => '--' + key + '=' + value)], batch + '-SERVER.log');
     current = { directory, child }; await ready(child);
-    assert.equal(sql("SELECT GROUP_CONCAT(version ORDER BY installed_rank) FROM flyway_schema_history WHERE success=1;"), '1,2,3');
+    assert.equal(sql("SELECT GROUP_CONCAT(version ORDER BY installed_rank) FROM flyway_schema_history WHERE success=1;"), '1,2,3,4');
     assert.equal(sql("SELECT COUNT(*) FROM flyway_schema_history WHERE success=0 OR type='BASELINE';"), '0');
     return directory;
   }
@@ -147,13 +161,13 @@ try {
   sql("INSERT INTO ROLE(role_id,code,name) VALUES('customer-role','CUSTOMER','Customer'),('admin-role','ADMIN','Admin');");
   browser = await chromium.launch({ channel: 'msedge', headless: true }); preparation.browser = 'Microsoft Edge ' + browser.version();
   writeFileSync(path.join(logDirectory, 'PREPARATION.json'), JSON.stringify(preparation, null, 2));
-  await runEngineCases({ browser, origin, sql, root, temp, logDirectory, verifierClasspath, startBatch, initialDirectory: current.directory,
+  await (finalResultGate ? runFinalResultCases : publicationGate ? runPublicationCases : runEngineCases)({ browser, origin, sql, root, temp, logDirectory, verifierClasspath, startBatch, initialDirectory: current.directory,
     backendConfiguration: configuration });
   await stopBatch();
   assert.deepEqual(sourceInventory(), preparation.sources, 'Source changed during gate');
-  console.log('PASS WDM-05.10 Engine E2E Gate; owner acceptance remains separate');
+  console.log('PASS ' + label + ' E2E Gate; owner acceptance remains separate');
 } catch (error) {
-  console.error('FAIL WDM-05.10: ' + (error.code || error.name || 'error'));
+  console.error('FAIL ' + label + ': ' + (error.code || error.name || 'error'));
   console.error((error.stack || '').split('\n').filter(line => line.trim().startsWith('at ')).slice(0, 4).join('\n'));
   process.exitCode = 1;
 } finally {

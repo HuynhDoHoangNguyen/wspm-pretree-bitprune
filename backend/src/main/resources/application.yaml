@@ -59,6 +59,10 @@ logging:
     org.hibernate.orm.jdbc.bind: "OFF"
 
 wdm:
+  result-publication:
+    enabled: ${WDM_RESULT_PUBLICATION_ENABLED:false}
+  result-query:
+    max-export-bytes: ${WDM_RESULT_QUERY_MAX_EXPORT_BYTES:16777216}
   execution:
     enabled: ${WDM_EXECUTION_ENABLED:false}
     parallelism: ${WDM_EXECUTION_PARALLELISM:1}

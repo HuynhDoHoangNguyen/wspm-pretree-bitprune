@@ -10,6 +10,7 @@ import vn.edu.wspm.backend.services.run.PreparedRun;
 import vn.edu.wspm.backend.services.run.RunExecutionAdmission;
 import vn.edu.wspm.backend.services.run.engine.MiningEngine;
 import vn.edu.wspm.backend.services.run.engine.MiningEngineResult;
+import vn.edu.wspm.backend.services.run.persistence.RunPersistenceContext;
 
 /** Opt-in bounded executor AND completion store. Outcomes stay in memory until explicit handoff acknowledgement. */
 @Slf4j
@@ -17,10 +18,14 @@ public final class ManagedRunExecutionAdmission implements RunExecutionAdmission
     /** Internal task state only; not MINING_RUN.status. */
     public enum State { RESERVED, ACTIVATING, SUBMITTED, RUNNING, COMPLETED, FAILED, CLOSED, ACKNOWLEDGED }
     public record Outcome(String runId, UUID token, State state, MiningEngineResult result, String failureCode,
-            boolean lifecycleConfirmed, RunMetricsCapture metrics) {
+            boolean lifecycleConfirmed, RunMetricsCapture metrics, RunPersistenceContext persistenceContext) {
         public Outcome {
             Objects.requireNonNull(runId); Objects.requireNonNull(token);
             if (result == null && metrics != null) throw new IllegalArgumentException("No complete metrics for failure");
+            if (result != null && persistenceContext == null
+                    || persistenceContext != null && !runId.equals(persistenceContext.runId())) {
+                throw new IllegalArgumentException("Run-bound persistence context required for success");
+            }
             if (state == State.COMPLETED ? result == null || failureCode != null
                     : state != State.FAILED || result != null || failureCode == null) {
                 throw new IllegalArgumentException("Only complete success or safe failure outcomes are allowed");
@@ -136,6 +141,7 @@ public final class ManagedRunExecutionAdmission implements RunExecutionAdmission
         log.info("Execution worker started: runId={}", entry.id);
         MiningEngineResult result = null; RuntimeException failure = null;
         RunMetricsCapture metrics = null;
+        RunPersistenceContext persistenceContext = null;
         RunFailureCode code = RunFailureCode.CLAIM_NOT_CONFIRMED;
         try {
             if (lifecycle != null && !lifecycle.claim(entry.id, entry.owner)) throw unavailable();
@@ -143,6 +149,7 @@ public final class ManagedRunExecutionAdmission implements RunExecutionAdmission
             code = RunFailureCode.INPUT_REVERIFICATION_FAILED;
             var measured = lifecycle == null ? null : Objects.requireNonNull(verifier.refreshMeasuredOwned(entry.id, input, entry.owner, ticker));
             var fresh = measured == null ? verifier.refresh(entry.id, input) : measured.input();
+            persistenceContext = RunPersistenceContext.from(entry.id, fresh);
             code = RunFailureCode.ENGINE_EXECUTION_FAILED;
             result = Objects.requireNonNull(engine.execute(fresh.engineRequest()), "engine result is required");
             long total = ticker.getAsLong() - start;
@@ -152,7 +159,7 @@ public final class ManagedRunExecutionAdmission implements RunExecutionAdmission
         CompletableFuture<Outcome> finished;
         var state = result == null ? State.FAILED : State.COMPLETED;
         var outcome = new Outcome(entry.id, entry.token, state, result,
-                result != null ? null : lifecycle == null ? "EXECUTION_FAILED" : code.name(), confirmed, metrics);
+                result != null ? null : lifecycle == null ? "EXECUTION_FAILED" : code.name(), confirmed, metrics, persistenceContext);
         synchronized (lock) {
             entry.outcome = outcome; finished = entry.finished; entry.failureCode = code;
             entry.input = null; entry.state = state;
@@ -187,7 +194,7 @@ public final class ManagedRunExecutionAdmission implements RunExecutionAdmission
             if (current != null && !current.lifecycleConfirmed() && confirm(entry, current.result(), current.metrics(), entry.failureCode)) {
                 synchronized (lock) {
                     if (entries.get(entry.id) == entry && entry.outcome == current) entry.outcome = new Outcome(
-                            current.runId(), current.token(), current.state(), current.result(), current.failureCode(), true, current.metrics());
+                            current.runId(), current.token(), current.state(), current.result(), current.failureCode(), true, current.metrics(), current.persistenceContext());
                 }
             }
         }

@@ -37,6 +37,7 @@ import vn.edu.wspm.backend.exception.ErrorCode;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class RunCreationIntegrationTest {
     @Container static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4")
+            .withCommand("--log-bin-trust-function-creators=1")
             .withDatabaseName("wdm_run_creation_test").withUrlParam("connectionTimeZone", "UTC")
             .withUrlParam("forceConnectionTimeZoneToSession", "true");
     @TempDir static Path root;
@@ -280,6 +281,27 @@ class RunCreationIntegrationTest {
                 assertEquals(before, jdbc.queryForMap("SELECT * FROM MINING_RUN WHERE run_id=?", id));
                 assertTrue(context.getBeansOfType(RunExecutionAdmission.class).isEmpty());
             } finally { jdbc.update("DELETE FROM MINING_RUN WHERE run_id=?", id); }
+        }
+    }
+    @Test @Order(6) void provenanceAndPublicationCommitWithRunAndMetadataFailuresRollBackActualCreation() {
+        var prepared = preparation.prepare(new RunCreateRequest(snapshot, "WSPM_PRETREE", "PERCENT", 14.0));
+        var creation = context.getBean(vn.edu.wspm.backend.repositories.run.RunCreationRepository.class);
+        var metadata = context.getBean(vn.edu.wspm.backend.repositories.run.RunMetadataRepository.class);
+        String success = UUID.randomUUID().toString(); creation.create(success, prepared);
+        var stored = metadata.read(success).orElseThrow();
+        assertEquals(vn.edu.wspm.backend.services.run.persistence.RunProvenance.from(prepared), stored.provenance());
+        assertEquals("NOT_PUBLISHED", stored.publication().status());
+        assertEquals(Instant.parse(jdbc.queryForObject("SELECT DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') FROM MINING_RUN WHERE run_id=?", String.class, success)),
+                stored.capturedAt());
+        for (String table : List.of("RUN_PROVENANCE", "RUN_RESULT_PUBLICATION")) {
+            String id = UUID.randomUUID().toString();
+            jdbc.execute("CREATE TRIGGER reject_run_metadata BEFORE INSERT ON " + table
+                    + " FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='controlled metadata failure'");
+            try {
+                assertThrows(RuntimeException.class, () -> creation.create(id, prepared));
+                for (String checked : List.of("MINING_RUN", "RUN_PROVENANCE", "RUN_RESULT_PUBLICATION"))
+                    assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM " + checked + " WHERE run_id=?", Integer.class, id));
+            } finally { jdbc.execute("DROP TRIGGER reject_run_metadata"); }
         }
     }
 }

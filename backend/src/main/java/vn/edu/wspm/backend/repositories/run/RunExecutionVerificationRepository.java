@@ -11,11 +11,14 @@ import vn.edu.wspm.backend.exception.ApplicationException;
 import vn.edu.wspm.backend.exception.ErrorCode;
 import vn.edu.wspm.backend.services.run.PreparedRun;
 import vn.edu.wspm.backend.services.run.execution.ExecutionOwnership;
+import vn.edu.wspm.backend.services.run.persistence.RunProvenance;
 
 /** Fresh, short read transaction only. No mining or filesystem access; DB lifecycle belongs to WDM-05.5. */
 @Repository
 public class RunExecutionVerificationRepository {
     @PersistenceContext private EntityManager em;
+    private final RunMetadataRepository metadata;
+    public RunExecutionVerificationRepository(RunMetadataRepository metadata) { this.metadata = metadata; }
 
     @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW, timeout = 5)
     public void requireCommitted(String runId, PreparedRun input) {
@@ -51,6 +54,7 @@ public class RunExecutionVerificationRepository {
                     .setParameter("attempt", owner.attemptId()).getSingleResult();
             if (count.intValue() != 1) throw new ApplicationException(ErrorCode.INVALID_RESOURCE_STATE, "Execution ownership is not valid.");
         }
+        metadata.requireMatches(runId, RunProvenance.from(input));
     }
 
     private static boolean bits(Double actual, double expected) {

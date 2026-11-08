@@ -1,0 +1,40 @@
+import React from 'react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { useSharedAuth } from 'auth/session';
+import { runResultApi, WdmApiError } from 'api/admin/data-mining';
+import { downloadDatasetFile } from './downloadDatasetFile';
+import RunResultExportButton from './RunResultExportButton';
+jest.mock('auth/session', () => ({ useSharedAuth: jest.fn() }));
+jest.mock('./downloadDatasetFile', () => ({ downloadDatasetFile: jest.fn() }));
+const identity = useSharedAuth as unknown as jest.Mock;
+const id = '10000000-0000-4000-8000-000000000001';
+const session = { status: 'authenticated', accessToken: 'token', user: { userId: 'admin', roles: ['ADMIN'] }, forbidden: false };
+beforeEach(() => { identity.mockReturnValue(session); jest.clearAllMocks(); });
+afterEach(() => jest.restoreAllMocks());
+test('downloads a verified file once and presents server errors with request ID', async () => {
+  const file = { blob: new Blob(['{}']), filename: 'result.json' };
+  const request = jest.spyOn(runResultApi, 'export').mockResolvedValueOnce(file)
+    .mockRejectedValueOnce(new WdmApiError('http', 413, 'PAYLOAD_TOO_LARGE', 'SQL /secret', 'request-413'));
+  render(<RunResultExportButton runId={id} view="published"/>);
+  fireEvent.click(screen.getByRole('button')); await screen.findByText(/Đã gửi tệp JSON/);
+  expect(downloadDatasetFile).toHaveBeenCalledWith(file); expect(request).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button')); await screen.findByText('Mã yêu cầu: request-413');
+  expect(screen.queryByText(/SQL \/secret/)).not.toBeInTheDocument();
+  expect(downloadDatasetFile).toHaveBeenCalledTimes(1);
+});
+test.each(['run', 'logout', 'token', 'role', 'forbidden', 'unmount'])('aborts download and rejects old response on %s', async kind => {
+  let resolve!: (value: { blob: Blob; filename: string }) => void;
+  const request = jest.spyOn(runResultApi, 'export').mockImplementation(() => new Promise(r => { resolve = r; }));
+  const view = render(<RunResultExportButton runId={id} view="published"/>);
+  fireEvent.click(screen.getByRole('button'));
+  const signal = request.mock.calls[0][2];
+  if (kind === 'logout') identity.mockReturnValue({ status: 'anonymous' });
+  if (kind === 'token') identity.mockReturnValue({ ...session, accessToken: 'new-token' });
+  if (kind === 'role') identity.mockReturnValue({ ...session, user: { ...session.user, roles: ['CUSTOMER'] } });
+  if (kind === 'forbidden') identity.mockReturnValue({ ...session, forbidden: true });
+  if (kind === 'unmount') view.unmount();
+  else view.rerender(<RunResultExportButton runId={kind === 'run' ? id.replace(/1$/, '2') : id} view="published"/>);
+  expect(signal?.aborted).toBe(true);
+  await act(async () => resolve({ blob: new Blob(['{}']), filename: 'old.json' }));
+  expect(downloadDatasetFile).not.toHaveBeenCalled();
+});

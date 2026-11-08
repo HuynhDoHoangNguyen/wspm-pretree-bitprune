@@ -12,10 +12,14 @@ import useWorkspaceStyles from './workspace.styles';
 export default function WorkspaceList({ runs = false }: { runs?: boolean }) {
   const [params, setParams] = useSearchParams(), { classes } = useWorkspaceStyles();
   const [search, setSearch] = useState(params.get('search') || '');
+  const [snapshot, setSnapshot] = useState(params.get('snapshotId') || '');
+  const [snapshotError, setSnapshotError] = useState(false);
+  const selectedSnapshot = params.get('snapshotId') || '';
+  useEffect(() => { setSnapshot(selectedSnapshot); setSnapshotError(false); }, [selectedSnapshot]);
   const selectedSearch = params.get('search') || '';
   useEffect(() => setSearch(selectedSearch), [selectedSearch]);
   const returnTo = (runs ? '/admin/mining-runs?' : '/admin/datasets?') + params.toString();
-  const page = /^[1-9][0-9]{0,5}$/.test(params.get('page') || '') ? Number(params.get('page')) : 1;
+  const page = /^[1-9][0-9]{0,5}$/.test(params.get('page') || '') && Number(params.get('page')) <= 100000 ? Number(params.get('page')) : 1;
   const keys = runs ? ['search', 'status', 'algorithm', 'snapshotId'] : ['search', 'validationStatus', 'conversionStatus'];
   const query: Record<string, string> = { page: String(page), size: '20' };
   keys.forEach(key => { const value = params.get(key); if (value) query[key] = value; });
@@ -41,7 +45,14 @@ export default function WorkspaceList({ runs = false }: { runs?: boolean }) {
         <Select label="Chuyển đổi" clearable value={params.get('conversionStatus')} onChange={v => update('conversionStatus', v)} data={[
           { value: 'NOT_STARTED', label: 'Chưa chuyển đổi' }, { value: 'RUNNING', label: 'Đang chuyển đổi' }, { value: 'SUCCEEDED', label: 'Đã chuyển đổi' }, { value: 'FAILED', label: 'Thất bại' }]}/></>}
     </Group>
+    {runs && <form aria-label="Lọc lịch sử theo snapshot" onSubmit={event => {
+      event.preventDefault(); const value = snapshot.trim();
+      setSnapshotError(!!value && !isRunId(value)); if (!value || isRunId(value)) update('snapshotId', value);
+    }}><Group align="end"><TextInput label="Snapshot ID nguồn" value={snapshot} onChange={event => setSnapshot(event.currentTarget.value)}
+        error={snapshotError ? 'Nhập UUID snapshot chuẩn, chữ thường.' : undefined} style={{ flex: '1 1 260px' }}/>
+      <Button type="submit" variant="light">Lọc snapshot</Button></Group></form>}
     <Text size="xs" color="dimmed">Mới nhất trước · 20 dòng mỗi trang · Thời gian UTC+07</Text>
+    {runs && <Text size="sm" color="dimmed">Trạng thái bên dưới là trạng thái thực thi. Số patterns do engine báo cáo không xác nhận số hàng đã lưu hoặc kết quả đã công bố. Mở run để xem metadata kết quả.</Text>}
     {read.loading && <Text role="status">Đang tải danh sách…</Text>}{read.error && <ReadError retry={read.refresh} error={read.error}/>}
     {read.value && <>
       {!read.value.items.length ? <Text role="status">Chưa có {runs ? 'run' : 'snapshot'} phù hợp. Thử đổi bộ lọc hoặc tạo dữ liệu mới.</Text>
@@ -52,7 +63,7 @@ export default function WorkspaceList({ runs = false }: { runs?: boolean }) {
               const row = item as RunRow;
               return <tr key={row.runId}><td>{isRunId(row.runId) ? <Anchor component={Link} state={{ returnTo }} to={'/admin/mining-runs/' + row.runId}>{shortId(row.runId)}</Anchor> : <Text size="sm">{row.runId}</Text>}
                 <Text size="sm" weight={600}>{row.sourceName || 'Dữ liệu chưa có tên'}</Text>{isRunId(row.snapshotId) ? <Anchor size="xs" component={Link} to={'/admin/datasets/' + row.snapshotId}>Snapshot {shortId(row.snapshotId)}</Anchor> : <Text size="xs">Snapshot cũ: {row.snapshotId}</Text>}</td>
-              <td><Text size="sm">{row.algorithm}</Text><Text size="xs">{row.minsupMode} · {row.configuredValue}</Text><Text size="xs">Patterns: {row.patternCount ?? 'Chưa có'}</Text></td>
+              <td><Text size="sm">{row.algorithm}</Text><Text size="xs">{row.minsupMode === 'PERCENT' ? 'Minsup phần trăm' : row.minsupMode === 'ABSOLUTE' ? 'Minsup tuyệt đối' : row.minsupMode} · {row.configuredValue}{row.minsupMode === 'PERCENT' ? '%' : ''}</Text><Text size="xs">Patterns (engine): {row.patternCount ?? 'Chưa có'}</Text></td>
               <td><StateBadge value={row.status}/></td><td><Text size="sm">{localTime(row.createdAt)}</Text><Text size="xs" color="dimmed">Bắt đầu: {localTime(row.startedAt)}<br/>Kết thúc: {localTime(row.finishedAt)}</Text></td>
               <td>{isRunId(row.runId) ? <Button component={Link} state={{ returnTo }} to={'/admin/mining-runs/' + row.runId} size="xs" variant="light">Xem run</Button> : <Text size="xs">ID cũ chưa hỗ trợ mở chi tiết</Text>}<details><summary>ID đầy đủ</summary><CopyValue label="Run ID" value={row.runId}/></details></td></tr>;
             }

@@ -77,9 +77,14 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-const heading = (path: string, label: string) => path === '/admin/patterns' ? 'Khám phá Pattern' : label;
+const heading = (path: string, label: string) => label;
 
 describe('Admin Data & Mining navigation', () => {
+  it.each([null, { roles: ['CUSTOMER'] }])('guards pattern detail for identity %s', user => {
+    setIdentity(user); render(<Feature entries={['/admin/patterns/11111111-2222-4333-8444-555555555555/1']}/>);
+    expect(screen.queryByRole('heading', { name: 'Chi tiết pattern' })).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
   it.each([null, { roles: ['CUSTOMER'] }])('guards the run detail route for identity %s', user => {
     setIdentity(user); render(<Feature entries={['/admin/mining-runs/11111111-2222-4333-8444-555555555555']}/>);
     expect(screen.queryByRole('heading', { name: 'Chi tiết lần chạy khai phá' })).not.toBeInTheDocument();
@@ -92,7 +97,6 @@ describe('Admin Data & Mining navigation', () => {
     expect(within(nav).getByRole('link', { name: label })).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getAllByRole('link')).toHaveLength(3);
     expect(screen.queryByText('Chức năng đang được chuẩn bị')).not.toBeInTheDocument();
-    if (path === '/admin/patterns') expect(patternHttpClient.runs).toHaveBeenCalledWith(0, 20, { signal: expect.any(AbortSignal) });
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.queryByText(/không có dữ liệu/i)).not.toBeInTheDocument();
   });
@@ -123,7 +127,7 @@ describe('Admin Data & Mining navigation', () => {
 
   it('resolves a fresh page load with trailing slash, query and hash', () => {
     const view = render(<Feature entries={['/admin/patterns/?page=2#detail']}/>);
-    expect(screen.getByRole('heading', { level: 2, name: 'Khám phá Pattern' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Mẫu khai phá' })).toBeInTheDocument();
     view.unmount();
     render(<Feature entries={['/admin/patterns/?page=2#detail']}/>);
     expect(screen.getByRole('link', { name: 'Mẫu khai phá' })).toHaveAttribute('aria-current', 'page');
@@ -134,7 +138,7 @@ describe('Admin Data & Mining navigation', () => {
     render(<Feature entries={['/admin/patterns']}/>);
     expect(screen.queryByRole('navigation', { name: 'Dữ liệu & Khai phá' })).not.toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(user ? 'Không có quyền truy cập' : 'Cần đăng nhập');
-    expect(screen.queryByRole('heading', { level: 2, name: 'Khám phá Pattern' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 2, name: 'Mẫu khai phá' })).not.toBeInTheDocument();
     expect(patternHttpClient.runs).not.toHaveBeenCalled();
   });
 

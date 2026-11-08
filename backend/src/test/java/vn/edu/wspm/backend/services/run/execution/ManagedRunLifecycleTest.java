@@ -37,9 +37,11 @@ class ManagedRunLifecycleTest {
             provider.reserve("run", input).activate();
             var first = provider.completion("run").orElseThrow().toCompletableFuture().get(10, TimeUnit.SECONDS);
             assertSame(result, first.result()); assertFalse(first.lifecycleConfirmed());
+            assertEquals(input.binding(), first.persistenceContext().provenance().binding());
             assertFalse(provider.acknowledge("run", first.token())); assertEquals(1, provider.retainedCount());
             when(lifecycle.confirmSuccess(eq("run"), eq(owner), any())).thenReturn(true); provider.maintain();
             var latest = provider.outcome("run").orElseThrow(); assertTrue(latest.lifecycleConfirmed()); assertSame(result, latest.result());
+            assertSame(first.persistenceContext(), latest.persistenceContext());
             assertEquals(1, provider.retainedCount()); verify(engine).execute(any());
             assertTrue(provider.acknowledge("run", latest.token()));
         }

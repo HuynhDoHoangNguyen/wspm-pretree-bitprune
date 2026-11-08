@@ -13,6 +13,7 @@ import { runErrorMessage } from './mining-run-lifecycle';
 import { StateBadge, StoragePanel } from './WorkspacePanels';
 import useWorkspaceStyles from './workspace.styles';
 import useDetailStyles from './mining-run-detail.styles';
+import RunResultMetadataPanel from './RunResultMetadataPanel';
 
 export default function MiningRunDetailPage() {
   useTitle('Chi tiết lần chạy khai phá');
@@ -60,7 +61,8 @@ export default function MiningRunDetailPage() {
         <Button component={Link} variant="default" leftIcon={<History size={16}/>} to={ManagerPath.MINING_RUNS + '?tab=history&snapshotId=' + operation.report.snapshotId}>Các run cùng dataset</Button></div>
     </section>
     <div className={classes.executionGrid}><MiningRunStatusPanel report={operation.report}/><MiningRunMetricsPanel report={operation.report}/></div>
+    <RunResultMetadataPanel runId={runId}/>
     <StoragePanel snapshotId={operation.report.snapshotId} historical/>
-    <Text size="sm" color="dimmed">Metadata run được lưu trong DB. Patterns đầy đủ chưa có bước lưu bền vững; metrics hiển thị theo trạng thái đã xác nhận.</Text></>}
+    <Text size="sm" color="dimmed">Trạng thái/metrics và metadata kết quả là các lần đọc riêng. Xem trạng thái công bố để phân biệt thực thi hoàn tất với kết quả đã được xác minh đầy đủ.</Text></>}
   </Stack>;
 }

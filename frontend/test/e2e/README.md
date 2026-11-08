@@ -1,11 +1,118 @@
 # Browser E2E gates
 
+After WDM-06 integration, `/admin/patterns` and its detail route belong to the
+published-result pages. The retained TV2 filter Explorer uses
+`/admin/pattern-explorer` and `/api/v1/admin/pattern-runs/...`; its fixture runner
+follows those separate routes. The WDM publication endpoints remain unchanged.
+The TV2 migration-review candidates still require version/schema reconciliation
+with production V3/V4 before their old disposable schema harness can be reused.
+
 TV2 Pattern/Combo fixture gate: `node frontend/test/e2e/tv2-run.mjs` from root.
 It uses a test-classpath backend, actual application build and owned disposable
 MySQL with V1–V4. It does not use the running demo server or fake HTTP responses.
 See [NEXT-04 manual setup and mining handoff](../../../docs/research/TV2-NEXT-04_manual_and_mining_handoff.md)
 for compilation/classpath prerequisites, optional manual mode, expected results
 and cleanup. Its fixture acceptance is separate from real mining acceptance.
+
+## WDM-06.12 Final Result E2E gate
+
+From the repository root (PowerShell), use a fresh build directory and compile
+the production package plus test helpers, without `clean`:
+
+```powershell
+$env:BUILD_PATH='../.agent-workspace/phase-wdm/WDM-06.12-build-' + [guid]::NewGuid().ToString('N')
+$env:CI='false'
+npm --prefix frontend run build
+mvn -B -pl backend -am package -DskipTests
+$env:WDM_E2E_BUILD_DIR=$env:BUILD_PATH.Substring(3)
+$env:WDM_FINAL_RESULT_GATE='1'
+Remove-Item Env:WDM_FINAL_RESULT_CONTROLS_ONLY -ErrorAction SilentlyContinue
+$env:WDM_ENGINE_REGRESSION='1'
+node frontend/test/e2e/engine-run.mjs
+```
+
+`WDM_FINAL_RESULT_GATE=1` selects `final-result-cases.mjs`. Unset it to run the
+independent 05.10 engine or 06.11 publication modes. Each invocation creates a
+new evidence directory, labelled MySQL 8.4 container, private storage and Java
+processes; it does not change owner `.env`, database, or running application.
+Only the invocation's owned runtime/container/temp files are cleaned. Evidence
+is retained on failure and success; no credentials or tokens are exported.
+For a focused control-development run only, set `WDM_FINAL_RESULT_CONTROLS_ONLY=1`
+and `WDM_ENGINE_REGRESSION=0`. This skips the full matrix/multipage/restart checks,
+labels RESULT scope `FOCUSED_CONTROLS_ONLY`, and cannot satisfy the final AC gate.
+Unset `WDM_FINAL_RESULT_CONTROLS_ONLY` for the final full run.
+If Windows locks an existing backend JAR, package to a fresh owned output directory
+and set `WDM_E2E_BACKEND_JAR` to that workspace-relative JAR path and
+`WDM_E2E_BACKEND_TEST_CLASSES` to its compiled test-classes directory. The runner
+still extracts and verifies the actual packaged core bytes and helper allowlist;
+it does not stop an owner process to replace a locked artifact.
+
+Preparation uploads/validates/converts snapshots through real APIs. All six tiny
+matrix runs (two engines times ABSOLUTE 0.1 / PERCENT 14 / PERCENT 100) and both
+multipage runs, plus both numeric-item-order regressions, are created through the
+real Admin form and HTTP 202. Original
+input, complete maps and raw-double metadata are captured atomically in the
+test-only transparent delegate before return. Serial call indices bind each
+capture to its actual request/run; retained-Outcome polling is not used.
+`FinalResultE2EVerifier.java` reuses the accepted core oracle bridge and the exact
+core bytes extracted from the backend JAR. It is not production code.
+
+`backend/src/test/resources/wdm/csv-v1/multipage.csv` is a synthetic CSV-v1
+correctness fixture, not acquired transaction data. Customers MP-A and MP-B each
+have orders at 00:00:01/02/03.000000Z on 2026-11-01; their product itemsets are
+`<(mp-p1 mp-p2)(mp-p1 mp-p3)(mp-p2)>`. One order remains one itemset; each customer
+remains one sequence. There are at most 4*4*2 subsequence choices per sequence.
+The focused core test independently enumerates the expected full map and requires
+more than 20 patterns. The gate checks the converted structure explicitly:
+after the tiny fixture allocates IDs 1..3, these products use global IDs 4..6.
+No mined output is seeded and no threshold is adjusted to obtain pagination.
+
+`numeric-item-order.csv` is an independent hand-authored synthetic regression:
+ten customers, each with one order containing one distinct product. All ten
+singleton patterns have support 1 at ABSOLUTE 0.1. After the earlier fixtures,
+global item IDs are 7..16, crossing 9/10. The original query sorted the decimal
+CHAR alias (`10,11,...,7,8,9`) instead of the numeric column and publication
+rejected the manifest. The corrected query orders by `s.item_id`. Both engines'
+original/direct/oracle maps and every downstream layer must still agree across
+restart. This does not alter numeric comparisons, mining, schema or manifest
+version; it restores the contract's existing numeric item ordering.
+
+The gate compares every DB temporal coordinate, every API and rendered UI
+page/detail, all item statistics, actual UI downloads and the production Java
+provider. It repeats all reads across real JVM restart and execution-disabled
+restart, checks historical catalog snapshots and hashes mining/result/Combo
+tables to reject read-side writes (Auth lifecycle writes are excluded). Each DB
+corruption uses a separate genuine run and is never repaired. Copied artifacts
+exercise the independent verifier separately. Edge network throttling changes
+timing only for real request/download cancellation on run change, logout and
+role loss; it does not fabricate HTTP success responses.
+
+`PREPARATION.json`, `FLYWAY.tsv`, pre-return captures, `*-ORACLE.log`, full
+`<runId>-<phase>.json` comparisons, screenshots and `RESULT.json` identify each
+layer. `REGRESSION.log` exists only with `WDM_ENGINE_REGRESSION=1`. A browser PASS
+does not itself close AC11/12 or grant owner acceptance: run frontend regression,
+TypeScript, targeted lint and build separately, then review the contract AC table.
+This is correctness evidence, not a performance benchmark or owner rollout.
+
+## WDM-06.11 publication gate
+
+Build the frontend to a fresh task-owned BUILD_PATH, package the reactor with
+`mvn -B -pl backend -am package -DskipTests` (keep test helper compilation), then
+set `WDM_E2E_BUILD_DIR` to that build and `WDM_RESULT_PUBLICATION_GATE=1` before
+running `node frontend/test/e2e/engine-run.mjs`. Set `WDM_ENGINE_REGRESSION=1` to
+run the full core/backend suite on this gate's disposable datasource. Owner DB,
+.env and owner processes are untouched. The harness now expects Flyway V1–V4.
+
+This mode enables the actual publication consumer and records each original
+engine map inside the transparent test-only engine delegate before returning it.
+It verifies both engines against DB/browser-download full maps, published
+Explorer/detail navigation, capacity reuse through a third run, empty output,
+actual JVM restart, anonymous export denial and post-publication corruption.
+No original Outcome polling race is needed. Helpers stay outside production JARs.
+Evidence lives in a unique ignored WDM-06.11 directory with RESULT/PREPARATION,
+Flyway history, original maps, downloaded JSON, logs and desktop/mobile images.
+Credentials/tokens are never written into evidence. Observations are correctness
+evidence, not performance measurements.
 
 ## WDM-05.10 real Engine E2E Gate
 
