@@ -38,7 +38,7 @@ import vn.edu.wspm.backend.services.run.execution.ManagedRunExecutionAdmission.O
 import vn.edu.wspm.backend.services.run.persistence.*;
 
 /** Real CSV/storage/conversion/managed engine/Flyway/MySQL. No seeded mining results, no owner datasource. */
-@SpringBootTest(properties = {"wdm.execution.enabled=true", "wdm.execution.parallelism=1", "wdm.execution.queue-capacity=64",
+@SpringBootTest(properties = {"spring.config.import=", "wdm.result-publication.enabled=false", "wdm.execution.enabled=true", "wdm.execution.parallelism=1", "wdm.execution.queue-capacity=64",
         "spring.sql.init.mode=never", "spring.jpa.hibernate.ddl-auto=validate"})
 @Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
@@ -64,7 +64,7 @@ class PatternPersistenceIntegrationTest {
         p.add("wdm.execution.enabled", () -> true);
         var flyway = Flyway.configure().dataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())
                 .locations("classpath:db/migration").load();
-        flyway.migrate(); flyway.validate(); assertEquals("4", flyway.info().current().getVersion().getVersion());
+        flyway.migrate(); flyway.validate(); assertEquals("5", flyway.info().current().getVersion().getVersion());
         p.add("spring.datasource.url", MYSQL::getJdbcUrl); p.add("spring.datasource.username", MYSQL::getUsername);
         p.add("spring.datasource.password", MYSQL::getPassword); p.add("wdm.snapshot-storage.root", () -> storage.toString());
         AuthTestKeys.properties(p); p.add("auth.allowed-origins", () -> AuthTestKeys.ISSUER);

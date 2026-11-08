@@ -60,6 +60,9 @@ public class GlobalExceptionHandler {
             Exception exception, HttpServletRequest request, HttpServletResponse response) {
         return switch (exception) {
             case ApplicationException known -> known;
+            case vn.edu.wspm.backend.services.combo.admin.ComboReadException combo ->
+                    new ApplicationException(ErrorCode.valueOf(combo.code().name()));
+            case vn.edu.wspm.backend.services.pattern.PatternReadException pattern -> patternError(pattern);
             case MaxUploadSizeExceededException ignored -> new ApplicationException(
                     ErrorCode.PAYLOAD_TOO_LARGE, "Upload exceeds configured file or request limits.");
             case MultipartException ignored -> new ApplicationException(ErrorCode.MALFORMED_REQUEST);
@@ -78,6 +81,16 @@ public class GlobalExceptionHandler {
             case CannotCreateTransactionException failure -> unexpected(failure, request, ErrorCode.SERVICE_UNAVAILABLE);
             default -> unexpected(exception, request, ErrorCode.INTERNAL_ERROR);
         };
+    }
+
+    private static ApplicationException patternError(
+            vn.edu.wspm.backend.services.pattern.PatternReadException pattern) {
+        ErrorCode code = ErrorCode.valueOf(pattern.getCode().name());
+        // Preserve validated offending IDs in the shared FieldErrorDetail[] contract.
+        var details = pattern.getOffendingItemIds().stream()
+                .map(id -> new FieldErrorDetail("offendingItemIds", "ITEM_NOT_IN_RUN_DICTIONARY", id.toString()))
+                .toList();
+        return new ApplicationException(code, code.message(), details);
     }
 
     private static ApplicationException invalidFields(MethodArgumentNotValidException validation) {

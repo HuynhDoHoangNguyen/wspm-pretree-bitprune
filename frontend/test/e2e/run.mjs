@@ -12,13 +12,16 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { runCases } from './cases.mjs';
 import { runDatasetCases } from './dataset-cases.mjs';
+import { runTv2Cases } from './tv2-cases.mjs';
 
 const datasetMode = process.argv.includes('--dataset');
+const tv2Mode = process.argv.includes('--tv2');
+const applicationMode = datasetMode || tv2Mode;
 const here = path.dirname(fileURLToPath(import.meta.url)), root = path.resolve(here, '../../..');
-const prefix = datasetMode ? 'wspm-wdm018-' : 'wspm-auth06-';
+const prefix = tv2Mode ? 'wspm-tv2-int14-' : datasetMode ? 'wspm-wdm018-' : 'wspm-auth06-';
 const temp = mkdtempSync(path.join(tmpdir(), prefix));
-const label = datasetMode ? 'WDM-01.8' : 'AUTH-06', name = prefix + randomBytes(5).toString('hex');
-const password = randomBytes(24).toString('hex'), db = 'auth06_browser_test';
+const label = tv2Mode ? 'TV2-INT-14' : datasetMode ? 'WDM-01.8' : 'AUTH-06', name = prefix + randomBytes(5).toString('hex');
+const password = randomBytes(24).toString('hex'), db = tv2Mode ? 'tv2_int14_' + randomBytes(5).toString('hex') : 'auth06_browser_test';
 const processes = [], servers = [], logStreams = [];
 let containerId, browser, buildRoot;
 const logBase = path.resolve(root, process.env.AUTH_E2E_LOG_DIR || '.agent-workspace/phase-wdm');
@@ -72,17 +75,18 @@ async function finished(child, name) {
   } finally { clearTimeout(deadline); }
 }
 try {
+  if (tv2Mode && process.argv.includes('--manual')) assert.ok(process.env.TV2_INT14_BROWSER_PASSWORD, 'Manual mode requires a password supplied through process environment');
   buildRoot = realpathSync(path.resolve(root, process.env.WDM_E2E_BUILD_DIR || 'frontend/build'));
   assert.ok(buildRoot.startsWith(realpathSync(root) + path.sep), 'Build must be inside the workspace');
   assert.ok(existsSync(path.join(buildRoot, 'index.html')), 'Build frontend first');
-  assert.ok(existsSync(path.join(root, 'backend/target/backend-1.0-SNAPSHOT.jar')), 'Package backend first');
+  if (!tv2Mode) assert.ok(existsSync(path.join(root, 'backend/target/backend-1.0-SNAPSHOT.jar')), 'Package backend first');
   const digest = file => createHash('sha256').update(readFileSync(file)).digest('hex');
   writeFileSync(path.join(logDirectory, 'PREPARATION.json'), JSON.stringify({
     node: process.version, java: command('java', ['--version']).split('\n')[0],
     gitHead: command('git', ['rev-parse', 'HEAD']), buildDirectory: path.relative(root, buildRoot),
     indexSha256: digest(path.join(buildRoot, 'index.html')),
     manifestSha256: digest(path.join(buildRoot, 'asset-manifest.json')),
-    backendJarSha256: digest(path.join(root, 'backend/target/backend-1.0-SNAPSHOT.jar')),
+    backendJarSha256: tv2Mode ? null : digest(path.join(root, 'backend/target/backend-1.0-SNAPSHOT.jar')),
   }, null, 2));
   const backendPort = await freePort(), httpPort = await freePort(), httpsPort = await freePort();
   const httpOrigin = 'http://127.0.0.1:' + httpPort, httpsOrigin = 'https://127.0.0.1:' + httpsPort;
@@ -96,15 +100,34 @@ try {
     try { sql('SELECT 1'); mysqlReady = true; break; } catch { await delay(1000); }
   }
   assert.ok(mysqlReady, 'Isolated MySQL readiness');
+  if (!tv2Mode) {
   const v2 = readFileSync(path.join(root, 'backend/src/main/resources/db/migration/V2__complete_laptop_combo_schema.sql'), 'utf8');
   const definitions = v2.match(/^(?:CREATE TABLE|ALTER TABLE) `.*?;/gms);
   assert.equal(definitions.length, 47); sql(definitions.join('\n'));
   sql("INSERT INTO ROLE(role_id,code,name) VALUES('customer-role','CUSTOMER','Customer'),('admin-role','ADMIN','Admin');");
+  }
   const jwtSecret = randomBytes(32);
   command('keytool', ['-genkeypair', '-alias', 'auth06', '-keyalg', 'RSA', '-keysize', '2048', '-validity', '2',
     '-dname', 'CN=localhost', '-ext', 'SAN=IP:127.0.0.1,DNS:localhost', '-storetype', 'PKCS12',
     '-keystore', path.join(temp, 'tls.p12'), '-storepass', password, '-keypass', password]);
-  const server = launch('java', ['-jar', 'backend/target/backend-1.0-SNAPSHOT.jar', '--debug=false', '--server.port=' + backendPort,
+  let server;
+  if (tv2Mode) {
+    const report = readFileSync(path.join(root, 'backend/target/surefire-reports/TEST-vn.edu.wspm.backend.repositories.ComboManagementMySqlTest.xml'), 'utf8');
+    const classpath = report.match(/<property name="java.class.path" value="([^"]+)"/)[1]
+      .replaceAll('&quot;', '"').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
+    assert.ok(existsSync(path.join(root, 'backend/target/test-classes/vn/edu/wspm/backend/repositories/Tv2BrowserApplication.class')), 'Compile TV2 test launcher first');
+    const configuration = { 'debug': false, 'server.address': '127.0.0.1', 'server.port': backendPort,
+      'spring.config.import': '', 'wdm.execution.enabled': false, 'wdm.result-publication.enabled': false,
+      'spring.datasource.url': `jdbc:mysql://127.0.0.1:${port}/${db}?allowPublicKeyRetrieval=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true`,
+      'spring.datasource.username': 'root', 'spring.datasource.password': password, 'spring.flyway.enabled': false,
+      'spring.sql.init.mode': 'never', 'spring.jpa.hibernate.ddl-auto': 'validate',
+      'auth.jwt.secret': jwtSecret.toString('base64'), 'auth.jwt.issuer': 'https://tv2-int14.example.test', 'auth.jwt.key-id': 'int14-test-key',
+      'auth.allowed-origins': httpsOrigin, 'auth.cookie-secure': true, 'wdm.snapshot-storage.root': path.join(temp, 'snapshots'),
+      'logging.level.org.springframework': 'INFO', 'logging.level.org.hibernate': 'WARN', 'logging.level.vn.edu.wspm': 'INFO' };
+    server = launch('java', ['-cp', classpath, 'vn.edu.wspm.backend.repositories.Tv2BrowserApplication'], 'SERVER.log',
+      { SPRING_APPLICATION_JSON: JSON.stringify(configuration), TV2_INT14_MODE: 'OWNED_DISPOSABLE_INT14', TV2_INT14_DATABASE: db,
+        TV2_INT14_METADATA: path.join(temp, 'tv2-metadata.json') });
+  } else server = launch('java', ['-jar', 'backend/target/backend-1.0-SNAPSHOT.jar', '--debug=false', '--server.port=' + backendPort,
     '--spring.datasource.url=jdbc:mysql://127.0.0.1:' + port + '/' + db, '--spring.datasource.username=root',
     '--spring.datasource.password=' + password, '--spring.datasource.hikari.data-source-properties.allowPublicKeyRetrieval=true',
     '--spring.datasource.hikari.data-source-properties.connectionTimeZone=UTC', '--spring.datasource.hikari.data-source-properties.forceConnectionTimeZoneToSession=true',
@@ -115,7 +138,7 @@ try {
     '--wdm.snapshot-storage.root=' + path.join(temp, 'snapshots'),
     '--spring.servlet.multipart.max-file-size=4096B', '--spring.servlet.multipart.max-request-size=8192B'], 'SERVER.log');
   await ready('http://127.0.0.1:' + backendPort + '/api/health', server);
-  if (!datasetMode) await build({ entryPoints: [path.join(here, 'harness.tsx')], bundle: true, outfile: path.join(temp, 'harness.js'),
+  if (!applicationMode) await build({ entryPoints: [path.join(here, 'harness.tsx')], bundle: true, outfile: path.join(temp, 'harness.js'),
     nodePaths: [path.join(root, 'frontend/node_modules')], tsconfig: path.join(root, 'frontend/tsconfig.json'),
     define: { 'process.env.NODE_ENV': '"test"', 'process.env.REACT_APP_WDM_API_BASE_URL': '"/api"' } });
   function handler(request, response) {
@@ -128,8 +151,8 @@ try {
       request.on('aborted', () => upstream.destroy()); request.pipe(upstream); return;
     }
     response.setHeader('Cache-Control', 'no-store');
-    if (!datasetMode && request.url === '/__auth06') { response.setHeader('Content-Type', 'text/html'); response.end('<div id="root"></div><script src="/__auth06.js"></script>'); return; }
-    if (!datasetMode && request.url === '/__auth06.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(readFileSync(path.join(temp, 'harness.js'))); return; }
+    if (!applicationMode && request.url === '/__auth06') { response.setHeader('Content-Type', 'text/html'); response.end('<div id="root"></div><script src="/__auth06.js"></script>'); return; }
+    if (!applicationMode && request.url === '/__auth06.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(readFileSync(path.join(temp, 'harness.js'))); return; }
     const asset = path.resolve(buildRoot, '.' + new URL(request.url, httpOrigin).pathname);
     if (!asset.startsWith(buildRoot + path.sep) && asset !== buildRoot) { response.writeHead(400); response.end(); return; }
     const file = existsSync(asset) && path.extname(asset) ? asset : path.join(buildRoot, 'index.html');
@@ -144,11 +167,11 @@ try {
   let deadline;
   try {
     await Promise.race([
-      (datasetMode ? runDatasetCases : runCases)({ browser, httpOrigin, httpsOrigin, sql, jwtSecret, root, temp, logDirectory }),
+      (tv2Mode ? runTv2Cases : datasetMode ? runDatasetCases : runCases)({ browser, httpOrigin, httpsOrigin, sql, jwtSecret, root, temp, logDirectory }),
       new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error('Browser suite deadline exceeded')), 600000); }),
     ]);
   } finally { clearTimeout(deadline); }
-  if (!datasetMode && process.env.AUTH06_REGRESSION === '1') {
+  if (!applicationMode && process.env.AUTH06_REGRESSION === '1') {
     const configuration = {
       'debug': false,
       'spring.datasource.url': 'jdbc:mysql://127.0.0.1:' + port + '/' + db,
@@ -169,7 +192,7 @@ try {
       { SPRING_APPLICATION_JSON: JSON.stringify(configuration) }), 'backend regression on isolated datasource');
   }
   // The existing CRA package points to 8080. Verify it only if no user process owns that port.
-  if (!datasetMode) {
+  if (!applicationMode) {
   const probe = netServer(); let port8080Free = false;
   try { await new Promise((resolve, reject) => probe.once('error', reject).listen(8080, '127.0.0.1', resolve)); port8080Free = true; }
   catch { console.log('NOT VERIFIED: CRA proxy (8080 is occupied; preserved existing service)'); }
@@ -189,6 +212,11 @@ try {
   }
   }
   console.log('PASS ' + label + ' browser gate (see case counts; owner acceptance remains separate)');
+  if (tv2Mode && process.argv.includes('--manual')) {
+    console.log('MANUAL test-only UI: ' + httpsOrigin + '/admin/patterns ; ' + httpsOrigin + '/admin/combos');
+    console.log('Test accounts: tv2.admin1, tv2.admin2, tv2.customer. Press Ctrl+C here for owned cleanup.');
+    await new Promise(resolve => process.once('SIGINT', resolve));
+  }
 } catch (error) {
   // Do not print assertion values, response bodies, cookie jars, JWTs or credentials.
   console.error('FAIL ' + label + ': ' + (error.code || error.name || 'test error') + '. See named case/service logs.');

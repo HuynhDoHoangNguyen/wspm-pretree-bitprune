@@ -42,7 +42,7 @@ import vn.edu.wspm.backend.web.wdm.*;
 
 /** Real CSV/core/staging/MySQL and proxied read transactions. HTTP uses an explicit test ADMIN seam. */
 @SpringBootTest(properties = {"wdm.execution.enabled=true", "wdm.execution.parallelism=1", "wdm.execution.queue-capacity=64",
-        "spring.config.import=", "spring.sql.init.mode=never", "spring.jpa.hibernate.ddl-auto=validate"})
+        "spring.config.import=", "wdm.result-publication.enabled=false", "spring.sql.init.mode=never", "spring.jpa.hibernate.ddl-auto=validate"})
 @Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class RunResultQueryIntegrationTest {
@@ -64,7 +64,7 @@ class RunResultQueryIntegrationTest {
     @DynamicPropertySource static void properties(DynamicPropertyRegistry p) {
         var flyway = Flyway.configure().dataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())
                 .locations("classpath:db/migration").load(); flyway.migrate(); flyway.validate();
-        assertEquals("4", flyway.info().current().getVersion().getVersion());
+        assertEquals("5", flyway.info().current().getVersion().getVersion());
         p.add("spring.datasource.url", MYSQL::getJdbcUrl); p.add("spring.datasource.username", MYSQL::getUsername);
         p.add("spring.datasource.password", MYSQL::getPassword); p.add("wdm.snapshot-storage.root", () -> storage.toString());
         AuthTestKeys.properties(p); p.add("auth.allowed-origins", () -> AuthTestKeys.ISSUER);

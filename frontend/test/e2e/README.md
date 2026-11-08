@@ -1,5 +1,48 @@
 # Browser E2E gates
 
+## Native WDM-06 → Combo generation/review gate
+
+Build current frontend into a fresh `BUILD_PATH`, compile/package backend, set
+`WDM_E2E_BUILD_DIR`, then run from repository root:
+
+```powershell
+$env:TV2_NATIVE_COMBO_GATE='1'
+$env:WDM_ENGINE_REGRESSION='0'
+node frontend/test/e2e/engine-run.mjs
+```
+
+This mode reuses the real Engine E2E runner with owned MySQL/Flyway V1–V5, shared
+Auth/CSRF, current application build and production business policy. It uploads
+`native-combo.csv`, validates/converts, runs both engines and publishes through
+native WDM services. No Pattern or Combo is seeded. Explicit synthetic catalog
+uses the approved category IDs. UI preview writes no batch; generation persists
+all validated groups beyond K, then native review checks current catalog/evidence.
+The gate tests stable retry/reconciliation, two Admin contexts, principal audit,
+protected mining readback and restart with execution disabled. It is fixture
+correctness evidence, not live rollout or performance acceptance.
+
+Evidence is retained under ignored `.agent-workspace/phase-wdm/TV2-NATIVE-COMBO-*`.
+If an existing serving JVM holds the backend JAR, do not replace/stop it implicitly.
+`WDM_E2E_BACKEND_JAR` can point to an owned Boot JAR copy updated with all current
+compiled `BOOT-INF/classes` by JDK `jar --update`. Dependencies/core remain from
+the Maven package; runner verifies the nested core hash. Record this packaging
+method and JAR/source hashes; it is separate from a fresh Maven release package.
+No source changes may be made while a gate runs (the runner compares inventories).
+
+After WDM-06 integration, `/admin/patterns` and its detail route belong to the
+published-result pages. The retained TV2 filter Explorer uses
+`/admin/pattern-explorer` and `/api/v1/admin/pattern-runs/...`; its fixture runner
+follows those separate routes. The WDM publication endpoints remain unchanged.
+The TV2 migration-review candidates still require version/schema reconciliation
+with production V3/V4 before their old disposable schema harness can be reused.
+
+TV2 Pattern/Combo fixture gate: `node frontend/test/e2e/tv2-run.mjs` from root.
+It uses a test-classpath backend, actual application build and owned disposable
+MySQL with V1–V4. It does not use the running demo server or fake HTTP responses.
+See [NEXT-04 manual setup and mining handoff](../../../docs/research/TV2-NEXT-04_manual_and_mining_handoff.md)
+for compilation/classpath prerequisites, optional manual mode, expected results
+and cleanup. Its fixture acceptance is separate from real mining acceptance.
+
 ## WDM-06.12 Final Result E2E gate
 
 From the repository root (PowerShell), use a fresh build directory and compile

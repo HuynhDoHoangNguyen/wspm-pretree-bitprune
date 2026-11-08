@@ -5,6 +5,7 @@ import ManagerPath from 'constants/ManagerPath';
 import DataMiningGuard from './DataMiningGuard';
 import DatasetsPage from './DatasetsPage';
 import MiningRunsPage from './MiningRunsPage';
+import PatternExplorer from 'pages/pattern/PatternExplorer';
 import PatternsPage from './PatternsPage';
 import SnapshotDetailPage from './SnapshotDetailPage';
 import MiningRunDetailPage from './MiningRunDetailPage';
@@ -28,7 +29,9 @@ export function createDataMiningRoutes() {
         <Component/>
       </DataMiningGuard>
     )}/>
-  )), <Route key="snapshot-detail" path={ManagerPath.DATASETS + '/:snapshotId'} element={(
+  )), <Route key="pattern-explorer" path="/admin/pattern-explorer" element={(
+    <DataMiningGuard><PatternExplorer/></DataMiningGuard>
+  )}/>, <Route key="snapshot-detail" path={ManagerPath.DATASETS + '/:snapshotId'} element={(
     <DataMiningGuard><SnapshotDetailPage/></DataMiningGuard>
   )}/>, <Route key="mining-run-detail" path={ManagerPath.MINING_RUNS + '/:runId'} element={(
     <DataMiningGuard><MiningRunDetailPage/></DataMiningGuard>

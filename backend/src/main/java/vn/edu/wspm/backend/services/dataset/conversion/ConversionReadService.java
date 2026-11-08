@@ -110,7 +110,8 @@ public class ConversionReadService {
             if (!verified.statistics().equals(result.statistics()) || !result.equals(repository.completed(current))
                     || !started.equals(time(operation(current), "startedAt")) || !completed.equals(time(operation(current), "completedAt"))) throw invalid();
             log.debug("Conversion read verified: snapshotId={}, sequenceBytes={}, mappingBytes={}", id, sequence.length, mapping.length);
-            return new MeasuredBundle(new VerifiedBundle(result, mapper.completed(result, started, completed), sequence, mapping), ioNanos);
+            return new MeasuredBundle(new VerifiedBundle(result, mapper.completed(result, started, completed), sequence, mapping,
+                    snapshot.getRawSha256(), StoredValidationReport.rawSize(snapshot)), ioNanos);
         } catch (ApplicationException expected) { throw expected; }
         catch (Exception failure) {
             var safe = new IllegalStateException("Conversion read failed: " + failure.getClass().getSimpleName());
@@ -156,13 +157,21 @@ public class ConversionReadService {
         private final ConversionArtifactResult result;
         private final ConversionResponse response;
         private final byte[] sequence, mapping;
-        private VerifiedBundle(ConversionArtifactResult result, ConversionResponse response, byte[] sequence, byte[] mapping) {
+        private final String rawSha256, rawSizeBytes;
+        private VerifiedBundle(ConversionArtifactResult result, ConversionResponse response, byte[] sequence, byte[] mapping,
+                               String rawSha256, String rawSizeBytes) {
             this.result = result; this.response = response; this.sequence = sequence.clone(); this.mapping = mapping.clone();
+            this.rawSha256 = rawSha256; this.rawSizeBytes = rawSizeBytes;
         }
         public ConversionArtifactResult result() { return result; }
         public ConversionResponse response() { return response; }
         public byte[] sequenceBytes() { return sequence.clone(); }
         public byte[] mappingBytes() { return mapping.clone(); }
+        /** Consumer-specific cap before defensive copying; verified reader has its own IO budgets. */
+        public byte[] sequenceBytes(int maximum) { if(maximum<1 || sequence.length>maximum)throw invalid(); return sequence.clone(); }
+        public byte[] mappingBytes(int maximum) { if(maximum<1 || mapping.length>maximum)throw invalid(); return mapping.clone(); }
+        public String rawSha256() { return rawSha256; }
+        public String rawSizeBytes() { return rawSizeBytes; }
         @Override public String toString() { return "VerifiedConversionBundle[snapshotId=" + result.snapshotId() + "]"; }
     }
 }

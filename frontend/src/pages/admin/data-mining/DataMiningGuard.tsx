@@ -7,7 +7,7 @@ import { hasDataMiningAdminAccess } from './access';
 
 export default function DataMiningGuard({ children }: { children: ReactNode }) {
   const { user, status, forbidden } = useSharedAuth();
-  if (['bootstrapping', 'unavailable', 'signing-out'].includes(status)) return <AuthGate/>;
+  if (status === 'bootstrapping' || status === 'signing-out' || status === 'unavailable') return <AuthGate/>;
 
   if (!user) {
     return (
@@ -17,7 +17,7 @@ export default function DataMiningGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  if (forbidden || !hasDataMiningAdminAccess(user)) {
+  if (status !== 'authenticated' || forbidden || !hasDataMiningAdminAccess(user)) {
     return (
       <Alert role="alert" icon={<Lock size={20}/>} title="Không có quyền truy cập" color="red">
         Tài khoản hiện tại không có quyền Admin để truy cập dữ liệu khai phá.

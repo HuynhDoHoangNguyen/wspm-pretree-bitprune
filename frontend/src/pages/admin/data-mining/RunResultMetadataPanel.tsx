@@ -46,6 +46,8 @@ export default function RunResultMetadataPanel({ runId }: { runId: string }) {
         <Button component={Link} to={'/admin/patterns?runId=' + runId + '&page=1&view=published'} state={{ runReturnTo: location.state }}>Xem pattern đã công bố</Button></>}
       {!read.loading && info.stagingReadable && <Button component={Link} variant="light"
         to={'/admin/patterns?runId=' + runId + '&page=1'} state={{ runReturnTo: location.state }}>Xem pattern staging</Button>}
+      {info.publishedReadable && info.eligibleForCombo && <Button component={Link}
+        to={'/admin/combos?runId=' + runId} variant="light">Kiểm tra đầu vào Combo</Button>}
       {info.provenance && <details><summary>Nguồn dữ liệu đã ghi nhận cho run</summary><Stack mt="sm" spacing="xs">
         <CopyValue label="Snapshot lịch sử" value={info.provenance.snapshotId}/>
         <CopyValue label="Conversion attempt" value={info.provenance.attemptId}/>

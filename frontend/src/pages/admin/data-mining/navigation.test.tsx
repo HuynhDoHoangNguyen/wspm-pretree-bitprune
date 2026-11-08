@@ -8,6 +8,7 @@ import { DefaultNavbar } from 'components/DefaultNavbar/DefaultNavbar';
 import DataMiningNavigation from './DataMiningNavigation';
 import { createDataMiningRoutes, dataMiningPages, isDataMiningPath } from './routes';
 import { hasDataMiningAdminAccess } from './access';
+import { patternHttpClient } from 'pages/pattern/PatternHttpClient';
 
 jest.mock('auth/session', () => ({ useSharedAuth: jest.fn() }));
 jest.mock('stores/use-app-store', () => ({ __esModule: true, default: jest.fn() }));
@@ -65,6 +66,7 @@ beforeEach(() => {
 
 beforeEach(() => {
   setIdentity(admin);
+  jest.spyOn(patternHttpClient, 'runs').mockImplementation(() => new Promise(() => undefined));
   appStore.mockReturnValue({ opened: true });
   fetchMock.mockClear();
 });
@@ -72,7 +74,10 @@ beforeEach(() => {
 afterEach(() => {
   // Navigation/page mount never triggers business export/upload requests.
   expect(fetchMock).not.toHaveBeenCalled();
+  jest.restoreAllMocks();
 });
+
+const heading = (path: string, label: string) => label;
 
 describe('Admin Data & Mining navigation', () => {
   it.each([null, { roles: ['CUSTOMER'] }])('guards pattern detail for identity %s', user => {
@@ -88,7 +93,7 @@ describe('Admin Data & Mining navigation', () => {
   it.each(dataMiningPages)('opens $path directly with the correct page and active link', ({ path, label }) => {
     render(<Feature entries={[path]}/>);
     const nav = screen.getByRole('navigation', { name: 'Dữ liệu & Khai phá' });
-    expect(screen.getByRole('heading', { level: 2, name: label })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: heading(path, label) })).toBeInTheDocument();
     expect(within(nav).getByRole('link', { name: label })).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getAllByRole('link')).toHaveLength(3);
     expect(screen.queryByText('Chức năng đang được chuẩn bị')).not.toBeInTheDocument();
@@ -103,7 +108,7 @@ describe('Admin Data & Mining navigation', () => {
       const link = within(nav).getByRole('link', { name: label });
       expect(link).toHaveAttribute('href', path);
       fireEvent.click(link);
-      expect(screen.getByRole('heading', { level: 2, name: label })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 2, name: heading(path, label) })).toBeInTheDocument();
       expect(link).toHaveAttribute('aria-current', 'page');
       expect(within(nav).getAllByRole('link').filter(item => item.getAttribute('aria-current') === 'page')).toHaveLength(1);
     }
@@ -128,12 +133,13 @@ describe('Admin Data & Mining navigation', () => {
     expect(screen.getByRole('link', { name: 'Mẫu khai phá' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it.each([null, { roles: [] }, { roles: ['EMPLOYEE'] }, { roles: ['ROLE_ADMIN'] }])('hides the menu and denies direct page access without the exact Admin UI role', user => {
+  it.each([null, { roles: [] }, { roles: ['CUSTOMER'] }, { roles: ['EMPLOYEE'] }, { roles: ['ROLE_ADMIN'] }])('hides the menu and denies direct page access without the exact Admin UI role', user => {
     setIdentity(user);
     render(<Feature entries={['/admin/patterns']}/>);
     expect(screen.queryByRole('navigation', { name: 'Dữ liệu & Khai phá' })).not.toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(user ? 'Không có quyền truy cập' : 'Cần đăng nhập');
     expect(screen.queryByRole('heading', { level: 2, name: 'Mẫu khai phá' })).not.toBeInTheDocument();
+    expect(patternHttpClient.runs).not.toHaveBeenCalled();
   });
 
   it('removes menu and page access when the shared UI identity loses the Admin role', () => {

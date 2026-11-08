@@ -32,11 +32,35 @@ function App({ entry = '/admin/patterns?runId=' + id }: { entry?: string }) {
     state: { runReturnTo: { returnTo: '/admin/mining-runs?tab=history&page=3' } } }]}><Controls/><PatternsPage/></MemoryRouter>;
 }
 beforeEach(() => {
+  jest.spyOn(runResultApi, 'metadata').mockImplementation(async run => pageData(1, '2', run).result);
   identity.mockReturnValue({ status: 'authenticated', accessToken: 'token', user: { userId: 'admin', roles: ['ADMIN'] }, forbidden: false });
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: jest.fn(() => ({ matches: false, addListener: jest.fn(), removeListener: jest.fn() })) });
 });
-afterEach(async () => { await act(async () => {}); jest.restoreAllMocks(); });
+afterEach(() => { jest.restoreAllMocks(); });
+test('auto view opens verified published results and preserves published paging', async () => {
+  const published = pageData(1, '21');
+  published.result = { ...published.result, publicationStatus: 'COMMITTED', completeness: 'COMPLETE_VERIFIED',
+    stagingReadable: false, publishedReadable: true, eligibleForCombo: true,
+    manifestVersion: 'WDM_RESULT_MANIFEST_V1', resultSha256: 'd'.repeat(64), committedAt: '2026-11-08T10:00:00Z' };
+  jest.mocked(runResultApi.metadata).mockResolvedValue(published.result);
+  const read = jest.spyOn(runResultApi, 'patterns').mockResolvedValue(published);
+  render(<App/>);
+  await screen.findByRole('table', { name: 'Pattern đã công bố' });
+  expect(read).toHaveBeenCalledWith(id, 1, expect.any(AbortSignal), 'published');
+  expect(read.mock.calls.some(call => call[3] === 'staging')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Trang sau' }));
+  expect(screen.getByLabelText('URL')).toHaveTextContent('view=published');
+  await screen.findByRole('table', { name: 'Pattern đã công bố' });
+  expect(read).toHaveBeenLastCalledWith(id, 2, expect.any(AbortSignal), 'published');
+});
+test('metadata failure does not fall back to a staging request', async () => {
+  jest.mocked(runResultApi.metadata).mockRejectedValue(new WdmApiError('http', 409, 'CONFLICT', 'unavailable'));
+  const read = jest.spyOn(runResultApi, 'patterns');
+  render(<App/>);
+  await screen.findByRole('alert');
+  expect(read).not.toHaveBeenCalled();
+});
 test('renders canonical boundaries, exact ID, separate measures and staging warning', async () => {
   const read = jest.spyOn(runResultApi, 'patterns').mockResolvedValue(pageData());
   render(<App/>); expect(screen.getByText('Đang tải pattern…')).toBeVisible();
@@ -96,6 +120,7 @@ test('changing run aborts and ignores late response; form resets pagination', as
   const read = jest.spyOn(runResultApi, 'patterns').mockImplementationOnce(() => new Promise(done => { resolve = done; }))
     .mockResolvedValueOnce(pageData(1, '0', other));
   render(<App entry={'/admin/patterns?runId=' + id + '&page=2'}/>);
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
   fireEvent.change(screen.getByLabelText('Run ID'), { target: { value: other } });
   fireEvent.click(screen.getByText('Mở kết quả')); await screen.findByText(/Điều này không chứng minh engine/);
   expect(read.mock.calls[0][2]?.aborted).toBe(true);

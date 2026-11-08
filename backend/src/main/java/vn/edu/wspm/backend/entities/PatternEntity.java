@@ -94,6 +94,22 @@ public class PatternEntity {
         return weight;
     }
 
+    public String getPatternWeightPolicy() {
+        return patternWeightPolicy;
+    }
+
+    /** Pair shape only. A policy string is not approval or permission to update a completed run. */
+    public void setPatternMetric(Double weight, String policy) {
+        if ((weight == null) != (policy == null)
+                || (weight != null && (!Double.isFinite(weight) || policy.isBlank()
+                    || policy.codePointCount(0, policy.length()) > 80 || policy.indexOf('\0') >= 0
+                    || !java.nio.charset.StandardCharsets.UTF_8.newEncoder().canEncode(policy)))) {
+            throw new IllegalArgumentException("Invalid pattern metric pair");
+        }
+        this.weight = weight;
+        this.patternWeightPolicy = policy;
+    }
+
     public Integer getPatternLength() {
         return patternLength;
     }
@@ -103,5 +119,4 @@ public class PatternEntity {
     public Double getSupportRatio() { return supportRatio; }
     public Double getWeightedSupport() { return weightedSupport; }
     public Integer getItemsetCount() { return itemsetCount; }
-    public String getPatternWeightPolicy() { return patternWeightPolicy; }
 }

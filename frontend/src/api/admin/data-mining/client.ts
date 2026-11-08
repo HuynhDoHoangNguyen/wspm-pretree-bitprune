@@ -8,7 +8,8 @@ export class WdmApiError extends Error {
     public readonly code: string,
     message: string,
     public readonly requestId: string | null = null,
-    public readonly details: WdmValidationDetail[] = []
+    public readonly details: WdmValidationDetail[] = [],
+    public readonly path: string | null = null
   ) {
     super(message);
     Object.setPrototypeOf(this, new.target.prototype);
@@ -67,6 +68,17 @@ function notifyAuth(adapter: WdmAuthAdapter | null, status: number): void {
   }
 }
 
+function requestSignal(caller?: AbortSignal, session?: AbortSignal) {
+  if (!caller || !session || caller === session) return { signal: caller || session, dispose: () => undefined };
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  caller.addEventListener('abort', abort); session.addEventListener('abort', abort);
+  if (caller.aborted || session.aborted) abort();
+  return { signal: controller.signal, dispose: () => {
+    caller.removeEventListener('abort', abort); session.removeEventListener('abort', abort);
+  } };
+}
+
 export function createWdmApiClient(options: ClientOptions = {}) {
   const baseUrl = normalizeWdmBaseUrl(options.baseUrl);
 
@@ -97,24 +109,21 @@ export function createWdmApiClient(options: ClientOptions = {}) {
     }
     const url = urlFor(path, requestOptions.query);
     const adapter = requestOptions.auth === false ? null : options.getAuthAdapter?.() || null;
-    const sessionSignal = adapter?.getSessionSignal?.();
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    const signals = [requestOptions.signal, sessionSignal].filter((signal): signal is AbortSignal => !!signal);
-    signals.forEach(signal => { if (signal.aborted) abort(); else signal.addEventListener('abort', abort); });
     const token = adapter?.getAccessToken()?.trim();
     const headers = new Headers({ Accept: download ? '*/*' : 'application/json' });
     if (token) headers.set('Authorization', 'Bearer ' + token);
     const multipart = typeof FormData !== 'undefined' && body instanceof FormData;
     if (body !== undefined && !multipart) headers.set('Content-Type', 'application/json');
     const payload = body === undefined ? undefined : multipart ? body as FormData : JSON.stringify(body);
+    const cancellation = requestSignal(requestOptions.signal, adapter?.getSessionSignal?.());
 
     try {
+      if (cancellation.signal?.aborted) throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
       const response = await (options.fetchImpl || fetch)(url, {
-        method, headers, body: payload, signal: controller.signal, credentials: 'omit',
+        method, headers, body: payload, signal: cancellation.signal, credentials: 'omit',
       });
       const requestId = response.headers.get('X-Request-Id');
-      if (controller.signal.aborted) {
+      if (response.ok && cancellation.signal?.aborted) {
         await response.body?.cancel();
         throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
       }
@@ -136,23 +145,23 @@ export function createWdmApiClient(options: ClientOptions = {}) {
           if (!response.body) throw new WdmApiError('response', 200, 'INVALID_DOWNLOAD_STREAM', 'Artifact stream is unavailable.', requestId);
           const reader = response.body.getReader();
           const cancel = () => { void reader.cancel().catch(() => undefined); };
-          controller.signal.addEventListener('abort', cancel);
+          cancellation.signal?.addEventListener('abort', cancel);
           const chunks: Uint8Array[] = [];
           let size = 0;
           try {
             for (let next = await reader.read(); !next.done; next = await reader.read()) {
-              if (controller.signal.aborted) throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
+              if (cancellation.signal?.aborted) throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
               size += next.value.byteLength;
               if (size > limit) { await reader.cancel(); throw tooLarge(); }
               chunks.push(next.value);
             }
             blob = new Blob(chunks, { type: response.headers.get('Content-Type') || '' });
           } finally {
-            controller.signal.removeEventListener('abort', cancel);
+            cancellation.signal?.removeEventListener('abort', cancel);
             reader.releaseLock();
           }
         } else blob = await response.blob();
-        if (controller.signal.aborted) throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
+        if (cancellation.signal?.aborted) throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
         return {
           blob,
           contentType: response.headers.get('Content-Type'),
@@ -163,17 +172,19 @@ export function createWdmApiClient(options: ClientOptions = {}) {
       if (response.ok && response.status === 204) return undefined as unknown as T;
 
       const text = await response.text();
-      if (response.ok && controller.signal.aborted) throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
+      if (response.ok && cancellation.signal?.aborted) throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
       const jsonContent = /\bapplication\/(?:[\w.-]+\+)?json\b/i.test(response.headers.get('Content-Type') || '');
       let data: unknown;
       if (jsonContent) {
         try { data = JSON.parse(text); } catch { /* handled below without leaking the raw body */ }
       }
       if (!response.ok) {
-        notifyAuth(adapter, response.status); // Parse first so session abort does not hide the original denial.
+        // A response from an invalidated request/session must not clear a newer identity.
+        // For current requests, parse first so callback-induced abort cannot hide the denial.
+        if (!cancellation.signal?.aborted) notifyAuth(adapter, response.status);
         if (isApiErrorResponse(data, response.status)) {
           throw new WdmApiError('http', response.status, data.code, data.message,
-            requestId || data.requestId, data.details);
+            requestId || data.requestId, data.details, data.path);
         }
         throw new WdmApiError('http', response.status, 'HTTP_ERROR',
           'API request failed (HTTP ' + response.status + ').', requestId);
@@ -193,12 +204,12 @@ export function createWdmApiClient(options: ClientOptions = {}) {
       }
     } catch (error) {
       if (error instanceof WdmApiError) throw error;
-      if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+      if (cancellation.signal?.aborted || (error instanceof Error && error.name === 'AbortError')) {
         throw new WdmApiError('aborted', null, 'REQUEST_ABORTED', 'API request was cancelled.');
       }
       throw new WdmApiError('network', null, 'NETWORK_ERROR', 'Unable to connect to the API.');
     } finally {
-      signals.forEach(signal => signal.removeEventListener('abort', abort));
+      cancellation.dispose();
     }
   }
 

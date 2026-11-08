@@ -16,16 +16,25 @@ export default function PatternsPage() {
   const history = typeof origin?.returnTo === 'string' && origin.returnTo.startsWith('/admin/mining-runs?')
     ? origin.returnTo : '/admin/mining-runs?tab=history';
   const runId = params.get('runId') || '';
-  const view = params.get('view') === 'published' ? 'published' : 'staging';
+  const requestedView = params.get('view') === 'published' ? 'published' : params.get('view') === 'staging' ? 'staging' : 'auto';
   const rawPage = params.get('page') || '1';
   const page = /^[1-9][0-9]{0,5}$/.test(rawPage) && Number(rawPage) <= 100000 ? Number(rawPage) : 1;
   const [input, setInput] = useState(runId);
   const [inputError, setInputError] = useState(false);
   useEffect(() => { setInput(runId); setInputError(false); }, [runId]);
   const valid = isRunId(runId);
-  const read = useWorkspaceRead(valid ? `patterns:${runId}:${page}:${view}` : '', signal => runResultApi.patterns(runId, page, signal, view));
+  const read = useWorkspaceRead(valid ? `patterns:${runId}:${page}:${requestedView}` : '', async signal => {
+    let selected: 'auto' | 'published' | 'staging' = requestedView;
+    if (selected === 'auto') {
+      const metadata = await runResultApi.metadata(runId, signal);
+      selected = metadata.publishedReadable ? 'published' : 'staging';
+    }
+    if (signal.aborted) throw new Error('Read aborted');
+    return runResultApi.patterns(runId, page, signal, selected);
+  });
   const result = read.loading ? null : read.value;
-  const move = (next: number) => setParams({ runId, page: String(next), ...(view === 'published' ? { view } : {}) }, { state: location.state });
+  const view = result ? (result.result.publishedReadable ? 'published' : 'staging') : requestedView === 'auto' ? null : requestedView;
+  const move = (next: number) => setParams({ runId, page: String(next), ...(view ? { view } : {}) }, { state: location.state });
   const nextStart = String(page * 20);
   const hasNext = !!result && (result.total.length > nextStart.length || (result.total.length === nextStart.length && result.total > nextStart));
   return <Stack spacing="lg" mb={30}>
@@ -45,20 +54,21 @@ export default function PatternsPage() {
           error={inputError ? 'Nhập UUID chữ thường hợp lệ.' : undefined} style={{ flex: 1, minWidth: 220 }}/>
         <Button type="submit" mt={25}>Mở kết quả</Button>
       </Group></form></Paper>
-    {!runId && <Text>Chọn run từ lịch sử hoặc nhập Run ID để xem pattern staging.</Text>}
+    {!runId && <Text>Chọn run từ lịch sử hoặc nhập Run ID. Trang tự chọn kết quả đã công bố khi server xác minh được.</Text>}
     {!!runId && !valid && <Alert color="yellow" role="alert">Run ID trên URL chưa hợp lệ. Nhập UUID chữ thường để tiếp tục.</Alert>}
     {valid && <>
       {view === 'published' ? <Alert color="teal">Kết quả đã công bố; API kiểm chứng manifest trước khi đọc.</Alert> :
-        <Alert color="yellow">Kết quả staging — chưa xác minh tính đầy đủ, chưa đủ điều kiện bàn giao Combo.
-        Run hoàn tất không chứng minh pattern đã được lưu đầy đủ.</Alert>}
-      {result && <RunResultExportButton key={runId + view} runId={runId} view={view}/>}
+        view === 'staging' ? <Alert color="yellow">Kết quả staging — chưa xác minh tính đầy đủ, chưa đủ điều kiện bàn giao Combo.
+        Run hoàn tất không chứng minh pattern đã được lưu đầy đủ.</Alert> : null}
+      {result && view && <RunResultExportButton key={runId + view} runId={runId} view={view}/>}
       <Group position="apart"><Text size="sm" style={{ overflowWrap: 'anywhere' }}>Run: {runId}</Text>
         <Button onClick={read.refresh} disabled={read.loading}>Làm mới danh sách</Button></Group>
       {read.loading && <Text role="status">Đang tải pattern…</Text>}
-      {read.error && (read.error.status === 409 ? <Alert color="yellow" role="alert" title="Chưa thể đọc pattern staging">
-        <Text>Run chưa cho phép đọc staging, hoặc metadata/kết quả không nhất quán hay chưa được hỗ trợ. Chưa thể xác nhận kết quả đầy đủ.</Text>
+      {read.error && (read.error.status === 409 ? <Alert color="yellow" role="alert" title="Chưa thể đọc kết quả Pattern">
+        <Text>Chế độ đọc chưa khả dụng, hoặc metadata/kết quả chưa nhất quán. Kiểm tra trạng thái công bố trước khi tiếp tục.</Text>
         {read.error.requestId && <Text size="xs">Mã yêu cầu: {read.error.requestId}</Text>}
         <Button variant="subtle" onClick={read.refresh}>Thử lại</Button>
+        {requestedView === 'staging' && <Button variant="subtle" onClick={() => setParams({ runId, page: '1' }, { state: location.state })}>Tự chọn kết quả theo trạng thái công bố</Button>}
         <Button component={Link} to={'/admin/mining-runs/' + runId} variant="subtle">Kiểm tra trạng thái công bố tại chi tiết run</Button>
       </Alert> : <ReadError error={read.error} retry={read.refresh}/>)}
       {result && <>
