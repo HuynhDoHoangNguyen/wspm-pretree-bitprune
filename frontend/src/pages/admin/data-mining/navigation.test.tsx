@@ -75,6 +75,11 @@ afterEach(() => {
 });
 
 describe('Admin Data & Mining navigation', () => {
+  it.each([null, { roles: ['CUSTOMER'] }])('guards pattern detail for identity %s', user => {
+    setIdentity(user); render(<Feature entries={['/admin/patterns/11111111-2222-4333-8444-555555555555/1']}/>);
+    expect(screen.queryByRole('heading', { name: 'Chi tiết pattern' })).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
   it.each([null, { roles: ['CUSTOMER'] }])('guards the run detail route for identity %s', user => {
     setIdentity(user); render(<Feature entries={['/admin/mining-runs/11111111-2222-4333-8444-555555555555']}/>);
     expect(screen.queryByRole('heading', { name: 'Chi tiết lần chạy khai phá' })).not.toBeInTheDocument();
@@ -86,7 +91,7 @@ describe('Admin Data & Mining navigation', () => {
     expect(screen.getByRole('heading', { level: 2, name: label })).toBeInTheDocument();
     expect(within(nav).getByRole('link', { name: label })).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getAllByRole('link')).toHaveLength(3);
-    expect(screen.queryByText('Chức năng đang được chuẩn bị') !== null).toBe(path === '/admin/patterns');
+    expect(screen.queryByText('Chức năng đang được chuẩn bị')).not.toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.queryByText(/không có dữ liệu/i)).not.toBeInTheDocument();
   });

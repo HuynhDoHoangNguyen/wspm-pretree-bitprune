@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { authSession } from 'auth/session';
 import App from './App';
-import { datasetApi, miningRunApi } from 'api/admin/data-mining';
+import { datasetApi, miningRunApi, runResultApi } from 'api/admin/data-mining';
 
 
 
@@ -79,5 +79,21 @@ test('run deep URL reaches status reader through the actual authenticated Admin 
   render(<MemoryRouter initialEntries={['/admin/mining-runs/' + id]}><App/></MemoryRouter>);
   expect(await screen.findByRole('heading', { name: 'Chi tiết lần chạy khai phá', exact: true })).toBeInTheDocument();
   expect(read).toHaveBeenCalledWith(id, expect.any(AbortSignal));
+  expect(screen.queryByText(/Chức năng legacy này/)).not.toBeInTheDocument();
+});
+
+test('published pattern deep URL reaches detail reader through the actual Admin shell', async () => {
+  const id = '11111111-2222-4333-8444-555555555555', patternId = '18446744073709551615';
+  authSession.useStore.setState({ status: 'authenticated', accessToken: 'test-token', user: {
+    userId: 'admin-fixture', username: 'fixture', email: null, displayName: 'Fixture admin',
+    status: 'ACTIVE', roles: ['ADMIN'], emailVerified: false,
+  } });
+  Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: jest.fn(() => ({
+    observe: jest.fn(), unobserve: jest.fn(), disconnect: jest.fn(),
+  })) });
+  const read = jest.spyOn(runResultApi, 'detail').mockImplementation(() => new Promise(() => undefined));
+  render(<MemoryRouter initialEntries={['/admin/patterns/' + id + '/' + patternId + '?view=published']}><App/></MemoryRouter>);
+  expect(await screen.findByRole('heading', { name: 'Chi tiết pattern', exact: true })).toBeInTheDocument();
+  expect(read).toHaveBeenCalledWith(id, patternId, expect.any(AbortSignal), 'published');
   expect(screen.queryByText(/Chức năng legacy này/)).not.toBeInTheDocument();
 });

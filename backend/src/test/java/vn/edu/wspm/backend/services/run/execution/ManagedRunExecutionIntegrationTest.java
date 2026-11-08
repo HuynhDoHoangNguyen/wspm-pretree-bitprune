@@ -200,6 +200,13 @@ class ManagedRunExecutionIntegrationTest {
             assertEquals(ManagedRunExecutionAdmission.State.COMPLETED, a.state());
             assertEquals(ManagedRunExecutionAdmission.State.COMPLETED, b.state());
             var prepared = preparation.prepare(new RunCreateRequest(snapshot, "WSPM_PRETREE", "ABSOLUTE", .1));
+            for (var outcome : List.of(a, b)) {
+                assertEquals(outcome.runId(), outcome.persistenceContext().runId());
+                assertEquals(prepared.binding(), outcome.persistenceContext().provenance().binding());
+                var stored = context.getBean(vn.edu.wspm.backend.repositories.run.RunMetadataRepository.class).read(outcome.runId()).orElseThrow();
+                assertEquals(outcome.persistenceContext().provenance(), stored.provenance());
+                assertEquals("NOT_PUBLISHED", stored.publication().status());
+            }
             var directPre = new WspmPreTreeMiner().mine(prepared.engineRequest().database(), MinimumSupport.absolute(.1));
             var directBit = new BitPruneMiner().mine(prepared.engineRequest().database(), MinimumSupport.absolute(.1));
             assertEquals(directPre.supports(), a.result().supports()); assertEquals(directBit.supports(), b.result().supports());
@@ -213,11 +220,15 @@ class ManagedRunExecutionIntegrationTest {
             var emptyResponse = envelope(submit("WSPM_PRETREE", "PERCENT", 100), 202); String emptyId = emptyResponse.get("runId").asString();
             var empty = outcome(emptyId); assertEquals(ManagedRunExecutionAdmission.State.COMPLETED, empty.state());
             assertTrue(empty.result().supports().isEmpty()); assertCaptured(empty);
+            assertNotNull(empty.persistenceContext());
+            assertEquals("NOT_PUBLISHED", jdbc.queryForObject("SELECT publication_status FROM RUN_RESULT_PUBLICATION WHERE run_id=?", String.class, emptyId));
             assertStatusPayload(empty);
             assertEquals(0, empty.metrics().patternCount()); assertTrue(provider.acknowledge(emptyId, empty.token()));
             assertEquals(0, provider.retainedCount());
             assertEquals(3, jdbc.queryForObject("SELECT COUNT(*) FROM MINING_RUN WHERE status='SUCCEEDED' AND started_at IS NOT NULL AND finished_at IS NOT NULL", Integer.class));
             assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM PATTERN", Integer.class));
+            assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM PATTERN_ITEM", Integer.class));
+            assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM RUN_ITEM_STATISTIC", Integer.class));
         } finally { release.countDown(); }
     }
 

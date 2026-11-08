@@ -29,7 +29,7 @@ class ExecutionOwnershipMigrationTest {
         }
         var before = jdbc.queryForList("SELECT * FROM MINING_RUN ORDER BY run_id");
         var current = Flyway.configure().dataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())
-                .locations("classpath:db/migration").load(); current.migrate(); current.validate();
+                .locations("classpath:db/migration").target("3").load(); current.migrate(); current.validate();
         assertEquals("3", current.info().current().getVersion().getVersion());
         assertEquals(checksum, Arrays.stream(current.info().all()).filter(m -> m.getVersion().getVersion().equals("2")).findFirst().orElseThrow().getChecksum());
         var after = jdbc.queryForList("SELECT * FROM MINING_RUN ORDER BY run_id"); assertEquals(before.size(), after.size());

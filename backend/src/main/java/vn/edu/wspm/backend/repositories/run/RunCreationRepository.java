@@ -16,6 +16,7 @@ import vn.edu.wspm.backend.exception.ApplicationException;
 import vn.edu.wspm.backend.exception.ErrorCode;
 import vn.edu.wspm.backend.services.dataset.conversion.ConversionArtifactCodec;
 import vn.edu.wspm.backend.services.run.PreparedRun;
+import vn.edu.wspm.backend.services.run.persistence.RunProvenance;
 import vn.edu.wspm.backend.repositories.dataset.SnapshotConversionRepository;
 import vn.edu.wspm.backend.services.run.execution.ExecutionOwnership;
 
@@ -25,8 +26,9 @@ public class RunCreationRepository {
     @PersistenceContext private EntityManager em;
     private final SnapshotConversionRepository publications;
     private final Clock clock;
-    public RunCreationRepository(SnapshotConversionRepository publications, Clock clock) {
-        this.publications = publications; this.clock = clock;
+    private final RunMetadataRepository metadata;
+    public RunCreationRepository(SnapshotConversionRepository publications, Clock clock, RunMetadataRepository metadata) {
+        this.publications = publications; this.clock = clock; this.metadata = metadata;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 5)
@@ -55,6 +57,7 @@ public class RunCreationRepository {
                 resolved.effectiveThreshold(), weights.maxWeight().orElseThrow(), weights.minWeight().orElseThrow(),
                 weights.meanWeight().orElseThrow(), clock.instant().truncatedTo(ChronoUnit.MICROS));
         em.persist(entity); em.flush();
+        metadata.insert(runId, RunProvenance.from(input));
         if (ownership != null) {
             em.createNativeQuery("UPDATE MINING_RUN SET execution_owner_id=:owner, execution_attempt_id=:attempt, "
                     + "execution_lease_until=TIMESTAMPADD(MICROSECOND,:lease,UTC_TIMESTAMP(6)) WHERE run_id=:id")

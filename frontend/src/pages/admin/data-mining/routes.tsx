@@ -8,6 +8,7 @@ import MiningRunsPage from './MiningRunsPage';
 import PatternsPage from './PatternsPage';
 import SnapshotDetailPage from './SnapshotDetailPage';
 import MiningRunDetailPage from './MiningRunDetailPage';
+import PatternDetailPage from './PatternDetailPage';
 
 export const dataMiningPages = [
   { path: ManagerPath.DATASETS, label: 'Dữ liệu khai phá', Component: DatasetsPage, Icon: Database },
@@ -31,5 +32,7 @@ export function createDataMiningRoutes() {
     <DataMiningGuard><SnapshotDetailPage/></DataMiningGuard>
   )}/>, <Route key="mining-run-detail" path={ManagerPath.MINING_RUNS + '/:runId'} element={(
     <DataMiningGuard><MiningRunDetailPage/></DataMiningGuard>
+  )}/>, <Route key="pattern-detail" path={ManagerPath.PATTERNS + '/:runId/:patternId'} element={(
+    <DataMiningGuard><PatternDetailPage/></DataMiningGuard>
   )}/>];
 }

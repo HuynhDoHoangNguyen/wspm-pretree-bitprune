@@ -26,7 +26,16 @@ class EngineRunEvidenceObserverTest {
         var db = new SpmfSequenceParser().parse(new StringReader("1 2 -1 -2\n1 -1 2 -1 -2\n"));
         var result = new CoreMiningEngineAdapter(new vn.edu.wspm.backend.services.run.RunConfigurationValidityGate()).execute(new MiningEngineRequest(MiningAlgorithm.WSPM_PRETREE, db, MinimumSupport.absolute(0.1)));
         var capture = RunMetricsCapture.from(result, 3, result.metrics().completeAlgorithmNanos() + 10);
-        var outcome = new ManagedRunExecutionAdmission.Outcome(id, UUID.randomUUID(), ManagedRunExecutionAdmission.State.COMPLETED, result, null, true, capture);
+        var artifact = new vn.edu.wspm.backend.services.dataset.conversion.ConversionArtifactResult.ArtifactFile("synthetic", "b".repeat(64), 10);
+        var publication = new vn.edu.wspm.backend.services.dataset.conversion.ConversionArtifactResult(id, id, "a".repeat(64), artifact, artifact,
+                new vn.edu.wspm.backend.services.dataset.conversion.ConversionArtifactResult.Statistics(2, 1, 1, 3, 2, 4, 2, 2, 2));
+        var provenance = new vn.edu.wspm.backend.services.run.persistence.RunProvenance(
+                vn.edu.wspm.backend.services.run.persistence.RunProvenance.VERSION,
+                vn.edu.wspm.backend.services.dataset.conversion.ConversionArtifactCodec.VERSION,
+                vn.edu.wspm.backend.services.dataset.conversion.ConversionArtifactCodec.POLICIES,
+                new vn.edu.wspm.backend.services.run.PreparedRun.Binding(publication, "CSV", "synthetic", "private-raw", "c".repeat(64)));
+        var outcome = new ManagedRunExecutionAdmission.Outcome(id, UUID.randomUUID(), ManagedRunExecutionAdmission.State.COMPLETED, result, null, true, capture,
+                new vn.edu.wspm.backend.services.run.persistence.RunPersistenceContext(id, provenance));
         when(manager.outcome(id)).thenReturn(Optional.of(outcome)); when(manager.retainedCount()).thenReturn(1);
         var row = new HashMap<String, Object>(); row.put("run_id", id); row.put("algorithm", "WSPM_PRETREE"); row.put("status", "SUCCEEDED");
         row.put("execution_owner_id", UUID.randomUUID().toString()); row.put("execution_attempt_id", UUID.randomUUID().toString());
@@ -47,9 +56,33 @@ class EngineRunEvidenceObserverTest {
         var db = new SpmfSequenceParser().parse(new StringReader("1 2 -1 -2\n1 -1 2 -1 -2\n"));
         var first = new MiningEngineRequest(MiningAlgorithm.WSPM_PRETREE, db, MinimumSupport.absolute(0.1));
         var second = new MiningEngineRequest(MiningAlgorithm.WSPM_BITPRUNE, db, MinimumSupport.absolute(0.1));
-        wrapper.execute(first); wrapper.execute(second);
+        when(delegate.execute(any())).thenAnswer(call -> new CoreMiningEngineAdapter(
+                new vn.edu.wspm.backend.services.run.RunConfigurationValidityGate()).execute(call.getArgument(0)));
+        var original = wrapper.execute(first); wrapper.execute(second);
+        var capture = new Properties();
+        try (var in = Files.newInputStream(directory.resolve("original-1.properties"))) { capture.load(in); }
+        assertEquals("1", capture.getProperty("call"));
+        assertEquals("WSPM_PRETREE", capture.getProperty("algorithm"));
+        assertEquals(EngineRunEvidenceObserver.bits(0.1), capture.getProperty("configured.bits"));
+        assertEquals(Long.toString(original.patternCount()), capture.getProperty("map.count"));
+        assertEquals(db.records(), new SpmfSequenceParser().parse(directory.resolve("original-1.spmf")).records());
+        assertFalse(Files.exists(directory.resolve("original-1.properties.tmp")));
         assertEquals(db.records(), new SpmfSequenceParser().parse(directory.resolve("input-WSPM_PRETREE.spmf")).records());
         assertThrows(IllegalStateException.class, () -> wrapper.execute(first));
         verify(delegate).execute(first); verify(delegate).execute(second); verifyNoMoreInteractions(delegate);
+    }
+    @Test void consecutiveSameAlgorithmCallsKeepDistinctCapturesAndLegacyInput() throws Exception {
+        var delegate = mock(MiningEngine.class);
+        var db = new SpmfSequenceParser().parse(new StringReader("1 2 -1 -2\n1 -1 2 -1 -2\n"));
+        var request = new MiningEngineRequest(MiningAlgorithm.WSPM_PRETREE, db, MinimumSupport.absolute(0.1));
+        var result = new CoreMiningEngineAdapter(new vn.edu.wspm.backend.services.run.RunConfigurationValidityGate()).execute(request);
+        when(delegate.execute(request)).thenReturn(result);
+        var wrapper = (MiningEngine)new EngineExecutionGate(directory, 4).postProcessAfterInitialization(delegate, "engine");
+        assertSame(result, wrapper.execute(request)); assertSame(result, wrapper.execute(request));
+        assertTrue(Files.exists(directory.resolve("input-WSPM_PRETREE.spmf")));
+        assertTrue(Files.exists(directory.resolve("input-WSPM_PRETREE-2.spmf")));
+        assertTrue(Files.exists(directory.resolve("original-1.properties")));
+        assertTrue(Files.exists(directory.resolve("original-2.properties")));
+        verify(delegate, times(2)).execute(request);
     }
 }
