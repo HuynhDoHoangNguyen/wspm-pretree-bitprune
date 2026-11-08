@@ -21,7 +21,7 @@ export default function Admin() {
     <Button onClick={() => void authSession.checkIdentity().catch(() => undefined)}>Kiểm tra lại quyền</Button>
     <Button onClick={() => void signOut()}>Đăng xuất</Button>
   </Stack>;
-  const supported = ['/admin', '/admin/datasets', '/admin/mining-runs', '/admin/patterns', '/admin/combos', ManagerPath.ACCOUNT].includes(normalized)
+  const supported = ['/admin', '/admin/datasets', '/admin/mining-runs', '/admin/patterns', '/admin/pattern-explorer', '/admin/combos', ManagerPath.ACCOUNT].includes(normalized)
     || matchPath(ManagerPath.DATASETS + '/:snapshotId', normalized) !== null
     || matchPath(ManagerPath.MINING_RUNS + '/:runId', normalized) !== null
     || matchPath(ManagerPath.PATTERNS + '/:runId/:patternId', normalized) !== null;

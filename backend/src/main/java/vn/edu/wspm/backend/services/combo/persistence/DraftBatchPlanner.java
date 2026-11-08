@@ -34,6 +34,11 @@ public final class DraftBatchPlanner {
             } catch(java.time.DateTimeException ex) { errors.add("INVALID_CREATED_AT"); }
         }
         if(!errors.isEmpty()) return invalid(errors);
+        boolean selected=request.context()!=null&&vn.edu.wspm.backend.services.combo.generation.ProductSelection.flexiblePolicy(request.context().evaluationPolicyVersion());
+        var bounds=request.bounds();
+        if(selected&&(bounds==null||bounds.minimum()<2||bounds.maximum()<bounds.minimum()
+                ||bounds.maximum()>vn.edu.wspm.backend.services.combo.generation.ProductSelection.MAX_PRODUCTS))return invalid(List.of("INVALID_PRODUCT_BOUNDS"));
+        if(!selected&&bounds!=null)return invalid(List.of("UNSUPPORTED_PRODUCT_BOUNDS"));
         var cfg=request.preview().configuration();
         var verified=new ComboPreviewRanker().preview(request.grouping(),request.context(),request.preview().anchorProductId(),cfg);
         if(!verified.completed()) return invalid(verified.errors());
@@ -74,6 +79,7 @@ public final class DraftBatchPlanner {
             if(f.referenceOriginalPrice()!=null && f.referenceSalePrice()!=null
                     && f.referenceOriginalPrice().compareTo(f.referenceSalePrice())!=0) errors.add("PRICE_TERMS_INCONSISTENT");
             var positions=new HashSet<Position>();
+            BigDecimal total=BigDecimal.ZERO;
             for(var set:group.itemsets()) for(var item:set.items()) {
                 if(set.itemsetOrder()<=0 || set.itemsetOrder()>4294967295L || item.itemOrder()<=0 || item.itemOrder()>4294967295L
                         || !id(item.productId())) errors.add("STORAGE_FIELD_OUT_OF_RANGE");
@@ -85,7 +91,10 @@ public final class DraftBatchPlanner {
                         || item.catalogEvidence().price()==null || value.unitPriceSnapshot().compareTo(item.catalogEvidence().price())!=0)
                     errors.add("PRICE_SNAPSHOT_MISMATCH");
                 if(value!=null && value.discountEligible()) errors.add("DISCOUNT_OUT_OF_SCOPE");
+                if(value!=null&&value.unitPriceSnapshot()!=null)total=total.add(value.unitPriceSnapshot().multiply(BigDecimal.valueOf(value.quantity())));
             }
+            if(selected&&(positions.size()<bounds.minimum()||positions.size()>bounds.maximum()))errors.add("PRODUCT_COUNT_OUT_OF_RANGE");
+            if(selected&&(!money(total)||f.referenceOriginalPrice()==null||total.compareTo(f.referenceOriginalPrice())!=0))errors.add("PRICE_TERMS_INCONSISTENT");
             if(!positions.equals(f.items().keySet())) errors.add("ITEM_FIELDS_INCOMPLETE");
         }
         if(!errors.isEmpty()) return invalid(errors);
@@ -105,7 +114,7 @@ public final class DraftBatchPlanner {
             g.sources().forEach(s->sources.add(new SourceRow(f.comboId(),s.candidate().patternId(),s.primary())));
         }
         var batch=new BatchRow(request.batchId(),request.context().runId(),cfg.rankingPolicy(),cfg.weightPolicy().policy(),cfg.k(),
-                true,2,4,"DRAFT",request.createdBy(),request.createdAt());
+                !selected||vn.edu.wspm.backend.services.combo.generation.CategorySelection.VERSION.equals(request.context().evaluationPolicyVersion()),selected?bounds.minimum():2,selected?bounds.maximum():4,"DRAFT",request.createdBy(),request.createdAt());
         return new Validation(true,List.of(),new Plan(request.writeIdentity(),request.context(),cfg,batch,combos,items,sources,ids,request.fields()));
     }
     private static boolean money(BigDecimal value) { return value!=null && value.signum()>=0 && value.scale()<=2 && value.compareTo(MONEY_MAX)<=0; }

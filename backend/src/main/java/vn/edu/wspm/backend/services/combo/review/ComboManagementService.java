@@ -44,15 +44,46 @@ public final class ComboManagementService {
         return new ComboAdminService(new ComboAdminReader(){
             public Snapshot list(Filters f,long o,int s){return reader.listCurrent(f,o,s);}
             public Bundle detail(String id){return reader.detailCurrent(id);}
-        },b->{var c=check(b);return new ComboReviewRules().assess(b,c.policy(),c.evidence());});
+        },b->{var c=check(b);return new ComboReviewRules().assess(b,c);});
     }
     public Page list(String batch,String status,String kind,Integer page,Integer size) {
         return reads.execute(tx->admin().list(batch,status,kind,page,size));
     }
+    public Page batchCombos(String batch,String status,String kind,Integer page,Integer size) {
+        // List only: approval authority is evaluated when a specific detail is opened.
+        return reads.execute(tx->new ComboAdminService(new ComboAdminReader(){
+            public Snapshot list(Filters f,long o,int s){return reader.listCurrent(f,o,s);}
+            public Bundle detail(String id){return reader.detailCurrent(id);}
+        }).list(batch,status,kind,page,size));
+    }
+    public record BatchSummary(String batchId,String runId,String status,String createdAt,String comboCount,String draftCount,String approvedCount,String rejectedCount) {}
+    public record BatchPage(int page,int size,String total,List<BatchSummary> items) {}
+    /** Lightweight history: page parents first, aggregate only their children; no review/evidence IO. */
+    public BatchPage batches(Integer page,Integer size) {
+        int p=page==null?0:page,s=size==null?20:size;
+        if(p<0||s<1||s>100)throw new vn.edu.wspm.backend.exception.ApplicationException(vn.edu.wspm.backend.exception.ErrorCode.INVALID_PAGE);
+        return reads.execute(tx->{
+            String total=jdbc.queryForObject("SELECT CAST(COUNT(*) AS CHAR) FROM COMBO_BATCH",String.class);
+            var items=jdbc.query("""
+                    SELECT b.batch_id,b.run_id,b.status,DATE_FORMAT(b.created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS created,
+                      CAST(COUNT(c.combo_id) AS CHAR) AS total,
+                      CAST(COALESCE(SUM(c.status='DRAFT'),0) AS CHAR) AS drafts,
+                      CAST(COALESCE(SUM(c.status='APPROVED'),0) AS CHAR) AS approved,
+                      CAST(COALESCE(SUM(c.status='REJECTED'),0) AS CHAR) AS rejected
+                    FROM (SELECT batch_id,run_id,status,created_at FROM COMBO_BATCH
+                          ORDER BY created_at DESC,batch_id DESC LIMIT ? OFFSET ?) b
+                    LEFT JOIN COMBO c ON c.batch_id=b.batch_id
+                    GROUP BY b.batch_id,b.run_id,b.status,b.created_at
+                    ORDER BY b.created_at DESC,b.batch_id DESC
+                    """,(r,n)->new BatchSummary(r.getString("batch_id"),r.getString("run_id"),r.getString("status"),r.getString("created"),r.getString("total"),r.getString("drafts"),r.getString("approved"),r.getString("rejected")),s,(long)p*s);
+            log.debug("Combo batch history: page={}, rows={}",p,items.size());
+            return new BatchPage(p,s,total,List.copyOf(items));
+        });
+    }
     public ReviewDetail detail(String id) {
         return reads.execute(tx->{
             var d=admin().detail(id);var b=reader.detailCurrent(id);var c=check(b);
-            var assessment=new ComboReviewRules().assess(b,c.policy(),c.evidence());
+            var assessment=new ComboReviewRules().assess(b,c);
             return new ReviewDetail(d.data(),d.itemsets(),d.sources(),assessment,
                     assessment.allowedActions().isEmpty()?null:token(b,c,false),
                     new NotePolicy(c.policy()!=null&&c.policy().confirmed(),true,1000));

@@ -3,11 +3,15 @@ import { Alert, Badge, Button, Group, NativeSelect, Paper, SimpleGrid, Skeleton,
 import { MiningEmptyState, useMiningAdminStyles } from '../admin/data-mining/MiningAdminUi';
 import { Audit, ComboClient, ComboClientError, ComboDetail, ComboFilters, ComboPage, Decision } from './ComboClient';
 import { comboHttpClient } from './ComboHttpClient';
+import PublishedComboInputPanel from './PublishedComboInputPanel';
+import ComboBatchHistory from './ComboBatchHistory';
+import { useInRouterContext, useSearchParams } from 'react-router-dom';
 
 const statuses: Record<string, string> = { DRAFT: 'Bản nháp', APPROVED: 'Đã duyệt nội bộ', REJECTED: 'Đã từ chối', PUBLISHED: 'Đã công bố', ARCHIVED: 'Đã lưu trữ' };
 const kinds = ['SAME_ORDER_BUNDLE', 'SEQUENTIAL_CROSS_SELL', 'MIXED_SEQUENCE'];
 const kindLabel: Record<string, string> = { SAME_ORDER_BUNDLE: 'Mua cùng đơn', SEQUENTIAL_CROSS_SELL: 'Mua theo thứ tự', MIXED_SEQUENCE: 'Kết hợp nhóm & thứ tự' };
 const blockers: Record<string, string> = {
+  CATALOG_PRICE_OR_ELIGIBILITY_CHANGED: 'Giá, phiên bản hoặc trạng thái sản phẩm đã thay đổi. Cần tạo đề xuất mới; hệ thống không tự sửa giá Combo.',
   REVIEW_POLICY_UNCONFIRMED: 'Chưa có chính sách duyệt được xác nhận.',
   REVIEW_EVIDENCE_UNVERIFIED: 'Thông tin làm cơ sở duyệt chưa được xác minh.',
   WRITER_LOCK_PROTOCOL_UNCONFIRMED: 'Chưa sẵn sàng ghi quyết định an toàn.',
@@ -42,9 +46,32 @@ function ReviewAudit({ audit }: { audit: Audit }) {
     <Text size="sm" color="dimmed">Thời điểm review (UTC): {audit.reviewedAt ?? 'Chưa có'}</Text><Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>Ghi chú: {audit.reviewNote ?? 'Không có'}</Text></Stack>;
 }
 export default function ComboAdmin({ client = comboHttpClient }: { client?: ComboClient }) {
+  const routed=useInRouterContext();
+  return routed ? <RoutedComboAdmin client={client}/> : <ComboAdminView client={client}/>;
+}
+function RoutedComboAdmin({ client }: { client: ComboClient }) {
+  const [params,setParams]=useSearchParams(); const ids=params.getAll('batchId');
+  const batch=ids.length===1 && ids[0].length<=40 ? ids[0] : undefined;
+  const generation=params.get('tab')==='generate'||params.has('runId');
+  if(client.batches) return <Stack spacing="lg" style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 32 }}>
+    <Paper withBorder radius="md" p="xl" sx={theme=>({ backgroundColor: theme.colorScheme==='dark'?theme.colors.dark[6]:theme.colors.blue[0] })}>
+      <Text size="xs" weight={700} color="blue" transform="uppercase">Đề xuất từ dữ liệu khai phá</Text>
+      <Title order={2} mt={6}>Quản lý Combo</Title><Text color="dimmed" mt="xs">Mỗi lần lưu DRAFT được gom thành một batch. Mở batch để xem và duyệt từng đề xuất.</Text>
+      <Group mt="lg"><Button variant={!generation?'filled':'white'} onClick={()=>setParams({})}>Lịch sử lưu DRAFT</Button>
+        <Button variant={generation?'filled':'white'} onClick={()=>setParams({ tab: 'generate' })}>Tạo đề xuất Combo</Button></Group>
+    </Paper>
+    {generation ? <PublishedComboInputPanel/> : batch ? <>
+      <Group position="apart"><Button variant="subtle" onClick={()=>setParams({})}>← Lịch sử batch</Button>
+        <Text size="sm" color="dimmed" style={{ overflowWrap: 'anywhere' }}>Batch {batch}</Text></Group>
+      <ComboAdminView key={batch} client={client} initialBatchId={batch} embedded/>
+    </> : <ComboBatchHistory client={client} openBatch={id=>setParams({ batchId: id })}/>}
+  </Stack>;
+  return <ComboAdminView key={batch || ''} client={client} initialBatchId={batch}/>;
+}
+function ComboAdminView({ client, initialBatchId, embedded = false }: { client: ComboClient; initialBatchId?: string; embedded?: boolean }) {
   const { classes } = useMiningAdminStyles();
-  const [draft, setDraft] = useState<ComboFilters>({});
-  const [query, setQuery] = useState({ filters: {} as ComboFilters, page: 0 });
+  const [draft, setDraft] = useState<ComboFilters>(initialBatchId ? { batchId: initialBatchId } : {});
+  const [query, setQuery] = useState({ filters: (initialBatchId ? { batchId: initialBatchId } : {}) as ComboFilters, page: 0 });
   const [revision, setRevision] = useState(0);
   const [data, setData] = useState<ComboPage | null>(null);
   const [error, setError] = useState(''); const [loading, setLoading] = useState(false);
@@ -62,6 +89,7 @@ export default function ComboAdmin({ client = comboHttpClient }: { client?: Comb
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; reviewAbort.current?.abort(); }; }, []);
   const invalidate = () => { listGeneration.current++; detailGeneration.current++; setRevision(v => v + 1); };
   const changeQuery = (filters: ComboFilters, page: number) => {
+    if (embedded && initialBatchId) filters = { ...filters, batchId: initialBatchId };
     sendGeneration.current++; reviewAbort.current?.abort(); submitting.current = false; setSending(false); setSavedAudit(null);
     listGeneration.current++; detailGeneration.current++; setSelected(null); setDetail(null); setDecision(null);
     setNote(''); setQuery({ filters, page });
@@ -129,18 +157,19 @@ export default function ComboAdmin({ client = comboHttpClient }: { client?: Comb
     }
   };
   return <Stack spacing="lg" className={classes.page}>
-    <Stack spacing={4} className={classes.header}><Text size="sm" color="dimmed">Dữ liệu &amp; Khai phá</Text>
+    {!embedded && <PublishedComboInputPanel/>}
+    {!embedded && <Stack spacing={4} className={classes.header}><Text size="sm" color="dimmed">Dữ liệu &amp; Khai phá</Text>
       <Title order={2}>Quản lý Combo</Title>
       <Text color="dimmed">Xem bộ sản phẩm, kiểm tra nguồn và duyệt các đề xuất.</Text>
-    </Stack>
+    </Stack>}
     <Paper withBorder className={classes.card}>
       <form aria-label="Bộ lọc Combo" onSubmit={e => {
         e.preventDefault(); if (draft.batchId && (draft.batchId.trim() === '' || Array.from(draft.batchId).length > 40)) { setNotice('Batch ID không hợp lệ.'); return; }
         changeQuery(draft, 0);
       }}><Stack spacing="md">
           <Title order={3}>Bộ lọc Combo</Title>
-          <SimpleGrid cols={3} spacing="md" breakpoints={[{ maxWidth: 'md', cols: 2 }, { maxWidth: 'sm', cols: 1 }]}>
-            <TextInput label="Batch ID" placeholder="Nhập mã batch" size="sm" value={draft.batchId ?? ''} onChange={e => { const value = e.target.value; setDraft(d => ({ ...d, batchId: value || undefined })); }}/>
+          <SimpleGrid cols={embedded ? 2 : 3} spacing="md" breakpoints={[{ maxWidth: 'md', cols: 2 }, { maxWidth: 'sm', cols: 1 }]}>
+            {!embedded && <TextInput label="Batch ID" placeholder="Nhập mã batch" size="sm" value={draft.batchId ?? ''} onChange={e => { const value = e.target.value; setDraft(d => ({ ...d, batchId: value || undefined })); }}/>}
             <NativeSelect label="Trạng thái Combo" size="sm" value={draft.status ?? ''} onChange={e => { const value = e.target.value; setDraft(d => ({ ...d, status: value || undefined })); }}
               data={[{ value: '', label: 'Tất cả' }, ...Object.keys(statuses).map(s => ({ value: s, label: statuses[s] }))]}/>
             <NativeSelect label="Loại Combo" size="sm" value={draft.comboKind ?? ''} onChange={e => { const value = e.target.value; setDraft(d => ({ ...d, comboKind: value || undefined })); }}

@@ -34,9 +34,10 @@ public final class Tv2BrowserApplication {
         var jdbc=new JdbcTemplate(ds);
         if(!db.equals(jdbc.queryForObject("SELECT DATABASE()",String.class))||jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()",Integer.class)!=0)
             throw new IllegalStateException("TEST_DATABASE_NOT_EMPTY");
-        Path base=Path.of("backend/migration-review").toAbsolutePath();
-        Flyway.configure().dataSource(ds).locations("classpath:db/migration","filesystem:"+base.resolve("TV2-INT-08F"),"filesystem:"+base.resolve("INT-09_10"))
+        Flyway.configure().dataSource(ds).resourceProvider(vn.edu.wspm.backend.testsupport.LegacyComboMigrations.provider(true))
                 .callbacks(new NullablePatternMetricPreflight()).cleanDisabled(true).load().migrate();
+        // Current ORM columns on this owned legacy fixture; not a production upgrade history.
+        vn.edu.wspm.backend.testsupport.ExecutionSchema.apply(jdbc);
         jdbc.update("INSERT INTO CATEGORY(category_id,name,slug,status) VALUES('LCAT','TEST_FIXTURE Laptop','laptop','ACTIVE'),('ACAT','TEST_FIXTURE Accessory','accessory','ACTIVE')");
         jdbc.update("INSERT INTO ROLE(role_id,code,name) VALUES('customer-role','CUSTOMER','Customer'),('admin-role','ADMIN','Admin')");
         DraftBatchWriterMySqlTest f=null;
@@ -93,7 +94,7 @@ public final class Tv2BrowserApplication {
     }
     @TestConfiguration(proxyBeanMethods=false)
     public static class ControlledPolicy {
-        @Bean ComboReviewAuthority controlledReview(javax.sql.DataSource ds) {
+        @Bean @org.springframework.context.annotation.Primary ComboReviewAuthority controlledReview(javax.sql.DataSource ds) {
             var inspector=new WriterEvidenceReviewAuthority(ds,500,4*1024*1024,b->ComboReviewAuthority.Check.unavailable());
             return new WriterEvidenceReviewAuthority(ds,500,4*1024*1024,b->{
                 if(!allowedBatches.contains(b.row().batchId()))return ComboReviewAuthority.Check.unavailable();

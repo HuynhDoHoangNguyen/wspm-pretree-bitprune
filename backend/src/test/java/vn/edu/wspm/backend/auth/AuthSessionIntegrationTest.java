@@ -44,8 +44,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
 /** Full HTTP/JPA lifecycle on a disposable V2 MySQL schema, with a controlled clock. */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {"spring.config.import=", "wdm.execution.enabled=false", "wdm.result-publication.enabled=false"})
 @Testcontainers
+@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 @Import({AuthSessionIntegrationTest.TimeConfig.class, AuthSessionIntegrationTest.AdminProbeConfig.class})
 @ExtendWith(OutputCaptureExtension.class)
 class AuthSessionIntegrationTest {
@@ -111,7 +113,7 @@ class AuthSessionIntegrationTest {
 
     @TestConfiguration(proxyBeanMethods = false)
     static class TimeConfig {
-        @Bean vn.edu.wspm.backend.services.combo.review.ComboReviewAuthority controlledComboAuthority() {
+        @Bean @Primary vn.edu.wspm.backend.services.combo.review.ComboReviewAuthority controlledComboAuthority() {
             return b -> "combo-http-run".equals(b.row().runId())
                     ? new vn.edu.wspm.backend.services.combo.review.ComboReviewAuthority.Check(
                         new vn.edu.wspm.backend.services.combo.review.ComboReview.Policy("CONTROLLED_HTTP_REVIEW_V1"),
@@ -193,8 +195,10 @@ class AuthSessionIntegrationTest {
 
     @Test void comboHttpAdminReadAndReviewUsesServerPrincipalAndCommonContract() throws Exception {
         String root="/api/v1/admin/combos";
+        error(get(root+"/batches",null),401);error(get(root+"/batches/missing/combos",null),401);
         error(get(root,null),401);error(comboPost("missing","{}",null),401);
         var access=token(login(USER,PASSWORD));error(get(root,access),403);error(comboPost("missing","{}",access),403);
+        error(get(root+"/batches",access),403);error(get(root+"/batches/missing/combos",access),403);
         String userId=jdbc.queryForObject("SELECT user_id FROM USER_ACCOUNT WHERE username=?",String.class,USER);
         jdbc.update("INSERT INTO USER_ROLE(user_id,role_id) VALUES(?,'admin-role')",userId);
         var empty=get(root,access);assertEquals(200,empty.statusCode(),empty.body());metadata(empty);
@@ -217,6 +221,12 @@ class AuthSessionIntegrationTest {
                 jdbc.update("INSERT INTO COMBO_SOURCE VALUES(?,?,true)",id,pattern);
             }
             var list=JSON.readTree(get(root+"?batchId=combo-http-b&status=DRAFT&comboKind=SEQUENTIAL_CROSS_SELL&size=1",access).body()).get("data");
+            var history=get(root+"/batches?page=0&size=20",access);assertEquals(200,history.statusCode());metadata(history);
+            var batches=JSON.readTree(history.body()).get("data");assertEquals("1",batches.get("total").asString());
+            assertEquals("combo-http-b",batches.get("items").get(0).get("batchId").asString());assertEquals("2",batches.get("items").get(0).get("comboCount").asString());
+            var scoped=get(root+"/batches/combo-http-b/combos?size=1",access);assertEquals(200,scoped.statusCode());
+            assertEquals(1,JSON.readTree(scoped.body()).get("data").get("items").size());
+            error(get(root+"/batches?size=101",access),400);error(get(root+"/batches?unknown=1",access),400);
             assertEquals("2",list.get("scopeTotal").asString());assertEquals("2",list.get("filteredTotal").asString());assertEquals("combo-http-Z",list.get("items").get(0).get("data").get("comboId").asString());
             var detail=get(root+"/combo-http-Z",access);assertEquals(200,detail.statusCode(),detail.body());metadata(detail);
             var data=JSON.readTree(detail.body()).get("data");assertEquals("9007199254740993.01",data.get("data").get("referenceOriginalPrice").asString());assertEquals(2,data.get("itemsets").size());assertEquals("9007199254740993",data.get("data").get("metrics").get("supportAbs").asString());
@@ -299,18 +309,18 @@ class AuthSessionIntegrationTest {
 
     @Test
     void runListHttpRequiresAdminAndReturnsEmptyEnvelope() throws Exception {
-        error(get("/api/v1/admin/mining-runs", null), 401);
+        error(get("/api/v1/admin/pattern-runs", null), 401);
         var access = token(login(USER, PASSWORD));
-        error(get("/api/v1/admin/mining-runs", access), 403);
+        error(get("/api/v1/admin/pattern-runs", access), 403);
         String userId = jdbc.queryForObject("SELECT user_id FROM USER_ACCOUNT WHERE username=?", String.class, USER);
         jdbc.update("INSERT INTO USER_ROLE(user_id,role_id) VALUES(?,'admin-role')", userId);
-        var reply = get("/api/v1/admin/mining-runs", access);
+        var reply = get("/api/v1/admin/pattern-runs", access);
         assertEquals(200, reply.statusCode());metadata(reply);
         var data = JSON.readTree(reply.body()).get("data");
         assertEquals("0", data.get("total").asString());assertTrue(data.get("total").isString());
         assertEquals(0, data.get("page").asInt());assertEquals(20, data.get("size").asInt());assertEquals(0,data.get("items").size());
         jdbc.update("DELETE FROM USER_ROLE WHERE user_id=? AND role_id='customer-role'", userId);
-        assertEquals(200,get("/api/v1/admin/mining-runs",access).statusCode());
+        assertEquals(200,get("/api/v1/admin/pattern-runs",access).statusCode());
     }
 
     @Test
@@ -329,7 +339,7 @@ class AuthSessionIntegrationTest {
                     VALUES(?,'run-list-snapshot','WSPM_PRETREE',?,'/private/internal/dataset','TEST',.5,1,.4,'2026-01-01 00:00:00.123456')
                     """,ids.get(i),states.get(i));
             for(int page=0;page<3;page++) {
-                var reply=get("/api/v1/admin/mining-runs?page="+page+"&size=2",access);assertEquals(200,reply.statusCode());metadata(reply);
+                var reply=get("/api/v1/admin/pattern-runs?page="+page+"&size=2",access);assertEquals(200,reply.statusCode());metadata(reply);
                 assertFalse(reply.body().contains("/private/"));
                 var data=JSON.readTree(reply.body()).get("data");assertEquals("5",data.get("total").asString());
                 var items=data.get("items");assertEquals(page==2?1:2,items.size());
@@ -341,7 +351,7 @@ class AuthSessionIntegrationTest {
                     assertEquals("2026-01-01T00:00:00.123456Z",items.get(j).get("createdAt").asString());
                 }
             }
-            var beyond=JSON.readTree(get("/api/v1/admin/mining-runs?page=99&size=2",access).body()).get("data");
+            var beyond=JSON.readTree(get("/api/v1/admin/pattern-runs?page=99&size=2",access).body()).get("data");
             assertEquals("5",beyond.get("total").asString());assertEquals(0,beyond.get("items").size());
             var actual=jdbc.queryForList("SELECT status FROM MINING_RUN ORDER BY CAST(run_id AS BINARY)",String.class);
             assertEquals(states,actual); // Read did not alter lifecycle.
@@ -357,7 +367,7 @@ class AuthSessionIntegrationTest {
         String userId=jdbc.queryForObject("SELECT user_id FROM USER_ACCOUNT WHERE username=?",String.class,USER);
         jdbc.update("INSERT INTO USER_ROLE(user_id,role_id) VALUES(?,'admin-role')",userId);
         for(String query:List.of("page=-1","size=0","size=101","page=2147483648","page=1.5","page=","size=20&size=30","unknown=private-value")) {
-            var reply=get("/api/v1/admin/mining-runs?"+query,access);error(reply,400);
+            var reply=get("/api/v1/admin/pattern-runs?"+query,access);error(reply,400);
             assertEquals("VALIDATION_FAILED",JSON.readTree(reply.body()).get("code").asString());
             assertFalse(reply.body().contains("private-value"));
         }
@@ -366,9 +376,9 @@ class AuthSessionIntegrationTest {
     @Test
     void patternHttpSecurityAndRawValidation() throws Exception {
         var access=token(login(USER,PASSWORD));
-        var paths=List.of("/api/v1/admin/mining-runs/absent/patterns",
-                "/api/v1/admin/mining-runs/absent/patterns/18446744073709551615",
-                "/api/v1/admin/mining-runs/absent/dictionary");
+        var paths=List.of("/api/v1/admin/pattern-runs/absent/patterns",
+                "/api/v1/admin/pattern-runs/absent/patterns/18446744073709551615",
+                "/api/v1/admin/pattern-runs/absent/dictionary");
         for(String path:paths) { error(get(path,null),401); error(get(path,"invalid"),401); error(get(path,access),403); }
         String userId=jdbc.queryForObject("SELECT user_id FROM USER_ACCOUNT WHERE username=?",String.class,USER);
         jdbc.update("INSERT INTO USER_ROLE(user_id,role_id) VALUES(?,'admin-role')",userId);
@@ -379,7 +389,7 @@ class AuthSessionIntegrationTest {
                 "itemId=1&".repeat(100)+"itemId=1")) error(get(paths.getFirst()+"?"+query,access),400);
         error(get(paths.get(2)+"?q=a&q=b",access),400);
         error(get(paths.get(1)+"?page=0",access),400);
-        error(get("/api/v1/admin/mining-runs/absent/patterns/18446744073709551616",access),400);
+        error(get("/api/v1/admin/pattern-runs/absent/patterns/18446744073709551616",access),400);
         error(get(paths.getFirst()+"?itemId=1&itemId=1&supportMin=9007199254740993",access),404);
         jdbc.update("DELETE FROM USER_ROLE WHERE user_id=? AND role_id='customer-role'",userId);
         error(get(paths.getFirst(),access),404);
@@ -397,7 +407,7 @@ class AuthSessionIntegrationTest {
             for(String state:List.of("QUEUED","RUNNING","FAILED","LEGACY_UNVERIFIED","SUCCEEDED")) {
                 jdbc.update("INSERT INTO MINING_RUN(run_id,snapshot_id,algorithm,status,dataset_source,minsup_mode,minsup_configured,effective_threshold,mean_w,pattern_count) VALUES(?,'pattern-http-s','WSPM_PRETREE',?,'test','TEST',.5,1,.4,0)","pattern-http-"+state,state);
             }
-            String base="/api/v1/admin/mining-runs/pattern-http-";
+            String base="/api/v1/admin/pattern-runs/pattern-http-";
             for(String state:List.of("QUEUED","RUNNING","FAILED","LEGACY_UNVERIFIED")) {
                 var reply=get(base+state+"/patterns",access);assertEquals(200,reply.statusCode());metadata(reply);
                 var data=JSON.readTree(reply.body()).get("data");assertTrue(data.get("runPatternTotal").isNull());assertTrue(data.get("filteredTotal").isNull());

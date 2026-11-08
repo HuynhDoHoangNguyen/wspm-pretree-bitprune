@@ -6,6 +6,7 @@ import DataMiningGuard from './DataMiningGuard';
 import DatasetsPage from './DatasetsPage';
 import MiningRunsPage from './MiningRunsPage';
 import PatternExplorer from 'pages/pattern/PatternExplorer';
+import PatternsPage from './PatternsPage';
 import SnapshotDetailPage from './SnapshotDetailPage';
 import MiningRunDetailPage from './MiningRunDetailPage';
 import PatternDetailPage from './PatternDetailPage';
@@ -13,7 +14,7 @@ import PatternDetailPage from './PatternDetailPage';
 export const dataMiningPages = [
   { path: ManagerPath.DATASETS, label: 'Dữ liệu khai phá', Component: DatasetsPage, Icon: Database },
   { path: ManagerPath.MINING_RUNS, label: 'Lần chạy khai phá', Component: MiningRunsPage, Icon: PlayerPlay },
-  { path: ManagerPath.PATTERNS, label: 'Mẫu khai phá', Component: PatternExplorer, Icon: ListSearch },
+  { path: ManagerPath.PATTERNS, label: 'Mẫu khai phá', Component: PatternsPage, Icon: ListSearch },
 ];
 
 export function isDataMiningPath(pathname: string): boolean {
@@ -28,7 +29,9 @@ export function createDataMiningRoutes() {
         <Component/>
       </DataMiningGuard>
     )}/>
-  )), <Route key="snapshot-detail" path={ManagerPath.DATASETS + '/:snapshotId'} element={(
+  )), <Route key="pattern-explorer" path="/admin/pattern-explorer" element={(
+    <DataMiningGuard><PatternExplorer/></DataMiningGuard>
+  )}/>, <Route key="snapshot-detail" path={ManagerPath.DATASETS + '/:snapshotId'} element={(
     <DataMiningGuard><SnapshotDetailPage/></DataMiningGuard>
   )}/>, <Route key="mining-run-detail" path={ManagerPath.MINING_RUNS + '/:runId'} element={(
     <DataMiningGuard><MiningRunDetailPage/></DataMiningGuard>

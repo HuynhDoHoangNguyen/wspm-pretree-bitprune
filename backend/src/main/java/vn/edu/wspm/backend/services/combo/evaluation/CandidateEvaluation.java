@@ -18,11 +18,16 @@ public final class CandidateEvaluation {
     public enum CheckStatus { PASS, FAIL, NOT_EVALUATED }
     public enum Decision { ACCEPT, REJECT }
     public record Policy(String version,String confirmationRef,Set<String> laptopCategoryIds,
-            Set<String> accessoryCategoryIds,EligibilityMode eligibilityMode) {
+            Set<String> accessoryCategoryIds,EligibilityMode eligibilityMode,SelectionRules selection) {
+        public Policy(String version,String confirmationRef,Set<String> laptops,Set<String> accessories,EligibilityMode mode){this(version,confirmationRef,laptops,accessories,mode,null);}
         public Policy {
             laptopCategoryIds=Set.copyOf(laptopCategoryIds);
             accessoryCategoryIds=Set.copyOf(accessoryCategoryIds);
         }
+    }
+    public record SelectionRules(Set<String> requiredProductIds,int minimum,int maximum,Set<String> requiredCategoryIds) {
+        public SelectionRules(Set<String> products,int min,int max){this(products,min,max,Set.of());}
+        public SelectionRules { requiredProductIds=Set.copyOf(requiredProductIds);requiredCategoryIds=Set.copyOf(requiredCategoryIds); }
     }
     public record Evidence(String runId,String runStatus,String snapshotId,String snapshotValidation,
             Purpose purpose,String purposeConfirmationRef,BigInteger publishedCount,

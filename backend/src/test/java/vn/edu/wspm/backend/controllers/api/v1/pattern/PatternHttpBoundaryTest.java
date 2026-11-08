@@ -19,7 +19,7 @@ class PatternHttpBoundaryTest {
     @Test
     void allReaderCodesUseCentralErrorEnvelopeAndOnlySafeMembershipDetails() throws Exception {
         for(var code:PatternReadException.Code.values()) {
-            var request=new MockHttpServletRequest("GET","/api/v1/admin/mining-runs/r/patterns");
+            var request=new MockHttpServletRequest("GET","/api/v1/admin/pattern-runs/r/patterns");
             var error=new PatternReadException(code,code==PatternReadException.Code.ITEM_NOT_IN_RUN_DICTIONARY?List.of(2,3):List.of());
             var response=new GlobalExceptionHandler().handle(error,request,new MockHttpServletResponse());
             int expected=switch(code) {
@@ -52,7 +52,7 @@ class PatternHttpBoundaryTest {
 
     @Test
     void databaseFailureIsSafeServerErrorNotEmptySuccess() throws Exception {
-        var request=new MockHttpServletRequest("GET","/api/v1/admin/mining-runs/r/patterns");
+        var request=new MockHttpServletRequest("GET","/api/v1/admin/pattern-runs/r/patterns");
         var result=new GlobalExceptionHandler().handle(new DataAccessResourceFailureException("private-password-sql"),request,new MockHttpServletResponse());
         assertEquals(503,result.getStatusCode().value());
         assertFalse(JsonMapper.builder().build().writeValueAsString(result.getBody()).contains("private-password-sql"));

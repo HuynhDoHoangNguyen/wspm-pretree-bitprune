@@ -47,9 +47,6 @@ public class PatternEntity {
     @Column(name = "pattern_weight")
     private Double weight;
 
-    @Column(name = "pattern_weight_policy", length = 80)
-    private String patternWeightPolicy;
-
     @Column(name = "pattern_item_count")
     private Integer patternLength;
 
@@ -122,5 +119,4 @@ public class PatternEntity {
     public Double getSupportRatio() { return supportRatio; }
     public Double getWeightedSupport() { return weightedSupport; }
     public Integer getItemsetCount() { return itemsetCount; }
-    public String getPatternWeightPolicy() { return patternWeightPolicy; }
 }

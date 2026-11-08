@@ -117,6 +117,7 @@ try {
       .replaceAll('&quot;', '"').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
     assert.ok(existsSync(path.join(root, 'backend/target/test-classes/vn/edu/wspm/backend/repositories/Tv2BrowserApplication.class')), 'Compile TV2 test launcher first');
     const configuration = { 'debug': false, 'server.address': '127.0.0.1', 'server.port': backendPort,
+      'spring.config.import': '', 'wdm.execution.enabled': false, 'wdm.result-publication.enabled': false,
       'spring.datasource.url': `jdbc:mysql://127.0.0.1:${port}/${db}?allowPublicKeyRetrieval=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true`,
       'spring.datasource.username': 'root', 'spring.datasource.password': password, 'spring.flyway.enabled': false,
       'spring.sql.init.mode': 'never', 'spring.jpa.hibernate.ddl-auto': 'validate',

@@ -15,6 +15,31 @@ import static vn.edu.wspm.backend.services.combo.evaluation.CandidateEvaluation.
 import static org.junit.jupiter.api.Assertions.*;
 
 class PatternCandidateEvaluatorTest {
+    @Test void categoryPolicySelectsAnyProductOfEachRequiredCategoryAcrossItemsets(){
+        var patterns=List.of(pattern("R","1",new long[][]{{1},{2}}),pattern("R","2",new long[][]{{1},{3}}),pattern("R","3",new long[][]{{2,3}}));
+        var base=input(patterns);
+        var policy=new Policy(vn.edu.wspm.backend.services.combo.generation.CategorySelection.VERSION,"OWNER",Set.of(),Set.of(),EligibilityMode.CATALOG_ONLY,new SelectionRules(Set.of(),2,4,Set.of("laptops","accessories")));
+        var result=evaluator.evaluate(new Input(base.evidence(),policy,patterns,base.dictionary(),base.catalog()));
+        assertEquals(2,result.accepted());assertTrue(codes(result.patterns().get(2)).contains("REQUIRED_CATEGORIES_MISSING"));
+        assertEquals(Set.of("1","2"),result.patterns().stream().filter(p->p.decision()==Decision.ACCEPT).map(PatternResult::patternId).collect(java.util.stream.Collectors.toSet()));
+    }
+    @Test void selectedPolicyMatchesAllAcrossItemsetsWithoutLaptopOrRewritingMetrics(){
+        var p=pattern("R","1",new long[][]{{2},{3,5}});var base=input(List.of(p));
+        var policy=new Policy(vn.edu.wspm.backend.services.combo.generation.ProductSelection.VERSION,"OWNER",Set.of(),Set.of(),EligibilityMode.CATALOG_ONLY,new SelectionRules(Set.of("M","X"),2,5));
+        var result=evaluator.evaluate(new Input(base.evidence(),policy,base.patterns(),base.dictionary(),base.catalog()));
+        assertEquals(1,result.accepted());assertSame(p,result.patterns().getFirst().candidate().source());
+        var missing=new Policy(policy.version(),"OWNER",Set.of(),Set.of(),EligibilityMode.CATALOG_ONLY,new SelectionRules(Set.of("M","L"),2,5));
+        var rejected=evaluator.evaluate(new Input(base.evidence(),missing,base.patterns(),base.dictionary(),base.catalog()));
+        assertTrue(codes(rejected.patterns().getFirst()).contains("REQUIRED_PRODUCTS_MISSING"));
+    }
+    @Test void selectedPolicyPermitsFiveDistinctProductsButKeepsRepetitionAndCatalogGates(){
+        var p=pattern("R","1",new long[][]{{1,2,3,4,5}});var base=input(List.of(p));
+        var policy=new Policy(vn.edu.wspm.backend.services.combo.generation.ProductSelection.VERSION,"OWNER",Set.of(),Set.of(),EligibilityMode.CATALOG_ONLY,new SelectionRules(Set.of("X"),5,5));
+        assertEquals(1,evaluator.evaluate(new Input(base.evidence(),policy,base.patterns(),base.dictionary(),base.catalog())).accepted());
+        assertEquals(0,evaluator.evaluate(base).accepted());
+        var repeated=input(List.of(pattern("R","2",new long[][]{{2},{2,5}})));
+        assertTrue(codes(evaluator.evaluate(new Input(repeated.evidence(),policy,repeated.patterns(),repeated.dictionary(),repeated.catalog())).patterns().getFirst()).contains("REPEATED_PRODUCT"));
+    }
     private final PatternCandidateEvaluator evaluator=new PatternCandidateEvaluator();
     private Policy policy(EligibilityMode mode) { return new Policy("TEST-v1","TEST-only-approval",Set.of("laptops"),Set.of("accessories"),mode); }
     private Evidence evidence(String run,String status,Purpose purpose,int count,boolean full) {

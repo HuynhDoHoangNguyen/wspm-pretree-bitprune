@@ -12,7 +12,7 @@ import vn.edu.wspm.backend.web.auth.AdminPrincipalResolver;
 import vn.edu.wspm.backend.web.common.RequestIdFilter;
 
 @RestController
-@RequestMapping("/api/v1/admin/mining-runs")
+@RequestMapping("/api/v1/admin/pattern-runs")
 public final class RunListController {
     private final RunListService service;
     private final AdminPrincipalResolver principals;

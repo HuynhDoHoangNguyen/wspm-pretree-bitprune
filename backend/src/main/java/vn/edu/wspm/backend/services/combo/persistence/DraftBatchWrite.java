@@ -20,9 +20,11 @@ public final class DraftBatchWrite {
         public Fields { items=Map.copyOf(items); }
     }
     public record Request(Result grouping,Context context,ComboPreview.Result preview,String writeIdentity,
-            String batchId,String createdBy,Instant createdAt,Map<StructureKey,Fields> fields) {
+            String batchId,String createdBy,Instant createdAt,Map<StructureKey,Fields> fields,Bounds bounds) {
+        public Request(Result grouping,Context context,ComboPreview.Result preview,String identity,String batchId,String actor,Instant at,Map<StructureKey,Fields> fields){this(grouping,context,preview,identity,batchId,actor,at,fields,null);}
         public Request { fields=Map.copyOf(fields); }
     }
+    public record Bounds(int minimum,int maximum) {}
     public record BatchRow(String batchId,String runId,String rankingPolicy,String patternWeightPolicy,
             BigInteger topK,boolean categoryFilterEnabled,int minProductCount,int maxProductCount,
             String status,String createdBy,Instant createdAt) { }

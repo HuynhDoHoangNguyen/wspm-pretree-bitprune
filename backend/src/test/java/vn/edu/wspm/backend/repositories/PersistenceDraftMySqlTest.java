@@ -15,7 +15,7 @@ import vn.edu.wspm.backend.services.mining.PreparedSnapshotMiner;
 import vn.edu.wspm.backend.services.mining.conversion.*;
 import vn.edu.wspm.backend.testsupport.OwnedMySql;
 
-/** Tests the DELIVERED draft file, not duplicated test DDL. No writer/publisher/concurrency claims. */
+/** Tests the retained historical V3 review SQL, not copied DDL or the native runtime schema. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class PersistenceDraftMySqlTest {
     OwnedMySql mysql;JdbcTemplate jdbc;String run;
@@ -29,9 +29,9 @@ class PersistenceDraftMySqlTest {
             jdbc.update("INSERT INTO DATASET_SNAPSHOT(snapshot_id,source_type,source_name,validation_status,conversion_report_json,sequence_count) VALUES('S','CSV','fixture','VALID','{}',1),('OTHER','CSV','other','VALID','{}',1)");
             createRun("legacy","S");
             pattern("legacy","<(1)>",.42,"LEGACY_UNCONFIRMED_REFERENCE");
-            Path relative=Path.of("docs/research/TV2-INT-08E_persistence_proposed.sql");
+            Path relative=Path.of("backend/migration-review/TV2-INT-08F/V3__nullable_pattern_metric_and_conversion_storage.sql");
             Path draft=Files.isRegularFile(relative)?relative:Path.of("..").resolve(relative);
-            assertTrue(Files.isRegularFile(draft),"Delivered draft SQL must exist outside Flyway scan path");
+            assertTrue(Files.isRegularFile(draft),"Historical V3 review SQL must exist outside Flyway scan path");
             try(var c=mysql.dataSource().getConnection()) {ScriptUtils.executeSqlScript(c,new FileSystemResource(draft));}
         }catch(Exception | AssertionError failure){mysql.close();throw failure;}
     }

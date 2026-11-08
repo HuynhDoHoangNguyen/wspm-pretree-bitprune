@@ -41,10 +41,18 @@ public final class PatternCandidateEvaluator {
                 || !e.publishedCount().equals(BigInteger.valueOf(input.patterns().size()))) errors.add("RESULTS_INCOMPLETE");
         if(!e.stableInputs() || blank(e.catalogSnapshotRef()) || e.evaluatedAt()==null) errors.add("EVALUATION_ABORTED");
         if(policy==null || blank(policy.version()) || blank(policy.confirmationRef()) || policy.eligibilityMode()==null
-                || policy.laptopCategoryIds().isEmpty() || policy.accessoryCategoryIds().isEmpty()
+                || policy.selection()==null && (policy.laptopCategoryIds().isEmpty() || policy.accessoryCategoryIds().isEmpty()
                 || policy.laptopCategoryIds().stream().anyMatch(policy.accessoryCategoryIds()::contains)
                 || policy.laptopCategoryIds().stream().anyMatch(PatternCandidateEvaluator::blank)
-                || policy.accessoryCategoryIds().stream().anyMatch(PatternCandidateEvaluator::blank)) errors.add("CANDIDATE_POLICY_UNCONFIRMED");
+                || policy.accessoryCategoryIds().stream().anyMatch(PatternCandidateEvaluator::blank))) errors.add("CANDIDATE_POLICY_UNCONFIRMED");
+        if(policy!=null&&policy.selection()!=null&&(!vn.edu.wspm.backend.services.combo.generation.ProductSelection.flexiblePolicy(policy.version())
+                ||policy.eligibilityMode()!=EligibilityMode.CATALOG_ONLY
+                ||(vn.edu.wspm.backend.services.combo.generation.ProductSelection.VERSION.equals(policy.version())
+                    ?policy.selection().requiredProductIds().isEmpty()||!policy.selection().requiredCategoryIds().isEmpty()
+                    :policy.selection().requiredCategoryIds().isEmpty()||!policy.selection().requiredProductIds().isEmpty())
+                ||policy.selection().minimum()<2||policy.selection().maximum()<policy.selection().minimum()
+                ||policy.selection().maximum()>vn.edu.wspm.backend.services.combo.generation.ProductSelection.MAX_PRODUCTS
+                ||policy.selection().requiredProductIds().size()+policy.selection().requiredCategoryIds().size()>policy.selection().maximum()))errors.add("CANDIDATE_POLICY_UNCONFIRMED");
         var ids=new java.util.HashSet<String>();
         for(var p:input.patterns()) {
             if(!validId(p.patternId()) || !ids.add(p.patternId())) {
@@ -94,7 +102,9 @@ public final class PatternCandidateEvaluator {
         var occurrences=new HashMap<String,Integer>();
         mapped.forEach(d->occurrences.merge(d.productId(),1,Integer::sum));
         int before=reasons.size();
-        if(occurrences.size()<2 || occurrences.size()>4) add(reasons,"PRODUCT_COUNT_OUT_OF_RANGE");
+        var selection=in.policy().selection();
+        if(occurrences.size()<(selection==null?2:selection.minimum()) || occurrences.size()>(selection==null?4:selection.maximum())) add(reasons,"PRODUCT_COUNT_OUT_OF_RANGE");
+        if(selection!=null&&!occurrences.keySet().containsAll(selection.requiredProductIds()))add(reasons,"REQUIRED_PRODUCTS_MISSING");
         set(checks,Check.PRODUCT_COUNT,before,reasons);
         before=reasons.size();
         occurrences.keySet().stream().sorted().filter(id->occurrences.get(id)>1).forEach(id->add(reasons,"REPEATED_PRODUCT",id));
@@ -103,9 +113,13 @@ public final class PatternCandidateEvaluator {
         var unique=products.stream().collect(java.util.stream.Collectors.toMap(CatalogProduct::productId,x->x,(a,b)->a)).values();
         long laptops=unique.stream().filter(x->in.policy().laptopCategoryIds().contains(x.categoryId())).count();
         long accessories=unique.stream().filter(x->in.policy().accessoryCategoryIds().contains(x.categoryId())).count();
-        if(accessories+laptops!=unique.size()) add(reasons,"CATEGORY_NOT_ALLOWED");
-        if(laptops!=1) add(reasons,"LAPTOP_COUNT_INVALID");
-        if(accessories==0) add(reasons,"ACCESSORY_REQUIRED");
+        if(selection==null){
+            if(accessories+laptops!=unique.size()) add(reasons,"CATEGORY_NOT_ALLOWED");
+            if(laptops!=1) add(reasons,"LAPTOP_COUNT_INVALID");
+            if(accessories==0) add(reasons,"ACCESSORY_REQUIRED");
+        }else if(!unique.stream().map(CatalogProduct::categoryId).collect(java.util.stream.Collectors.toSet()).containsAll(selection.requiredCategoryIds())){
+            add(reasons,"REQUIRED_CATEGORIES_MISSING");
+        }
         set(checks,Check.CATEGORIES,before,reasons);
         before=reasons.size();
         unique.stream().sorted(java.util.Comparator.comparing(CatalogProduct::productId)).forEach(x->{
@@ -132,7 +146,7 @@ public final class PatternCandidateEvaluator {
             for(var item:group.items()) {
                 var d=mapped.get(index++);var product=in.catalog().get(d.productId());
                 items.add(new Item(item.itemOrder(),item.itemId(),d.productId(),d.nameSnapshot(),d.skuSnapshot(),product,
-                        in.policy().laptopCategoryIds().contains(product.categoryId())?"LAPTOP":"ACCESSORY",
+                        selection!=null?"CATALOG_PRODUCT":in.policy().laptopCategoryIds().contains(product.categoryId())?"LAPTOP":"ACCESSORY",
                         in.policy().eligibilityMode()==EligibilityMode.CATALOG_ONLY?"NOT_EVALUATED":"ELIGIBLE"));
             }
             groups.add(new Itemset(group.itemsetOrder(),items));

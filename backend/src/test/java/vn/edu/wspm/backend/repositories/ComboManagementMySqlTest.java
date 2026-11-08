@@ -30,6 +30,22 @@ class ComboManagementMySqlTest {
     ComboManagementService service(javax.sql.DataSource ds){return new ComboManagementService(ds,new JdbcComboAdminReader(ds),authority(),clock);}
     AdminPrincipal principal(){return new AdminPrincipal(actor,List.of("ADMIN"));}
     Command command(String decision,String note,String token){return new Command(decision,note,token);}
+    @Test void batchHistoryPagesParentsAndLightListNeverInvokesReviewAuthority(){
+        int before=fixture.jdbc.queryForObject("SELECT COUNT(*) FROM COMBO_BATCH",Integer.class);
+        fixture.jdbc.update("UPDATE COMBO_BATCH SET created_at='2098-01-01 00:00:00' WHERE batch_id=?",fixture.batch);
+        fixture.jdbc.update("INSERT INTO COMBO_BATCH(batch_id,run_id,ranking_policy,pattern_weight_policy,top_k,created_at) SELECT 'history-new',run_id,ranking_policy,pattern_weight_policy,top_k,'2099-01-01 00:00:00' FROM COMBO_BATCH WHERE batch_id=?",fixture.batch);
+        var fast=new ComboManagementService(fixture.ds,new JdbcComboAdminReader(fixture.ds),b->{throw new AssertionError("List must not verify review evidence");},clock);
+        var first=fast.batches(0,1);assertEquals(Integer.toString(before+1),first.total());assertEquals(1,first.items().size());
+        assertEquals("history-new",first.items().getFirst().batchId());assertEquals("0",first.items().getFirst().comboCount());
+        var second=fast.batches(1,1);assertEquals(fixture.batch,second.items().getFirst().batchId());
+        assertEquals("3",second.items().getFirst().comboCount());assertEquals("3",second.items().getFirst().draftCount());
+        assertTrue(second.items().getFirst().createdAt().endsWith("Z"));assertTrue(fast.batches(before+1,1).items().isEmpty());
+        assertEquals(1,fast.batchCombos(fixture.batch,null,null,0,1).items().size());
+        assertThrows(vn.edu.wspm.backend.exception.ApplicationException.class,()->fast.batches(-1,20));
+        assertThrows(vn.edu.wspm.backend.exception.ApplicationException.class,()->fast.batches(0,101));
+        var token=service.detail(id).reviewToken();service.review(id,command("APPROVE",null,token),principal());
+        var changed=fast.batches(1,1).items().getFirst();assertEquals("2",changed.draftCount());assertEquals("1",changed.approvedCount());
+    }
     @Test void realWriterBatchListDetailApproveAuditAndIdempotencyRemainConsistent(){
         var list=service.list(fixture.batch,"DRAFT",null,0,20);assertEquals("3",list.scopeTotal());assertEquals("3",list.filteredTotal());
         var detail=service.detail(id);assertEquals(List.of("APPROVE","REJECT"),detail.assessment().allowedActions());assertNotNull(detail.reviewToken());

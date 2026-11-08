@@ -86,6 +86,12 @@ wdm:
     max-rows: ${WDM_ORDER_EXPORT_MAX_ROWS:100000}
     max-bytes: ${WDM_ORDER_EXPORT_MAX_BYTES:104857600}
 
+tv2:
+  combo:
+    # Exact seeder categories approved by owner 2026-11-08. No substring classification.
+    laptop-category-ids: ${TV2_COMBO_LAPTOP_CATEGORY_IDS:e94fd8e6-4e01-54d7-9872-73b19997722f}
+    accessory-category-ids: ${TV2_COMBO_ACCESSORY_CATEGORY_IDS:8b877527-9862-571f-bf47-61cb515da304,56f90ed8-3291-5285-9e08-91b94aa88ecc,9a453e78-cdaa-50b9-adf3-d6293ce7d1b4,5bd6a957-c0d1-5c73-a237-4fe41d161727}
+
 management:
   endpoints:
     web:

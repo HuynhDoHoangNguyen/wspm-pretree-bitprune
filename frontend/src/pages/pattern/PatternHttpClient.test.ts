@@ -18,7 +18,7 @@ function ok(data: unknown) {
     { headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'test-id' } });
 }
 function denial(status: number, code: string, details: unknown[] = []) {
-  return new Response(JSON.stringify({ status, code, message: 'Safe server message.', path: '/api/v1/admin/mining-runs/r/patterns',
+  return new Response(JSON.stringify({ status, code, message: 'Safe server message.', path: '/api/v1/admin/pattern-runs/r/patterns',
     requestId: 'denial-id', details }), { status, headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'denial-id' } });
 }
 function setup(auth?: WdmAuthAdapter) {
@@ -34,7 +34,7 @@ test('run pagination uses total/items and server fields for labels without round
   expect(result.total).toBe('9007199254740993'); expect(result.items[0].label).toContain(run.createdAt);
   expect(result.items[0].label).toContain(run.status); expect(result.items[0].runId).toBe(run.runId);
   const [url, options] = fetchMock.mock.calls[0];
-  expect(url).toBe('/api/v1/admin/mining-runs?page=2&size=20');
+  expect(url).toBe('/api/v1/admin/pattern-runs?page=2&size=20');
   expect(options.headers.get('Authorization')).toBe('Bearer test-only-token'); expect(options.credentials).toBe('omit');
 });
 test('list encodes path/repeated itemId and raw exact bounds, omitting only unentered bounds', async () => {
@@ -52,7 +52,7 @@ test('detail has no query and preserves unsigned ID, itemsets, missing mapping a
     itemsets: [1, 2].map(n => ({ itemsetOrder: n, items: [{ itemId: n, itemOrder: 1, mappingStatus: 'MISSING',
       productId: null, nameSnapshot: null, skuSnapshot: null, itemWeight: null }] })) };
   fetchMock.mockResolvedValue(ok(data));expect(await client.detail(run.runId, summary.patternId)).toEqual(data);
-  expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/admin/mining-runs/A%20%2F%3F/patterns/18446744073709551615');
+  expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/admin/pattern-runs/A%20%2F%3F/patterns/18446744073709551615');
 });
 test('dictionary has independent totals/query pagination and preserves literal query input', async () => {
   const { client, fetchMock } = setup();const data = { runId: run.runId, resultState: 'READY', query: 'đ_%', page: 1, size: 20,
@@ -68,7 +68,7 @@ test('membership details are interpreted only for the matching field/code and va
     { field: 'offendingItemIds', code: 'WRONG', message: '4' },
     { field: 'offendingItemIds', code: 'ITEM_NOT_IN_RUN_DICTIONARY', message: 'not-an-id' }]));
   await expect(client.list('r', 0, 20)).rejects.toMatchObject({ status: 400, code: 'ITEM_NOT_IN_RUN_DICTIONARY',
-    offendingItemIds: ['2'], requestId: 'denial-id', message: 'Safe server message.', path: '/api/v1/admin/mining-runs/r/patterns' });
+    offendingItemIds: ['2'], requestId: 'denial-id', message: 'Safe server message.', path: '/api/v1/admin/pattern-runs/r/patterns' });
 });
 test.each([401, 403])('HTTP %i survives auth callback aborting the captured session', async status => {
   const session = new AbortController();const callback = jest.fn(() => session.abort());

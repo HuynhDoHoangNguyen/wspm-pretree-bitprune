@@ -12,12 +12,14 @@ import assert from 'node:assert/strict';
 import { runEngineCases } from './engine-cases.mjs';
 import { runPublicationCases } from './publication-cases.mjs';
 import { runFinalResultCases } from './final-result-cases.mjs';
+import { runNativeComboCases } from './native-combo-cases.mjs';
 
 // Dedicated opt-in gate: actual packaged application + test-only same-JVM observer.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const nativeComboGate = process.env.TV2_NATIVE_COMBO_GATE === '1';
 const finalResultGate = process.env.WDM_FINAL_RESULT_GATE === '1';
-const publicationGate = finalResultGate || process.env.WDM_RESULT_PUBLICATION_GATE === '1';
-const label = finalResultGate ? 'WDM-06.12' : publicationGate ? 'WDM-06.11' : 'WDM-05.10', prefix = 'wspm-wdm0510-', name = prefix + randomBytes(6).toString('hex');
+const publicationGate = nativeComboGate || finalResultGate || process.env.WDM_RESULT_PUBLICATION_GATE === '1';
+const label = nativeComboGate ? 'TV2-NATIVE-COMBO' : finalResultGate ? 'WDM-06.12' : publicationGate ? 'WDM-06.11' : 'WDM-05.10', prefix = 'wspm-wdm0510-', name = prefix + randomBytes(6).toString('hex');
 const temp = mkdtempSync(path.join(tmpdir(), prefix));
 const logBase = path.join(root, '.agent-workspace/phase-wdm'); mkdirSync(logBase, { recursive: true });
 const logDirectory = mkdtempSync(path.join(logBase, label + '-'));
@@ -81,7 +83,8 @@ try {
   assert.ok(buildRoot.startsWith(realpathSync(root) + path.sep));
   const backendJar = realpathSync(path.resolve(root, process.env.WDM_E2E_BACKEND_JAR || 'backend/target/backend-1.0-SNAPSHOT.jar'));
   assert.ok(backendJar.startsWith(realpathSync(root) + path.sep), 'Backend artifact must be inside the workspace');
-  const coreJar = path.join(root, 'mining-core/target/mining-core-1.0-SNAPSHOT.jar');
+  const coreJar = realpathSync(path.resolve(root, process.env.WDM_E2E_CORE_JAR || 'mining-core/target/mining-core-1.0-SNAPSHOT.jar'));
+  assert.ok(coreJar.startsWith(realpathSync(root) + path.sep), 'Direct core artifact must be inside the workspace');
   const jarEntries = command('jar', ['tf', backendJar]);
   assert.equal(/vn\/edu\/wspm\/e2e\//.test(jarEntries), false, 'Test helpers must not enter production JAR');
   assert.equal(/EngineE2EOracleVerifier|BruteForceWeightedPatternOracle/.test(command('jar', ['tf', coreJar])), false);
@@ -140,7 +143,7 @@ try {
     'auth.jwt.secret': jwtSecret, 'auth.jwt.issuer': 'https://wdm0510.example.test', 'auth.jwt.key-id': 'wdm0510-test-key',
     'auth.allowed-origins': origin, 'auth.cookie-secure': true, 'wdm.snapshot-storage.root': path.join(temp, 'snapshots'),
     'wdm.execution.enabled': true, 'wdm.execution.parallelism': 1, 'wdm.execution.queue-capacity': 1,
-    'wdm.result-publication.enabled': publicationGate, 'engine.e2e.max-calls': finalResultGate ? 64 : publicationGate ? 4 : 2,
+    'wdm.result-publication.enabled': publicationGate, 'engine.e2e.max-calls': nativeComboGate || finalResultGate ? 64 : publicationGate ? 4 : 2,
     'wdm.execution.shutdown-grace-millis': 30000, 'wdm.execution.lease-millis': 60000, 'wdm.execution.heartbeat-millis': 10000, 'wdm.execution.recovery-batch': 100,
   };
   async function startBatch(batch, hold = false, overrides = {}) {
@@ -150,7 +153,7 @@ try {
     const config = { ...configuration, ...overrides, 'server.port': backendPort, 'engine.e2e.directory': directory };
     const child = launch(['-cp', classpath, 'vn.edu.wspm.e2e.EngineE2EApplication', ...Object.entries(config).map(([key, value]) => '--' + key + '=' + value)], batch + '-SERVER.log');
     current = { directory, child }; await ready(child);
-    assert.equal(sql("SELECT GROUP_CONCAT(version ORDER BY installed_rank) FROM flyway_schema_history WHERE success=1;"), '1,2,3,4');
+    assert.equal(sql("SELECT GROUP_CONCAT(version ORDER BY installed_rank) FROM flyway_schema_history WHERE success=1;"), '1,2,3,4,5');
     assert.equal(sql("SELECT COUNT(*) FROM flyway_schema_history WHERE success=0 OR type='BASELINE';"), '0');
     return directory;
   }
@@ -161,7 +164,7 @@ try {
   sql("INSERT INTO ROLE(role_id,code,name) VALUES('customer-role','CUSTOMER','Customer'),('admin-role','ADMIN','Admin');");
   browser = await chromium.launch({ channel: 'msedge', headless: true }); preparation.browser = 'Microsoft Edge ' + browser.version();
   writeFileSync(path.join(logDirectory, 'PREPARATION.json'), JSON.stringify(preparation, null, 2));
-  await (finalResultGate ? runFinalResultCases : publicationGate ? runPublicationCases : runEngineCases)({ browser, origin, sql, root, temp, logDirectory, verifierClasspath, startBatch, initialDirectory: current.directory,
+  await (nativeComboGate ? runNativeComboCases : finalResultGate ? runFinalResultCases : publicationGate ? runPublicationCases : runEngineCases)({ browser, origin, sql, root, temp, logDirectory, verifierClasspath, startBatch, initialDirectory: current.directory,
     backendConfiguration: configuration });
   await stopBatch();
   assert.deepEqual(sourceInventory(), preparation.sources, 'Source changed during gate');

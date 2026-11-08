@@ -14,7 +14,7 @@ import static vn.edu.wspm.backend.services.pattern.PatternReadException.Code.*;
 
 /** Transport adapter only; each service retains its consistent read boundary. */
 @RestController
-@RequestMapping("/api/v1/admin/mining-runs/{runId}")
+@RequestMapping("/api/v1/admin/pattern-runs/{runId}")
 public final class PatternReadController {
     private final PatternListService lists;
     private final PatternDetailService details;

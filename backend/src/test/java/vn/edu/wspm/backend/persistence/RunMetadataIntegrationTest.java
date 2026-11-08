@@ -36,7 +36,7 @@ import vn.edu.wspm.io.SpmfSequenceParser;
 import vn.edu.wspm.statistics.*;
 
 /** Real isolated MySQL/JPA transactions and descriptors; no owner DB or fabricated mined patterns. */
-@SpringBootTest(properties = {"wdm.execution.enabled=false", "spring.sql.init.mode=never", "spring.jpa.hibernate.ddl-auto=validate"})
+@SpringBootTest(properties = {"spring.config.import=", "wdm.result-publication.enabled=false", "wdm.execution.enabled=false", "spring.sql.init.mode=never", "spring.jpa.hibernate.ddl-auto=validate"})
 @Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class RunMetadataIntegrationTest {
@@ -58,7 +58,7 @@ class RunMetadataIntegrationTest {
         var flyway = Flyway.configure().dataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())
                 .locations("classpath:db/migration").load();
         flyway.migrate(); flyway.validate();
-        assertEquals("4", flyway.info().current().getVersion().getVersion());
+        assertEquals("5", flyway.info().current().getVersion().getVersion());
         p.add("spring.datasource.url", MYSQL::getJdbcUrl); p.add("spring.datasource.username", MYSQL::getUsername);
         p.add("spring.datasource.password", MYSQL::getPassword); p.add("wdm.snapshot-storage.root", () -> storage.toString());
         p.add("auth.allowed-origins", () -> AuthTestKeys.ISSUER); AuthTestKeys.properties(p);
