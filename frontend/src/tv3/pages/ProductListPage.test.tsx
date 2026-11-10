@@ -1,10 +1,12 @@
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { getProducts } from '../api/catalog';
+import { getProducts, getCategories } from '../api/catalog';
+import { latestPublicCombos } from '../api/combos';
 import { ProductResponse } from '../models/catalog';
 import ProductListPage from './ProductListPage';
 
-jest.mock('../api/catalog', () => ({ getProducts: jest.fn() }));
+jest.mock('../api/catalog', () => ({ getProducts: jest.fn(), getCategories: jest.fn().mockResolvedValue([]) }));
+jest.mock('../api/combos', () => ({ ...jest.requireActual('../api/combos'), latestPublicCombos: jest.fn().mockResolvedValue([]) }));
 const getProductsMock = getProducts as jest.MockedFunction<typeof getProducts>;
 const href = (id: string) => `/future-products/${encodeURIComponent(id)}`;
 const products: readonly ProductResponse[] = [
@@ -23,7 +25,11 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-beforeEach(() => getProductsMock.mockReset());
+beforeEach(() => {
+  getProductsMock.mockReset();
+  (getCategories as jest.Mock).mockResolvedValue([]);
+  (latestPublicCombos as jest.Mock).mockResolvedValue([]);
+});
 
 test('shows loading until the catalog request completes', () => {
   getProductsMock.mockReturnValue(new Promise(() => undefined));

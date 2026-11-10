@@ -75,7 +75,7 @@ class MiningRunQueryControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/admin/mining-runs returns paginated mining runs")
+    @DisplayName("GET /api/v1/admin/mining-run-history returns paginated mining runs")
     void shouldReturnPaginatedMiningRuns() throws Exception {
         MiningRunSummaryResponse item = new MiningRunSummaryResponse(
                 "run-101",
@@ -106,7 +106,7 @@ class MiningRunQueryControllerTest {
         given(miningRunQueryService.findAll(0, 20, "WSPM_BITPRUNE", "SUCCEEDED"))
                 .willReturn(pageResponse);
 
-        mockMvc.perform(get("/api/v1/admin/mining-runs")
+        mockMvc.perform(get("/api/v1/admin/mining-run-history")
                         .param("page", "0")
                         .param("size", "20")
                         .param("algorithm", "WSPM_BITPRUNE")
@@ -125,7 +125,7 @@ class MiningRunQueryControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/admin/mining-runs/{runId} returns detail response")
+    @DisplayName("GET /api/v1/admin/mining-run-history/{runId} returns detail response")
     void shouldReturnMiningRunDetail() throws Exception {
         MiningRunDetailResponse detail = new MiningRunDetailResponse(
                 "run-102",
@@ -160,7 +160,7 @@ class MiningRunQueryControllerTest {
 
         given(miningRunQueryService.findById("run-102")).willReturn(detail);
 
-        mockMvc.perform(get("/api/v1/admin/mining-runs/run-102"))
+        mockMvc.perform(get("/api/v1/admin/mining-run-history/run-102"))
                 .andExpect(status().isOk())
                 .andExpect(successEnvelope())
                 .andExpect(jsonPath("$.data.runId").value("run-102"))
@@ -172,12 +172,12 @@ class MiningRunQueryControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/admin/mining-runs/{runId} returns 404 when not found")
+    @DisplayName("GET /api/v1/admin/mining-run-history/{runId} returns 404 when not found")
     void shouldReturn404WhenNotFound() throws Exception {
         given(miningRunQueryService.findById("run-999"))
                 .willThrow(new MiningRunNotFoundException());
 
-        mockMvc.perform(get("/api/v1/admin/mining-runs/run-999"))
+        mockMvc.perform(get("/api/v1/admin/mining-run-history/run-999"))
                 .andExpect(status().isNotFound());
     }
 
@@ -186,7 +186,7 @@ class MiningRunQueryControllerTest {
         given(miningRunQueryService.findAll(0, 20, null, null))
                 .willReturn(new MiningRunPageResponse(List.of(), 0, 20, 0L, 0));
 
-        mockMvc.perform(get("/api/v1/admin/mining-runs"))
+        mockMvc.perform(get("/api/v1/admin/mining-run-history"))
                 .andExpect(status().isOk())
                 .andExpect(successEnvelope())
                 .andExpect(jsonPath("$.data.keys()", containsInAnyOrder(
@@ -204,7 +204,7 @@ class MiningRunQueryControllerTest {
         given(miningRunQueryService.findAll(2, 50, "WSPM_PRETREE", "FAILED"))
                 .willReturn(new MiningRunPageResponse(List.of(), 2, 50, 0L, 0));
 
-        mockMvc.perform(get("/api/v1/admin/mining-runs")
+        mockMvc.perform(get("/api/v1/admin/mining-run-history")
                         .param("page", "2").param("size", "50")
                         .param("algorithm", "WSPM_PRETREE").param("status", "FAILED"))
                 .andExpect(status().isOk())
@@ -218,7 +218,7 @@ class MiningRunQueryControllerTest {
     void shouldRejectMalformedAndOverflowingNumericParametersBeforeServiceCall() throws Exception {
         for (String parameter : List.of("page", "size")) {
             for (String invalid : List.of("abc", "1.5", "2147483648")) {
-                mockMvc.perform(get("/api/v1/admin/mining-runs").param(parameter, invalid))
+                mockMvc.perform(get("/api/v1/admin/mining-run-history").param(parameter, invalid))
                         .andExpect(status().isBadRequest());
             }
         }
@@ -235,7 +235,7 @@ class MiningRunQueryControllerTest {
                 null, null, null, null);
         given(miningRunQueryService.findById("run-null")).willReturn(detail);
 
-        var response = mockMvc.perform(get("/api/v1/admin/mining-runs/run-null"))
+        var response = mockMvc.perform(get("/api/v1/admin/mining-run-history/run-null"))
                 .andExpect(status().isOk())
                 .andExpect(successEnvelope())
                 .andExpect(jsonPath("$.data.keys()", containsInAnyOrder(
@@ -270,7 +270,7 @@ class MiningRunQueryControllerTest {
         given(miningRunQueryService.findAll(0, 20, null, null))
                 .willReturn(new MiningRunPageResponse(List.of(item), 0, 20, 1L, 1));
 
-        mockMvc.perform(get("/api/v1/admin/mining-runs"))
+        mockMvc.perform(get("/api/v1/admin/mining-run-history"))
                 .andExpect(status().isOk())
                 .andExpect(successEnvelope())
                 .andExpect(jsonPath("$.data.items[0].keys()", containsInAnyOrder(
@@ -292,7 +292,7 @@ class MiningRunQueryControllerTest {
             given(miningRunQueryService.findAll(0, 20,
                     field.equals("algorithm") ? rejected : null, field.equals("status") ? rejected : null))
                     .willThrow(new InvalidMiningRunFilterException(field));
-            mockMvc.perform(get("/api/v1/admin/mining-runs").param(field, rejected))
+            mockMvc.perform(get("/api/v1/admin/mining-run-history").param(field, rejected))
                     .andExpect(errorBody(400, "VALIDATION_FAILED"))
                     .andExpect(jsonPath("$.details[0].field").value(field))
                     .andExpect(jsonPath("$.details[0].code").value("INVALID_FILTER"))
@@ -304,7 +304,7 @@ class MiningRunQueryControllerTest {
     void shouldUseSharedMalformedRequestContractForNumericOverflow() throws Exception {
         for (String field : List.of("page", "size")) {
             for (String value : List.of("invalid-private-input", "1.5", "2147483648", "-2147483649")) {
-                mockMvc.perform(get("/api/v1/admin/mining-runs").param(field, value))
+                mockMvc.perform(get("/api/v1/admin/mining-run-history").param(field, value))
                         .andExpect(errorBody(400, "MALFORMED_REQUEST"))
                         .andExpect(jsonPath("$.details").isEmpty())
                         .andExpect(content().string(not(containsString(value))));
@@ -316,7 +316,7 @@ class MiningRunQueryControllerTest {
     @Test
     void shouldReturnSharedNotFoundContract() throws Exception {
         given(miningRunQueryService.findById("missing-run")).willThrow(new MiningRunNotFoundException());
-        mockMvc.perform(get("/api/v1/admin/mining-runs/missing-run"))
+        mockMvc.perform(get("/api/v1/admin/mining-run-history/missing-run"))
                 .andExpect(errorBody(404, "RESOURCE_NOT_FOUND"))
                 .andExpect(jsonPath("$.details").isEmpty());
     }
@@ -329,7 +329,7 @@ class MiningRunQueryControllerTest {
                 new DataAccessResourceFailureException(privateText))) {
             doThrow(failure).when(miningRunQueryService).findAll(0, 20, null, null);
             boolean unavailable = failure instanceof DataAccessResourceFailureException;
-            mockMvc.perform(get("/api/v1/admin/mining-runs"))
+            mockMvc.perform(get("/api/v1/admin/mining-run-history"))
                     .andExpect(errorBody(unavailable ? 503 : 500, unavailable ? "SERVICE_UNAVAILABLE" : "INTERNAL_ERROR"))
                     .andExpect(content().string(not(containsString(privateText))))
                     .andExpect(jsonPath("$.stackTrace").doesNotHaveJsonPath());
@@ -339,10 +339,10 @@ class MiningRunQueryControllerTest {
     @Test
     void shouldRejectAnonymousRequestsBeforeValidationOrLookup() throws Exception {
         given(authenticator.authenticate(any())).willThrow(new ApplicationException(ErrorCode.AUTHENTICATION_REQUIRED));
-        mockMvc.perform(get("/api/v1/admin/mining-runs").param("page", "invalid"))
+        mockMvc.perform(get("/api/v1/admin/mining-run-history").param("page", "invalid"))
                 .andExpect(errorBody(401, "AUTHENTICATION_REQUIRED"))
                 .andExpect(header().string("WWW-Authenticate", "Bearer"));
-        mockMvc.perform(get("/api/v1/admin/mining-runs/private-run"))
+        mockMvc.perform(get("/api/v1/admin/mining-run-history/private-run"))
                 .andExpect(errorBody(401, "AUTHENTICATION_REQUIRED"));
         verifyNoInteractions(miningRunQueryService);
     }
@@ -350,9 +350,9 @@ class MiningRunQueryControllerTest {
     @Test
     void shouldRejectCustomerIdentityThroughSharedAdminAuthorizer() throws Exception {
         given(authenticator.authenticate(any())).willReturn(identity("CUSTOMER"));
-        mockMvc.perform(get("/api/v1/admin/mining-runs").param("page", "invalid"))
+        mockMvc.perform(get("/api/v1/admin/mining-run-history").param("page", "invalid"))
                 .andExpect(errorBody(403, "ACCESS_DENIED"));
-        mockMvc.perform(get("/api/v1/admin/mining-runs/private-run"))
+        mockMvc.perform(get("/api/v1/admin/mining-run-history/private-run"))
                 .andExpect(errorBody(403, "ACCESS_DENIED"));
         verifyNoInteractions(miningRunQueryService);
     }
@@ -361,7 +361,7 @@ class MiningRunQueryControllerTest {
     void shouldCorrelateSuccessWithoutTrustingClientRequestId() throws Exception {
         given(miningRunQueryService.findAll(0, 20, null, null))
                 .willReturn(new MiningRunPageResponse(List.of(), 0, 20, 0L, 0));
-        var result = mockMvc.perform(get("/api/v1/admin/mining-runs").header("X-Request-Id", "untrusted-id"))
+        var result = mockMvc.perform(get("/api/v1/admin/mining-run-history").header("X-Request-Id", "untrusted-id"))
                 .andExpect(status().isOk()).andExpect(successEnvelope()).andReturn();
         assertNotEquals("untrusted-id", result.getResponse().getHeader("X-Request-Id"));
     }

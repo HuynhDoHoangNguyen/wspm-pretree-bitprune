@@ -44,9 +44,11 @@ class ComboReadRepositoryTest {
         verify(statement).setInt(5, 4);
     }
 
-    @Test void sequentialIsExcludedFromCommonListAndDetailSqlWithoutGuessingPrefix() {
+    @Test void temporalKindsRequireFullPatternProjectionInsteadOfAnchorProof() {
         assertTrue(ComboReadRepository.ELIGIBLE_SQL.contains("CAST('SAME_ORDER_BUNDLE' AS BINARY)"));
-        assertFalse(ComboReadRepository.ELIGIBLE_SQL.contains("itemset_order = 1"));
+        assertTrue(ComboReadRepository.ELIGIBLE_SQL.contains("pi.itemset_order=ci.itemset_order"));
+        assertTrue(ComboReadRepository.ELIGIBLE_SQL.contains("rs.product_id AS BINARY"));
+        assertTrue(ComboReadRepository.ELIGIBLE_SQL.contains("SEQUENTIAL_CROSS_SELL"));
         assertTrue(ComboReadRepository.ACTIVE_BATCH_SQL.contains("LIMIT 2"));
     }
 

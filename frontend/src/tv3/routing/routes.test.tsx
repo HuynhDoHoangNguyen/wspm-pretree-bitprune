@@ -2,7 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { Link, MemoryRouter, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { getCategories, getProduct, getProducts } from '../api/catalog';
-import { listPublicCombos, readPublicCombo } from '../api/combos';
+import { listPublicCombos, readPublicCombo, latestPublicCombos } from '../api/combos';
 import { ProductDetailResponse } from '../models/catalog';
 import { createTV3ClientRoutes, parseCatalogPage } from './routes';
 import ClientHeader from 'components/ClientHeader/ClientHeader';
@@ -18,7 +18,7 @@ jest.mock('react-query', () => ({ ...jest.requireActual('react-query'),
 }));
 
 jest.mock('../api/catalog', () => ({ ...jest.requireActual('../api/catalog'), getCategories: jest.fn(), getProducts: jest.fn(), getProduct: jest.fn() }));
-jest.mock('../api/combos', () => ({ ...jest.requireActual('../api/combos'), listPublicCombos: jest.fn(), readPublicCombo: jest.fn() }));
+jest.mock('../api/combos', () => ({ ...jest.requireActual('../api/combos'), listPublicCombos: jest.fn(), readPublicCombo: jest.fn(), latestPublicCombos: jest.fn() }));
 const comboListMock = listPublicCombos as jest.MockedFunction<typeof listPublicCombos>;
 const comboReadMock = readPublicCombo as jest.MockedFunction<typeof readPublicCombo>;
 const categoriesMock = getCategories as jest.MockedFunction<typeof getCategories>;
@@ -51,6 +51,7 @@ beforeEach(() => {
   categoriesMock.mockReset().mockResolvedValue([{ categoryId: 'cat/A', categoryName: 'TV3 category fixture' }]);
   comboListMock.mockReset().mockReturnValue(new Promise(() => undefined));
   comboReadMock.mockReset();
+  (latestPublicCombos as jest.Mock).mockResolvedValue([]);
   listMock.mockReset().mockResolvedValue([product]);
   detailMock.mockReset().mockResolvedValue(product);
 });
@@ -103,21 +104,20 @@ test('modified clicks keep the native link behavior instead of SPA interception'
   expect(screen.getByTestId('url')).toHaveTextContent('/products');
 });
 
-test('actual Electro Header has one category link, reaches categories and no longer exposes the dropdown trigger', async () => {
+test('actual Electro Header links directly to the product list with category filtering', async () => {
   render(<MemoryRouter><ClientHeader/><Routes>
     <Route path="/" element={<Shell/>}>{createTV3ClientRoutes()}
       <Route path="/category/:slug" element={<div>Legacy category retained</div>}/>
     </Route>
   </Routes></MemoryRouter>);
-  const links = screen.getAllByRole('link', { name: 'Danh mục sản phẩm' });
+  const links = screen.getAllByRole('link', { name: 'Danh sách sản phẩm' });
   expect(links).toHaveLength(1);
-  expect(links[0]).toHaveAttribute('href', '/categories');
+  expect(links[0]).toHaveAttribute('href', '/products');
   expect(screen.queryByRole('button', { name: 'Mở menu danh mục' })).not.toBeInTheDocument();
   expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
   fireEvent.click(links[0]);
-  expect(await screen.findByRole('heading', { name: 'Danh mục sản phẩm' })).toBeInTheDocument();
-  expect(screen.getByTestId('url')).toHaveTextContent('/categories');
-  expect(await screen.findByRole('link', { name: 'TV3 category fixture' })).toHaveAttribute('href', '/products?categoryId=cat%2FA');
+  expect(await screen.findByRole('heading', { name: 'Danh sách sản phẩm' })).toBeInTheDocument();
+  expect(screen.getByTestId('url')).toHaveTextContent('/products');
   expect(categoriesMock).toHaveBeenCalledWith(expect.any(AbortSignal));
   expect(screen.getByPlaceholderText('Bạn tìm gì...')).toBeInTheDocument();
   expect(screen.getByLabelText('Tài khoản')).toBeInTheDocument();

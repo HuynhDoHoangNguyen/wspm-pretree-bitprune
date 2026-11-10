@@ -1,5 +1,5 @@
 import { isApiErrorResponse, unwrapApiResponse } from 'api/common/response';
-import { ComboBatchProvenance, PublicCombo, PublicTopK } from '../models/combos';
+import { ComboBatchProvenance, PublicCombo, PublicTopK, PersonalCombos } from '../models/combos';
 
 export class ComboApiError extends Error {
   constructor(public readonly status: number, public readonly code: string) {
@@ -26,7 +26,12 @@ function validBatch(v: unknown): v is ComboBatchProvenance {
 function validCombo(v: unknown): v is PublicCombo {
   if (!record(v) || !record(v.metrics) || !record(v.pricing) || !record(v.provenance)) return false;
   const m = v.metrics, p = v.pricing, provenance = v.provenance;
-  return text(v.comboId) && text(v.name) && v.kind === 'SAME_ORDER_BUNDLE' && v.status === 'PUBLISHED'
+  const positions = Array.isArray(v.items) ? v.items.map(i => record(i) ? i.itemsetOrder : null) : [];
+  const steps = new Set(positions);
+  const shape = v.kind === 'SAME_ORDER_BUNDLE' ? steps.size === 1
+    : v.kind === 'SEQUENTIAL_CROSS_SELL' ? steps.size > 1 && steps.size === positions.length
+      : v.kind === 'MIXED_SEQUENCE' && steps.size > 1 && steps.size < positions.length;
+  return shape && text(v.comboId) && text(v.name) && ['SAME_ORDER_BUNDLE', 'SEQUENTIAL_CROSS_SELL', 'MIXED_SEQUENCE'].includes(String(v.kind)) && v.status === 'PUBLISHED'
     && nullableText(v.explanation) && nullableTime(v.validFrom) && nullableTime(v.validTo)
     && nullableTime(v.publishedAt) && timestamp(v.evaluatedAt)
     && validBatch(provenance.batch) && text(provenance.primaryPatternId) && text(provenance.canonicalPattern)
@@ -52,9 +57,9 @@ export function isComboIdentifier(value: string): boolean {
   });
 }
 
-async function read(path: string, signal: AbortSignal): Promise<unknown> {
+async function read(path: string, signal: AbortSignal, token?: string): Promise<unknown> {
   const response = await fetch(path, {
-    headers: { Accept: 'application/json' }, credentials: 'same-origin', redirect: 'error', signal,
+    headers: { Accept: 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, cache: 'no-store', credentials: 'same-origin', redirect: 'error', signal,
   });
   const value = await response.json().catch(() => null);
   if (!response.ok) {
@@ -94,4 +99,21 @@ export function displayMoney(value: string | null, currency: string): string {
   const [whole, fraction] = value.split('.');
   const decimals = fraction?.replace(/0+$/, '');
   return whole.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (decimals ? ',' + decimals : '') + ' ' + currency;
+}
+
+export async function latestPublicCombos(signal: AbortSignal): Promise<PublicCombo[]> {
+  const value = await read(endpoint + '/latest', signal);
+  if (!Array.isArray(value) || value.length > 2 || !value.every(validCombo)) throw new ComboApiError(200, 'INVALID_RESPONSE');
+  return value;
+}
+export async function personalCombos(token: string, signal: AbortSignal, productId?: string): Promise<PersonalCombos> {
+  if (productId !== undefined && !isComboIdentifier(productId)) throw new ComboApiError(400, 'INVALID_IDENTIFIER');
+  const value = await read(endpoint + '/personalized' + (productId ? '?' + new URLSearchParams({ productId }) : ''), signal, token);
+  if (!record(value) || value.policy !== 'HISTORY_PREFIX_V1' || !timestamp(value.evaluatedAt)
+    || !Array.isArray(value.items) || value.items.length > 4 || !value.items.every((r, index) => record(r)
+      && r.rank === index + 1 && positive(r.matchedItemsets) && positive(r.nextItemsetOrder)
+      && validCombo(r.combo) && Array.isArray(r.suggestedProductIds) && r.suggestedProductIds.length > 0
+      && r.suggestedProductIds.every(id => text(id) && (r.combo as PublicCombo).items.some(i =>
+        i.product.productId === id && i.itemsetOrder === r.nextItemsetOrder)))) throw new ComboApiError(200, 'INVALID_RESPONSE');
+  return value as unknown as PersonalCombos;
 }

@@ -6,6 +6,8 @@ import { miningApi, miningRunApi, MiningPreview, MiningRunAccepted, MiningValida
 import MiningConfigForm from './MiningConfigForm';
 
 jest.mock('auth/session', () => ({ useSharedAuth: jest.fn() }));
+jest.mock('./SelectedDatasetPanel', () => () => <div/>);
+const onAccepted = jest.fn();
 const identity = useSharedAuth as unknown as jest.Mock;
 const snapshotId = '11111111-2222-4333-8444-555555555555';
 const runId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -31,12 +33,13 @@ function deferred() {
   const promise = new Promise<MiningRunAccepted>(done => { resolve = done; });
   return { promise, resolve };
 }
-const page = () => <MantineProvider><MiningConfigForm initialSnapshotId={snapshotId}/></MantineProvider>;
+const page = () => <MantineProvider><MiningConfigForm initialSnapshotId={snapshotId} onAccepted={onAccepted}/></MantineProvider>;
 const createButton = () => screen.getByRole('button', { name: 'Tạo lần chạy' });
 const checkButton = () => screen.getByRole('button', { name: 'Kiểm tra cấu hình' });
 let post: jest.SpyInstance;
 
 beforeEach(() => {
+  onAccepted.mockClear();
   Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: jest.fn(() => ({ observe: jest.fn(), unobserve: jest.fn(), disconnect: jest.fn() })) });
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: jest.fn(() => ({ matches: false, addListener: jest.fn(), removeListener: jest.fn(), addEventListener: jest.fn(), removeEventListener: jest.fn() })) });
   identity.mockReturnValue({ user: { userId: 'admin', roles: ['ADMIN'] }, status: 'authenticated', forbidden: false, accessToken: 'test-token' });
@@ -71,7 +74,7 @@ it('preserves preview submission and requires current validated input before exp
   expect(post).not.toHaveBeenCalled();
 });
 
-it('sends one explicit POST on double click, freezes inputs and shows the accepted RUN ID', async () => {
+it('sends one explicit POST on double click, freezes inputs and hands the accepted RUN to the workspace', async () => {
   const request = deferred(); post.mockReturnValue(request.promise);
   render(page()); await validateInput();
   fireEvent.click(createButton()); fireEvent.click(createButton());
@@ -81,15 +84,9 @@ it('sends one explicit POST on double click, freezes inputs and shows the accept
   expect(screen.getByLabelText(/Giá trị minsup/)).toBeDisabled();
   expect(checkButton()).toBeDisabled();
   await act(async () => { request.resolve(accepted); });
-  expect(await screen.findByText('RUN ID: ' + runId)).toBeInTheDocument();
+  expect(onAccepted).toHaveBeenCalledWith(accepted);
   expect(createButton()).toBeDisabled();
   expect(screen.getByLabelText(/Giá trị minsup/)).toBeEnabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Tạo yêu cầu mới' }));
-  expect(screen.queryByText('RUN ID: ' + runId)).not.toBeInTheDocument();
-  expect(createButton()).toBeDisabled();
-  expect(post).toHaveBeenCalledTimes(1);
-  fireEvent.click(checkButton());
-  await waitFor(() => expect(createButton()).toBeEnabled());
   expect(post).toHaveBeenCalledTimes(1);
 });
 
@@ -117,14 +114,15 @@ it('aborts on session loss and ignores a late accepted response', async () => {
   view.rerender(page());
   await waitFor(() => expect(signal.aborted).toBe(true));
   await act(async () => { request.resolve(accepted); });
+  expect(onAccepted).not.toHaveBeenCalled();
   expect(screen.queryByText('RUN ID: ' + runId)).not.toBeInTheDocument();
   expect(createButton()).toBeDisabled();
   expect(post).toHaveBeenCalledTimes(1);
 });
 
-it('hides accepted RUN data when the session changes and requires validation again', async () => {
+it('requires validation again when identity changes after acceptance', async () => {
   const view = render(page()); await validateInput(); fireEvent.click(createButton());
-  await screen.findByText('RUN ID: ' + runId);
+  await waitFor(() => expect(onAccepted).toHaveBeenCalledWith(accepted));
   identity.mockReturnValue({ user: null, status: 'anonymous', forbidden: false, accessToken: null });
   view.rerender(page());
   expect(screen.queryByText('RUN ID: ' + runId)).not.toBeInTheDocument();

@@ -98,7 +98,12 @@ export async function runNativeComboCases({browser,origin,sql,root,logDirectory,
       await page.getByText('Batch '+result.batchId,{exact:true}).waitFor();
       await page.screenshot({path:path.join(logDirectory,algorithm+'-generated.png'),fullPage:true});
       const listing=await get(base+'/combos?batchId='+result.batchId+'&size=20&page=0');assert.equal(Number(listing.filteredTotal),preview.groups);
-      const combos=listing.items.map(x=>x.data.comboId);evidence.runs.push({run,algorithm,batch:result.batchId,groups:result.storedGroups,policyVersion:preview.policyVersion,requiredQuantities:{keyboard:2,bag:3},protectedDigest:before});save();
+      // Choose semantic cases explicitly; random generated IDs must not decide which
+      // kind is rejected (the sole sequential fixture must remain publishable).
+      const approveId=listing.items.find(x=>x.data.comboKind==='SEQUENTIAL_CROSS_SELL').data.comboId;
+      const rejectId=listing.items.find(x=>x.data.comboKind==='MIXED_SEQUENCE').data.comboId;
+      const combos=[approveId,rejectId,...listing.items.map(x=>x.data.comboId).filter(id=>id!==approveId&&id!==rejectId)];
+      evidence.runs.push({run,algorithm,batch:result.batchId,groups:result.storedGroups,policyVersion:preview.policyVersion,requiredQuantities:{keyboard:2,bag:3},protectedDigest:before});save();
       pass(algorithm+': real engine/publication -> UI preview (no writes) -> all three kinds stored beyond K -> stable retry/reconcile');
       const detail=page.waitForResponse(r=>r.url().endsWith('/combos/'+combos[0]));await page.getByRole('button',{name:new RegExp('\\('+combos[0]+'\\)')}).click();await data(await detail);
       const approved=page.waitForResponse(r=>r.url().endsWith('/combos/'+combos[0]+'/review'));await page.getByRole('button',{name:'Duyệt',exact:true}).click();await page.getByRole('button',{name:'Xác nhận quyết định',exact:true}).click();
@@ -119,7 +124,7 @@ export async function runNativeComboCases({browser,origin,sql,root,logDirectory,
         pass('Two independent Admin sessions: opposite conflict and same-decision retry preserve first audit');
       }
     }
-    const first=evidence.runs[0];await startBatch('native-restart',{'wdm.execution.enabled':false});
+    const first=evidence.runs[0];await startBatch('native-restart',false,{'wdm.execution.enabled':false});
     const metadata=await get(base+'/mining-runs/'+first.run+'/results');assert.equal(metadata.publishedReadable,true);
     const pageData=await get(base+'/combos?batchId='+first.batch+'&size=20&page=0');assert.equal(Number(pageData.filteredTotal),first.groups);
     assert.equal(protectedDigest(first.run),first.protectedDigest);pass('Fresh execution-disabled JVM preserves published results and generated/reviewed Combos');
@@ -145,6 +150,221 @@ export async function runNativeComboCases({browser,origin,sql,root,logDirectory,
       await page.getByRole('button',{name:new RegExp('\\('+pageData.items[0].data.comboId+'\\)')}).waitFor();
     }
     pass('Batch-first desktop/mobile history loads summaries only; opens scoped Combo page on demand');
+    // TV3 handover: real publication, public catalog and the separate history contract.
+    const current = await get(base+'/combos?batchId='+first.batch+'&size=100&page=0');
+    const sameOrder = current.items.find(x => x.data.comboKind === 'SAME_ORDER_BUNDLE'
+      && ['DRAFT','APPROVED'].includes(x.data.comboStatus));
+    assert.ok(sameOrder, 'A publishable same-order candidate must exist');
+    const selected = await get(base+'/combos/'+sameOrder.data.comboId);
+    if (selected.data.comboStatus === 'DRAFT') await post(base+'/combos/'+selected.data.comboId+'/review',
+      {decision:'APPROVE',reviewNote:'TV3 publication gate',expectedReviewToken:selected.reviewToken});
+    for (const entry of current.items.filter(x => x.data.comboStatus === 'DRAFT' && x.data.comboId !== selected.data.comboId)) {
+      const detail = await get(base+'/combos/'+entry.data.comboId);
+      await post(base+'/combos/'+entry.data.comboId+'/review',
+        {decision:'APPROVE',reviewNote:'Client three-kind gate',expectedReviewToken:detail.reviewToken});
+    }
+    assert.equal((await ctx.request.get(origin+'/api/v1/recommendations/combos/'+selected.data.comboId)).status(),404);
+    await page.goto(origin+'/admin/combos?batchId='+first.batch);
+    const publication = page.waitForResponse(r => r.url().endsWith('/batches/'+first.batch+'/publication') && r.request().method() === 'POST');
+    await page.getByRole('button',{name:'Công bố batch cho khách hàng',exact:true}).click();
+    const published = await data(await publication); assert.ok(published.publishedCount > 0);
+    assert.equal(sql("SELECT COUNT(*) FROM COMBO_BATCH WHERE status='ACTIVE';"),'1');
+    assert.equal(sql(`SELECT COUNT(*) FROM COMBO WHERE batch_id='${first.batch}' AND status='PUBLISHED' AND (reviewed_at IS NULL OR reviewed_by IS NULL);`),'0');
+    assert.equal(protectedDigest(first.run),first.protectedDigest);
+    const product = selected.itemsets[0].items.find(i => i.anchorEligible).productId;
+    const publicContext = await browser.newContext({ignoreHTTPSErrors:true});
+    try {
+      const top = await data(await publicContext.request.get(origin+'/api/v1/recommendations/combos?productId='+product));
+      assert.ok(top.items.some(i => i.combo.comboId === selected.data.comboId));
+      const customerPage = await publicContext.newPage();
+      await customerPage.goto(origin+'/products/'+product);
+      await customerPage.getByRole('heading',{name:'Combo gợi ý cho sản phẩm',exact:true}).waitFor();
+      const card = customerPage.getByRole('article').filter({has:customerPage.getByRole('heading',{name:selected.data.name,exact:true})});
+      await card.waitFor();
+      await customerPage.screenshot({path:path.join(logDirectory,'tv3-product-top-k.png'),fullPage:true});
+      const comboResponse = customerPage.waitForResponse(r => r.url().endsWith('/api/v1/recommendations/combos/'+selected.data.comboId));
+      await card.getByRole('link',{name:'Xem chi tiết Combo',exact:true}).click();
+      await data(await comboResponse);
+      await customerPage.getByText(selected.data.name,{exact:true}).first().waitFor();
+      await customerPage.screenshot({path:path.join(logDirectory,'tv3-public-combo.png'),fullPage:true});
+      assert.equal((await publicContext.request.get(origin+'/api/v1/recommendations/combos/personalized')).status(),401);
+      const latest = await data(await publicContext.request.get(origin+'/api/v1/recommendations/combos/latest'));
+      assert.equal(latest.length,2);
+      assert.equal((await get('/api/v1/recommendations/combos/personalized')).items.length,0);
+      // An actual public temporal result supplies membership, never a SQL-seeded combo.
+      const temporalId = sql(`SELECT combo_id FROM COMBO WHERE batch_id='${first.batch}' AND status='PUBLISHED' AND combo_kind='SEQUENTIAL_CROSS_SELL' ORDER BY combo_id LIMIT 1;`);
+      assert.ok(temporalId);
+      const temporal = await data(await publicContext.request.get(origin+'/api/v1/recommendations/combos/'+temporalId));
+      assert.ok(temporal.items.some(i=>i.itemsetOrder===2));
+      assert.equal(temporal.kind,'SEQUENTIAL_CROSS_SELL');
+      const customerId=sql(`SELECT customer_id FROM CUSTOMER WHERE user_id='${users['native.customer']}';`);
+      assert.ok(customerId);
+      sql(`INSERT INTO ORDERS(order_id,order_number,customer_id,ordered_at,status,source) VALUES('client-history','client-history','${customerId}','2026-01-01','COMPLETED','SYNTHETIC_TEST');`);
+      for(const item of temporal.items.filter(i=>i.itemsetOrder===1))
+        sql(`INSERT INTO ORDER_ITEM(order_id,product_id,quantity,list_unit_price,line_total,sku_snapshot,product_name_snapshot) VALUES('client-history','${item.product.productId}',1,100,100,'TEST','TEST');`);
+      const personalContext=await browser.newContext({ignoreHTTPSErrors:true});
+      let releasePersonal = () => {};
+      try {
+        const personalPage=await personalContext.newPage();
+        const personalToken=await login(personalPage,'native.customer');
+        const resultResponse=await personalContext.request.get(origin+'/api/v1/recommendations/combos/personalized',{headers:{Authorization:'Bearer '+personalToken}});
+        assert.equal(resultResponse.headers()['cache-control'],'no-store');
+        const personal=await data(resultResponse);assert.equal(personal.policy,'HISTORY_PREFIX_V1');assert.ok(personal.items.length>0);
+        assert.ok(personal.items.every(r=>r.matchedItemsets>=1&&r.suggestedProductIds.length>0));
+        assert.equal((await personalContext.request.get(origin+'/api/v1/recommendations/combos/personalized?userId='+users['native.admin1'],{headers:{Authorization:'Bearer '+personalToken}})).status(),400);
+        for(const width of [1440,390]) {
+          await personalPage.setViewportSize({width,height:900});await personalPage.goto(origin+'/products');
+          await personalPage.getByRole('heading',{name:'Gợi ý cho lần mua tiếp theo',exact:true}).waitFor();
+          const region=personalPage.getByRole('region',{name:'Gợi ý theo lịch sử mua',exact:true});
+          await region.getByRole('checkbox').first().waitFor();
+          const check=region.getByRole('checkbox').first();await check.uncheck();assert.equal(await check.isChecked(),false);await check.check();
+          await personalPage.getByText('Combo mới nhất',{exact:true}).waitFor();
+          assert.equal(await personalPage.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+          await personalPage.screenshot({path:path.join(logDirectory,'client-personal-list-'+width+'.png'),fullPage:true});
+          if(width===390)await personalPage.getByText('Bộ lọc sản phẩm',{exact:true}).click();
+          await personalPage.getByLabel('Tên sản phẩm',{exact:true}).fill('native-keyboard');
+          await until(async()=>new URL(personalPage.url()).searchParams.get('q')==='native-keyboard');
+          await personalPage.reload();assert.equal(await personalPage.getByLabel('Tên sản phẩm',{exact:true}).inputValue(),'native-keyboard');
+          const listing=personalPage.getByRole('list',{name:'Sản phẩm',exact:true});await listing.getByRole('article').first().waitFor();
+          assert.equal(await listing.getByRole('article').count(),1);
+        }
+        const anchor=temporal.items.find(i=>i.itemsetOrder===1).product.productId;
+        const detailPersonal=await data(await personalContext.request.get(origin+'/api/v1/recommendations/combos/personalized?productId='+anchor,{headers:{Authorization:'Bearer '+personalToken}}));
+        assert.ok(detailPersonal.items.length>0,'Product-context history read must match before K');
+        const detailResponse=await data(await personalContext.request.get(origin+'/api/v1/products/'+anchor));
+        writeFileSync(path.join(logDirectory,'client-detail-read.json'),JSON.stringify({product:detailResponse,personal:detailPersonal},null,2));
+        const contextRead=personalPage.waitForResponse(r=>r.url().includes('/api/v1/recommendations/combos/personalized?productId='));
+        await personalPage.goto(origin+'/products/'+anchor);
+        const contextBody=await data(await contextRead);
+        assert.ok(contextBody.items.length>0);
+        await personalPage.screenshot({path:path.join(logDirectory,'client-detail-before-ready.png'),fullPage:true});
+        await personalPage.getByTestId('product-combos').getByRole('checkbox').first().waitFor();
+        const detailCards=personalPage.getByTestId('product-combos');
+        await personalPage.getByTestId('product-information').getByTestId('product-combos').waitFor();
+        assert.ok(await detailCards.getByRole('heading',{level:3}).count()<=2);
+        assert.equal(await personalPage.getByRole('heading',{name:'Gợi ý cho lần mua tiếp theo',exact:true}).count(),0);
+        await personalPage.setViewportSize({width:1440,height:900});
+        const photo=await personalPage.getByRole('group',{name:'Ảnh chính',exact:true}).boundingBox();
+        const detailBox=await detailCards.boundingBox();assert.ok(detailBox.x>photo.x+photo.width);
+        await personalPage.screenshot({path:path.join(logDirectory,'client-detail-right-1440.png'),fullPage:true});
+        await personalPage.setViewportSize({width:390,height:900});
+        await personalPage.getByRole('heading',{name:'Sản phẩm liên quan',exact:true}).waitFor();
+        await personalPage.screenshot({path:path.join(logDirectory,'client-personal-detail.png'),fullPage:true});
+        // Hold a real authorized backend response, log out, then deliver the stale response.
+        const held=new Promise(r=>{releasePersonal=r;});let captured;
+        const fetched=new Promise(r=>{captured=r;});
+        await personalPage.route('**/api/v1/recommendations/combos/personalized*',async route=>{
+          const response=await route.fetch();captured();await held;
+          try {await route.fulfill({response});} catch { /* Navigation/abort may discard the request. */ }
+        });
+        await personalPage.reload();await fetched;
+        await personalPage.getByRole('button',{name:'Tài khoản',exact:true}).click();
+        await personalPage.getByRole('menuitem',{name:'Đăng xuất',exact:true}).click();releasePersonal();
+        await until(async()=>!((await personalPage.locator('body').innerText()).includes('Dựa trên lịch sử mua:')));
+        await personalPage.unroute('**/api/v1/recommendations/combos/personalized*');
+        pass('Client history: real Auth/COMPLETED orders, next-step checkboxes, filters persist, desktop/mobile, held-response logout');
+      } catch(error) {
+        const failedPage=personalContext.pages()[0];
+        if(failedPage) {
+          await failedPage.screenshot({path:path.join(logDirectory,'client-failure.png'),fullPage:true});
+          writeFileSync(path.join(logDirectory,'client-failure.txt'),await failedPage.locator('body').innerText());
+        }
+        throw error;
+      } finally {releasePersonal();await personalContext.close();}
+      assert.equal(sql(`SELECT COUNT(*) FROM COMBO WHERE combo_id='${temporalId}' AND (valid_from IS NOT NULL OR valid_to IS NOT NULL);`),'0');
+      try {
+        sql(`UPDATE COMBO SET valid_to='2000-01-01' WHERE combo_id='${temporalId}';`);
+        assert.equal((await publicContext.request.get(origin+'/api/v1/recommendations/combos/'+temporalId)).status(),404);
+        assert.ok(!(await data(await publicContext.request.get(origin+'/api/v1/recommendations/combos/latest'))).some(c=>c.comboId===temporalId));
+        sql(`UPDATE COMBO_BATCH SET status='ARCHIVED' WHERE batch_id='${first.batch}';`);
+        assert.deepEqual(await data(await publicContext.request.get(origin+'/api/v1/recommendations/combos/latest')),[]);
+        assert.equal((await data(await publicContext.request.get(origin+'/api/v1/recommendations/combos?productId='+product))).items.length,0);
+        assert.equal((await get('/api/v1/recommendations/combos/personalized')).items.length,0);
+      } finally {
+        sql(`UPDATE COMBO SET valid_to=NULL WHERE combo_id='${temporalId}'; UPDATE COMBO_BATCH SET status='ACTIVE' WHERE batch_id='${first.batch}';`);
+      }
+      pass('Expired and archived publication disappears from real public/latest/personal reads; isolated mutations restored');
+    } finally { await publicContext.close(); }
+    pass('Admin manually publishes verified APPROVED kinds; anonymous Top-K/latest/detail; draft hidden and personal API protected');
+    const history = await get(base+'/mining-run-history?page=0&size=20');
+    assert.ok(history.items.some(r=>r.runId===first.run));
+    const historyDetail = await get(base+'/mining-run-history/'+first.run);
+    assert.equal(historyDetail.runId,first.run);assert.equal(historyDetail.snapshotId,snapshot);
+    const status = await get(base+'/mining-runs/'+first.run);
+    assert.equal(status.status,'SUCCEEDED');assert.ok(status.configuration);
+    for (const route of ['mining-run-history','mining-monitoring','mining-comparison']) {
+      await page.goto(origin+'/admin/'+route);
+      if (route === 'mining-comparison') await page.getByLabel('Biểu đồ số liệu RUN đã lưu').waitFor();
+      else await page.getByText(first.run,{exact:true}).first().waitFor();
+      await page.screenshot({path:path.join(logDirectory,'tv3-'+route+'.png'),fullPage:true});
+    }
+    pass('TV3 history monitoring and source charts consume real persisted RUNs; WDM status contract remains separate');
+    // Three reproducible three-product examples, generated by the production pipeline.
+    await startBatch('three-items',false,{'wdm.execution.enabled':true});
+    const threeBytes=readFileSync(path.join(root,'backend/src/test/resources/wdm/csv-v1/combo-three-items.csv'));
+    const threeSnapshot=(await data(await ctx.request.post(origin+base+'/dataset-snapshots',{headers:headers(),
+      multipart:{file:{name:'combo-three-items.csv',mimeType:'text/csv',buffer:threeBytes}}}),201)).snapshotId;
+    await post(base+'/dataset-snapshots/'+threeSnapshot+'/validation');
+    await post(base+'/dataset-snapshots/'+threeSnapshot+'/conversion');
+    const threeRun=(await data(await ctx.request.post(origin+base+'/mining-runs',{headers:headers(),
+      data:{snapshotId:threeSnapshot,algorithm:'WSPM_PRETREE',minsupMode:'ABSOLUTE',minsupValue:.1}}),202)).runId;
+    await until(async()=>{const result=await get(base+'/mining-runs/'+threeRun+'/results');return result.publishedReadable;});
+    const threePreview=await post(base+'/combo-generation/preview',{runId:threeRun,anchorProductId:null,k:20,requestIdentity:'three-products-demo',
+      categorySelection:{requiredCategories:[categories[1][0],categories[2][0],categories[3][0]].map(categoryId=>({categoryId,quantity:1})),minDistinctProducts:3,maxDistinctProducts:3}});
+    assert.equal(threePreview.status,'READY');
+    assert.ok(threePreview.proposals.every(p=>new Set(p.items.map(i=>i.productId)).size===3));
+    const expectedKinds=['MIXED_SEQUENCE','SAME_ORDER_BUNDLE','SEQUENTIAL_CROSS_SELL'];
+    assert.deepEqual([...new Set(threePreview.proposals.map(p=>p.comboKind))].sort(),expectedKinds);
+    const threeStored=await post(base+'/combo-generation/submit',{contextToken:threePreview.contextToken});
+    assert.equal(threeStored.status,'INSERTED');
+    const threeCombos=await get(base+'/combos?batchId='+threeStored.batchId+'&page=0&size=100');
+    for(const entry of threeCombos.items) {
+      const detail=await get(base+'/combos/'+entry.data.comboId);
+      await post(base+'/combos/'+entry.data.comboId+'/review',{decision:'APPROVE',reviewNote:'Three-product tutorial',expectedReviewToken:detail.reviewToken});
+    }
+    await post(base+'/combos/batches/'+threeStored.batchId+'/publication');
+    const examples=[];
+    for(const kind of expectedKinds) {
+      const entry=threeCombos.items.find(c=>c.data.comboKind===kind);assert.ok(entry);
+      const detail=await data(await ctx.request.get(origin+'/api/v1/recommendations/combos/'+entry.data.comboId));
+      assert.equal(detail.items.length,3);assert.equal(detail.kind,kind);
+      examples.push({kind,comboId:detail.comboId,pattern:detail.provenance.canonicalPattern,
+        steps:detail.items.map(i=>({step:i.itemsetOrder,productId:i.product.productId}))});
+    }
+    evidence.threeItemExamples={snapshot:threeSnapshot,run:threeRun,batch:threeStored.batchId,csvSha256:sha(threeBytes),examples};save();
+    const demo=await browser.newContext({ignoreHTTPSErrors:true});
+    try {
+      const demoPage=await demo.newPage();
+      for(const width of [1440,390]) {
+        await demoPage.setViewportSize({width,height:900});await demoPage.goto(origin+'/products/native-keyboard');
+        const cards=demoPage.getByTestId('product-combos');await cards.getByRole('checkbox').first().waitFor();
+        assert.equal(await cards.getByRole('heading',{level:3}).count(),2);
+        const headingColor=await cards.getByRole('heading',{level:2}).evaluate(el=>getComputedStyle(el).color);
+        assert.notEqual(headingColor,'rgb(0, 0, 0)','Combo heading must have a visible color accent');
+        const totalColor=await cards.getByText(/Tổng giá đang chọn:/).first().evaluate(el=>getComputedStyle(el).color);
+        assert.notEqual(totalColor,'rgb(0, 0, 0)','Selected total must have a visible price color');
+        for(const card of await cards.locator(':scope > div > article').all())assert.equal(await card.getByRole('checkbox').count(),3);
+        assert.equal(await demoPage.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+        await demoPage.screenshot({path:path.join(logDirectory,'three-item-detail-'+width+'.png'),fullPage:true});
+      }
+      await demoPage.goto(origin+'/products');
+      const latest=demoPage.getByLabel('Combo mới nhất',{exact:true});await latest.getByRole('article').first().waitFor();
+      assert.equal(await latest.getByRole('article').count(),2);
+      for(const card of await latest.getByRole('article').all())for(const name of ['Current native-keyboard','Current native-mouse','Current native-bag'])
+        assert.ok(await card.getByText(name,{exact:true}).count()>0);
+      await demoPage.screenshot({path:path.join(logDirectory,'three-item-list.png'),fullPage:true});
+      sql(`UPDATE COMBO_BATCH SET status='ARCHIVED' WHERE batch_id='${threeStored.batchId}';`);
+      try {
+        await demoPage.goto(origin+'/products/native-keyboard');
+        await demoPage.getByRole('heading',{name:'Current native-keyboard',exact:true}).waitFor();
+        await until(async()=>await demoPage.getByText('Đang tải Combo…',{exact:true}).count()===0);
+        assert.equal(await demoPage.getByTestId('product-combos').count(),0);
+        await demoPage.goto(origin+'/products');await demoPage.getByRole('heading',{name:'Danh sách sản phẩm',exact:true}).waitFor();
+        await until(async()=>await demoPage.getByText('Đang tải combo mới nhất…',{exact:true}).count()===0);
+        assert.equal(await demoPage.getByLabel('Combo mới nhất',{exact:true}).count(),0);
+      } finally {sql(`UPDATE COMBO_BATCH SET status='ACTIVE' WHERE batch_id='${threeStored.batchId}';`);}
+    } finally {await demo.close();}
+    pass('Three-product same-order/sequential/mixed: real pipeline/review/publication, compact right-column cards, constituent sidebar rows, empty sections hidden');
     evidence.status='PASS';save();
   }catch(e){evidence.status='FAIL';evidence.failure=String(e.message).slice(0,400);save();throw e;}
   finally{await ctx.close();}

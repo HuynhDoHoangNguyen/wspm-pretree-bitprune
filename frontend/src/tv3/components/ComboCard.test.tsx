@@ -64,7 +64,7 @@ const combo: PublicCombo = {
 
 test('card preserves API prices, quantity, rank and encoded product link', () => {
   render(<ComboCard combo={combo} rank={2} productId="sku/A"/>);
-  expect(screen.getByText('Gợi ý 2')).toBeVisible();
+  expect(screen.getByText('Gợi ý 2 · Mua cùng đơn')).toBeVisible();
   expect(screen.getByText('Sản phẩm thành phần × 2')).toBeVisible();
   expect(screen.getByText(/9.007.199.254.740.993,99 VND/)).toBeVisible();
   expect(screen.getByText(/không phải báo giá thanh toán/)).toBeVisible();
@@ -75,4 +75,12 @@ test('null prices/images do not produce fake prices or broken source URLs', () =
   render(<ComboCard combo={{ ...combo, pricing: { ...combo.pricing, referenceSalePrice: null } }} rank={1} productId="p"/>);
   expect(screen.getByText(/Giá Combo tham chiếu: Chưa có giá/)).toBeVisible();
   expect(screen.getByRole('article')).toBeVisible();
+});
+
+test('combo items use the same public product-image endpoint as the catalog', () => {
+  const item = combo.items[0];
+  const imageUrl = '/uploads/products/sample.jpg';
+  render(<ComboCard combo={{ ...combo, items: [{ ...item, product: { ...item.product, imageUrl } }] }}
+    rank={1} productId={item.product.productId}/>);
+  expect(screen.getByRole('img', { name: item.product.name })).toHaveAttribute('src', imageUrl);
 });

@@ -40,9 +40,8 @@ public class ComboReadRepository {
             ORDER BY CAST(b.batch_id AS BINARY) LIMIT 2
             """;
 
-    // V2 has no versioned prefix proof/policy. A persisted anchor boolean alone cannot
-    // establish sequential prefix semantics. Exclude sequential kinds BEFORE LIMIT,
-    // for both list and detail, until the mining owner supplies an approved contract.
+    // HISTORY_PREFIX_V1: product discovery is not proof of a customer's history.
+    // For temporal kinds, verify the full ordered product projection, not anchor flags.
     static final String ELIGIBLE_SQL = """
             SELECT c.combo_id, c.name, c.combo_kind, c.status, c.explanation,
                    c.valid_from, c.valid_to, c.published_at, p.pattern_id,
@@ -57,7 +56,30 @@ public class ComboReadRepository {
             WHERE c.batch_id = ?
               AND CAST(b.status AS BINARY) = CAST('ACTIVE' AS BINARY)
               AND CAST(c.status AS BINARY) = CAST('PUBLISHED' AS BINARY)
-              AND CAST(c.combo_kind AS BINARY) = CAST('SAME_ORDER_BUNDLE' AS BINARY)
+              AND CAST(c.combo_kind AS BINARY) IN
+                  (CAST('SAME_ORDER_BUNDLE' AS BINARY),CAST('SEQUENTIAL_CROSS_SELL' AS BINARY),CAST('MIXED_SEQUENCE' AS BINARY))
+              AND NOT EXISTS (SELECT 1 FROM COMBO_ITEM ci
+                  JOIN PRODUCT cp ON cp.product_id=ci.product_id
+                  JOIN CATEGORY cc ON cc.category_id=cp.category_id
+                  WHERE ci.combo_id=c.combo_id AND
+                    (CAST(cp.status AS BINARY)<>CAST('ACTIVE' AS BINARY)
+                     OR CAST(cc.status AS BINARY)<>CAST('ACTIVE' AS BINARY) OR cp.current_price<0
+                     OR CAST(cp.currency_code AS BINARY)<>CAST(c.currency_code AS BINARY)))
+              AND (c.combo_kind='SAME_ORDER_BUNDLE' OR (
+                  (SELECT COUNT(*) FROM PATTERN_ITEM pi WHERE pi.pattern_id=p.pattern_id)=
+                  (SELECT COUNT(*) FROM COMBO_ITEM ci WHERE ci.combo_id=c.combo_id)
+                  AND (SELECT COUNT(DISTINCT pi.itemset_order) FROM PATTERN_ITEM pi WHERE pi.pattern_id=p.pattern_id)>1
+                  AND ((c.combo_kind='SEQUENTIAL_CROSS_SELL' AND
+                    (SELECT COUNT(*) FROM PATTERN_ITEM pi WHERE pi.pattern_id=p.pattern_id)=
+                    (SELECT COUNT(DISTINCT pi.itemset_order) FROM PATTERN_ITEM pi WHERE pi.pattern_id=p.pattern_id))
+                    OR (c.combo_kind='MIXED_SEQUENCE' AND
+                    (SELECT COUNT(*) FROM PATTERN_ITEM pi WHERE pi.pattern_id=p.pattern_id)>
+                    (SELECT COUNT(DISTINCT pi.itemset_order) FROM PATTERN_ITEM pi WHERE pi.pattern_id=p.pattern_id)))
+                  AND NOT EXISTS (SELECT 1 FROM COMBO_ITEM ci WHERE ci.combo_id=c.combo_id
+                    AND NOT EXISTS (SELECT 1 FROM PATTERN_ITEM pi
+                      JOIN RUN_ITEM_STATISTIC rs ON rs.run_id=b.run_id AND rs.item_id=pi.item_id
+                      WHERE pi.pattern_id=p.pattern_id AND pi.itemset_order=ci.itemset_order
+                        AND pi.item_order=ci.item_order AND CAST(rs.product_id AS BINARY)=CAST(ci.product_id AS BINARY)))))
               AND (c.valid_from IS NULL OR c.valid_from <= ?)
               AND (c.valid_to IS NULL OR c.valid_to > ?)
               AND (SELECT COUNT(*) FROM COMBO_SOURCE proof
@@ -68,7 +90,7 @@ public class ComboReadRepository {
               AND EXISTS (SELECT 1 FROM COMBO_ITEM anchor
                   WHERE anchor.combo_id = c.combo_id
                     AND CAST(anchor.product_id AS BINARY) = CAST(? AS BINARY)
-                    AND anchor.is_anchor_eligible = TRUE)
+                    AND (anchor.is_anchor_eligible = TRUE OR c.combo_kind<>'SAME_ORDER_BUNDLE'))
             ORDER BY p.support_abs DESC, p.pattern_weight DESC,
                      CAST(p.canonical_pattern AS BINARY) ASC, CAST(c.combo_id AS BINARY) ASC
             LIMIT ?
@@ -99,6 +121,28 @@ public class ComboReadRepository {
             statement.setString(4, productId);
             statement.setInt(5, k);
         }, COMBO_MAPPER);
+    }
+
+    public List<ComboRow> candidates(String batchId, Instant at, int offset, boolean latest) {
+        return jdbc.query(ELIGIBLE_SQL + (latest
+                ? " ORDER BY c.published_at DESC, CAST(c.combo_id AS BINARY) ASC"
+                : " ORDER BY p.support_abs DESC,p.pattern_weight DESC,CAST(p.canonical_pattern AS BINARY),CAST(c.combo_id AS BINARY)")
+                + " LIMIT 20 OFFSET ?", statement -> {
+                    statement.setString(1, batchId); statement.setObject(2, utc(at));
+                    statement.setObject(3, utc(at)); statement.setInt(4, offset);
+                }, COMBO_MAPPER);
+    }
+
+    public record HistoryRow(String orderId, Instant orderedAt, String productId) {}
+    public List<HistoryRow> history(String authenticatedUserId) {
+        return jdbc.query("""
+                SELECT o.order_id,o.ordered_at,i.product_id FROM CUSTOMER c
+                JOIN ORDERS o ON o.customer_id=c.customer_id
+                JOIN ORDER_ITEM i ON i.order_id=o.order_id
+                WHERE CAST(c.user_id AS BINARY)=CAST(? AS BINARY)
+                  AND CAST(o.status AS BINARY)=CAST('COMPLETED' AS BINARY)
+                ORDER BY o.ordered_at,CAST(o.order_id AS BINARY),i.order_item_id
+                """, (r,n) -> new HistoryRow(r.getString("order_id"),instant(r,"ordered_at"),r.getString("product_id")), authenticatedUserId);
     }
 
     public List<ComboRow> detail(String batchId, String comboId, Instant at) {

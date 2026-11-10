@@ -34,6 +34,9 @@ export function createComboHttpClient(transport = wdmApi): ComboClient {
   }
   const path = (id: string) => '/v1/admin/combos/' + encodeURIComponent(id);
   return {
+    publish: (id, options) => call(() => transport.post('/v1/admin/combos/batches/' + encodeURIComponent(id) + '/publication', undefined, options),
+      v => { const parsed = z.object({ batchId: text, status: z.literal('ACTIVE'), publishedCount: z.number().int().nonnegative() }).safeParse(v);
+        return parsed.success && parsed.data.batchId === id; }),
     reviewReady: true, // Transport capability only. Every action also needs detail policy/token/allowedActions.
     batches: (page, size, options) => call<BatchPage>(() => transport.get('/v1/admin/combos/batches', { ...options, query: { page, size } }),
       v => { const parsed = batchPageSchema.safeParse(v); return parsed.success && parsed.data.page === page && parsed.data.size === size && parsed.data.items.length <= size; }),

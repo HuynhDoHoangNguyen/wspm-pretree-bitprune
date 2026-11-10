@@ -38,11 +38,19 @@ class ProductCatalogTest {
 
     @Test void detailKeepsGalleryMetadataAndMissingProductIs404() {
         var product = product("p1");
+        product.setSku("SKU-REAL");
+        product.setShortDescription("Catalog summary");
+        product.setDescription("Catalog description");
+        product.setCurrencyCode("VND");
         when(products.findById("p1")).thenReturn(Optional.of(product));
         when(images.findByProduct_ProductIdInOrderByDisplayOrderAscImageIdAsc(List.of("p1")))
                 .thenReturn(List.of(image(product, "i1", 0), image(product, "i2", 1)));
         var detail = service.findById("p1");
         assertEquals(2, detail.images().size());
+        assertEquals("SKU-REAL", detail.information().sku());
+        assertEquals("Catalog summary", detail.information().shortDescription());
+        assertEquals("Catalog description", detail.information().description());
+        assertEquals("VND", detail.information().currencyCode());
         assertEquals(detail.images().getFirst().imageUrl(), detail.imageUrl());
         assertEquals("alt i2", detail.images().getLast().altText());
         assertEquals(1, detail.images().getLast().displayOrder());

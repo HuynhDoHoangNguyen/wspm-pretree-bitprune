@@ -187,7 +187,7 @@ test('production adapter reuses the actual RUN client and WDM transport without 
   try {
     show();
     expect(await screen.findByText('Chưa có RUN để theo dõi.')).toBeVisible();
-    expect(fetcher).toHaveBeenCalledWith('/api/v1/admin/mining-runs?page=0&size=20', expect.objectContaining({
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/admin/mining-run-history?page=0&size=20', expect.objectContaining({
       method: 'GET', signal: expect.any(AbortSignal),
     }));
     expect((fetcher.mock.calls[0][1].headers as Headers).get('Authorization')).toBe('Bearer test');

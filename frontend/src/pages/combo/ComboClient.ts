@@ -27,6 +27,7 @@ export interface ComboDetail extends ComboSummary {
 export interface ReviewCommand { decision: Decision; reviewNote: string | null; expectedReviewToken: string }
 export interface ReviewResult { outcome: string; currentStatus: string | null; storedAudit: Audit | null; issues: string[] }
 export interface ComboClient {
+  publish?(batchId: string, options?: { signal?: AbortSignal }): Promise<{ batchId: string; status: 'ACTIVE'; publishedCount: number }>;
   batches?(page: number, size: number, options?: { signal?: AbortSignal }): Promise<BatchPage>;
   readonly reviewReady: boolean;
   readonly notePolicy?: { confirmed: boolean; rejectRequired: boolean; maxCodePoints: number };

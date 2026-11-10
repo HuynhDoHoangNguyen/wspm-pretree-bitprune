@@ -1,11 +1,11 @@
 import React from 'react';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { CatalogApiError, getProduct } from '../api/catalog';
+import { CatalogApiError, getProduct, getProducts } from '../api/catalog';
 import { listPublicCombos } from '../api/combos';
 import { ProductDetailResponse } from '../models/catalog';
 import ProductDetailPage from './ProductDetailPage';
 
-jest.mock('../api/catalog', () => ({ ...jest.requireActual('../api/catalog'), getProduct: jest.fn() }));
+jest.mock('../api/catalog', () => ({ ...jest.requireActual('../api/catalog'), getProduct: jest.fn(), getProducts: jest.fn().mockResolvedValue([]) }));
 jest.mock('../api/combos', () => ({ ...jest.requireActual('../api/combos'), listPublicCombos: jest.fn() }));
 const comboMock = listPublicCombos as jest.MockedFunction<typeof listPublicCombos>;
 const getProductMock = getProduct as jest.MockedFunction<typeof getProduct>;
@@ -33,6 +33,7 @@ function mainImage() { return within(screen.getByRole('group', { name: 'Ảnh ch
 
 beforeEach(() => {
   getProductMock.mockReset().mockResolvedValue(product);
+  (getProducts as jest.Mock).mockResolvedValue([]);
   comboMock.mockReset().mockReturnValue(new Promise(() => undefined));
 });
 
@@ -206,12 +207,13 @@ test('back navigation uses the supplied href/callback without requiring the shar
   await screen.findByRole('heading', { level: 1 });
 });
 
-test('renders no fake combo, related-product replacement or unsupported mining/discount data', async () => {
+test('renders no fake combo or unsupported mining/discount data and exposes related product section', async () => {
   render(<ProductDetailPage productId={product.productId} productListHref={listHref}/>);
   await screen.findByRole('heading', { level: 1 });
   expect(screen.queryByRole('article')).not.toBeInTheDocument();
   expect(comboMock).toHaveBeenCalledWith(product.productId, expect.any(AbortSignal));
-  expect(screen.queryByText(/liên quan|support|weight|giảm giá/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/support|weight|giảm giá/i)).not.toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Sản phẩm liên quan' })).toBeInTheDocument();
   expect(getProductMock).toHaveBeenCalledTimes(1);
 });
 

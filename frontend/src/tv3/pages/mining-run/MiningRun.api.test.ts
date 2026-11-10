@@ -32,7 +32,7 @@ test('unwraps the shared envelope once with zero-based pagination and omitted em
   fetchMock.mockResolvedValue(response(envelope(page)));
   await expect(listMiningRuns(params)).resolves.toEqual(page);
   const [url, options] = fetchMock.mock.calls[0];
-  expect(url).toBe('/api/v1/admin/mining-runs?page=0&size=20');
+  expect(url).toBe('/api/v1/admin/mining-run-history?page=0&size=20');
   expect(options.credentials).toBe('omit');
   expect(options.headers.get('Authorization')).toBe('Bearer shared-test-access');
 });
@@ -40,7 +40,7 @@ test('unwraps the shared envelope once with zero-based pagination and omitted em
 test('keeps exact filters and reads the latest shared token without refreshing or replaying', async () => {
   fetchMock.mockImplementation(async () => response(envelope(page)));
   await listMiningRuns({ ...params, page: 2, size: 50, algorithm: 'WSPM_BITPRUNE', status: 'FAILED' });
-  expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/admin/mining-runs?page=2&size=50&algorithm=WSPM_BITPRUNE&status=FAILED');
+  expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/admin/mining-run-history?page=2&size=50&algorithm=WSPM_BITPRUNE&status=FAILED');
   authSession.useStore.setState({ accessToken: 'rotated-access' });
   await listMiningRuns(params);
   expect(fetchMock.mock.calls[1][1].headers.get('Authorization')).toBe('Bearer rotated-access');
@@ -50,7 +50,7 @@ test('keeps exact filters and reads the latest shared token without refreshing o
 test('encodes the RUN ID as one path segment', async () => {
   fetchMock.mockResolvedValue(response(envelope({ runId: 'run #1' })));
   await getMiningRun('run #1');
-  expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/admin/mining-runs/run%20%231');
+  expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/admin/mining-run-history/run%20%231');
 });
 
 test.each([page, envelope(page, 'wrong-request')])('rejects raw DTO or mismatched request correlation', async body => {
@@ -61,7 +61,7 @@ test.each([page, envelope(page, 'wrong-request')])('rejects raw DTO or mismatche
 test.each([400, 401, 403, 404, 500])('retains HTTP %s correlation/details and invokes shared denial handling', async status => {
   const details = status === 400 ? [{ field: 'algorithm', code: 'INVALID_FILTER', message: 'Invalid filter.' }] : [];
   fetchMock.mockResolvedValue(response({ status, code: 'SAFE_CODE', message: 'private diagnostic',
-    path: '/api/v1/admin/mining-runs', requestId: 'run-request', details }, status));
+    path: '/api/v1/admin/mining-run-history', requestId: 'run-request', details }, status));
   await expect(listMiningRuns(params)).rejects.toMatchObject({ status, requestId: 'run-request', details, code: 'SAFE_CODE' });
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(authSession.useStore.getState().status).toBe(status === 401 ? 'anonymous' : 'authenticated');
@@ -70,7 +70,7 @@ test.each([400, 401, 403, 404, 500])('retains HTTP %s correlation/details and in
 
 test('keeps diagnostic bodies out of the UI error message', async () => {
   fetchMock.mockResolvedValue(response({ status: 500, code: 'INTERNAL_ERROR', message: 'private diagnostic',
-    path: '/api/v1/admin/mining-runs', requestId: 'run-request', details: [] }, 500));
+    path: '/api/v1/admin/mining-run-history', requestId: 'run-request', details: [] }, 500));
   await expect(listMiningRuns(params)).rejects.toThrow('Unable to load Mining RUN data.');
 });
 

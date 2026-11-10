@@ -111,6 +111,15 @@ loại trừ. Khi task yêu cầu một nguồn chưa có trong clone:
 
 ## Web Data & Mining contracts
 
+- [Client combo contract](wdm/client-combo-contract.md): HISTORY_PREFIX_V1,
+  manual publication, public discovery, authenticated next-step recommendations,
+  exact order/itemset matching and client acceptance evidence. This application
+  policy does not alter mining support, weights or the frozen algorithms.
+
+- [Hướng dẫn combo ba sản phẩm](wdm/combo-three-items-guide.md): kiểm tra bước
+  công bố G502 → Bose, chuẩn bị CSV synthetic theo catalog hiện có và thực hiện
+  đủ ba trường hợp cùng đơn, theo thứ tự, kết hợp mà không seed kết quả mining.
+
 - [Persistence schema audit](wdm/persistence-schema-audit.md): WDM-06.1
   inventories all 52 columns, keys and constraints of the V2/V3 run/pattern/item
   statistics boundary, identifies missing writers/mappings and publication

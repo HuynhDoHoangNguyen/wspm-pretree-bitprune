@@ -11,9 +11,9 @@ import { hasDataMiningAdminAccess } from './access';
 import { patternHttpClient } from 'pages/pattern/PatternHttpClient';
 
 jest.mock('auth/session', () => ({ useSharedAuth: jest.fn(), authSession: { onClear: () => () => undefined } }));
-jest.mock('tv3/pages/mining-run/MiningRunHistory', () => ({ __esModule: true, default: () => <h2>L?ch s? Mining RUN</h2> }));
-jest.mock('tv3/pages/mining-monitoring/MiningMonitoringPage', () => ({ __esModule: true, default: () => <h2>Gi?m s?t Mining</h2> }));
-jest.mock('tv3/pages/mining-comparison/MiningComparisonPage', () => ({ __esModule: true, default: () => <h2>So s?nh thu?t to?n</h2> }));
+jest.mock('tv3/pages/mining-run/MiningRunHistory', () => ({ __esModule: true, default: () => <h2>Lịch sử Mining RUN</h2> }));
+jest.mock('tv3/pages/mining-monitoring/MiningMonitoringPage', () => ({ __esModule: true, default: () => <h2>Giám sát Mining</h2> }));
+jest.mock('tv3/pages/mining-comparison/MiningComparisonPage', () => ({ __esModule: true, default: () => <h2>So sánh thuật toán</h2> }));
 jest.mock('stores/use-app-store', () => ({ __esModule: true, default: jest.fn() }));
 
 const authStore = useSharedAuth as unknown as jest.Mock;

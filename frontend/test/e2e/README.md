@@ -1,5 +1,13 @@
 # Browser E2E gates
 
+The client-combo extension of the Native gate verifies explicit approval/publication
+of supported kinds, anonymous detail/latest reads, protected HISTORY_PREFIX_V1
+recommendations using synthetic COMPLETED orders linked to real registered users,
+checkbox selection, URL-backed filters, desktop/mobile and a held real response
+delivered after logout. Mining/Combo results still come from the real pipeline.
+SQL does not insert Pattern/Combo results. Evidence remains under the runner's
+unique directory; development accounts/orders are untouched.
+
 ## Native WDM-06 → Combo generation/review gate
 
 Build current frontend into a fresh `BUILD_PATH`, compile/package backend, set

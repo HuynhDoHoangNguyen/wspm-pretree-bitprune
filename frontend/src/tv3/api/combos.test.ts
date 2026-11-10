@@ -1,4 +1,4 @@
-import { ComboApiError, displayMoney, listPublicCombos, readPublicCombo } from './combos';
+import { ComboApiError, displayMoney, listPublicCombos, readPublicCombo, latestPublicCombos, personalCombos } from './combos';
 import { PublicCombo } from '../models/combos';
 const combo: PublicCombo = {
   comboId: 'combo/A',
@@ -69,6 +69,27 @@ const topK = { productId: '9007199254740993', requestedK: 4, effectiveK: 4, eval
   provenance: combo.provenance.batch, items: [{ rank: 1, combo }] };
 beforeEach(() => { global.fetch = network; network.mockReset(); });
 afterAll(() => { global.fetch = originalFetch; });
+
+test('latest is a public bounded read; personal uses Bearer and optional product context without userId', async () => {
+  network.mockResolvedValue(response([combo]));
+  expect(await latestPublicCombos(signal)).toEqual([combo]);
+  network.mockResolvedValue(response([combo, combo, combo]));
+  await expect(latestPublicCombos(signal)).rejects.toBeInstanceOf(ComboApiError);
+  network.mockResolvedValue(response({ policy: 'HISTORY_PREFIX_V1', evaluatedAt: combo.evaluatedAt, items: [] }));
+  await personalCombos('test-token', signal, 'product/A');
+  expect(network).toHaveBeenLastCalledWith('/api/v1/recommendations/combos/personalized?productId=product%2FA',
+    expect.objectContaining({ headers: { Accept: 'application/json', Authorization: 'Bearer test-token' }, cache: 'no-store', signal }));
+});
+
+test('accepts ordered temporal kinds and rejects suggested IDs outside the next step', async () => {
+  const temporal = { ...combo, kind: 'SEQUENTIAL_CROSS_SELL', items: [combo.items[0],
+    { ...combo.items[0], itemsetOrder: 2, product: { ...combo.items[0].product, productId: 'next' } }] };
+  network.mockResolvedValue(response(temporal));
+  expect((await readPublicCombo(combo.comboId, signal)).kind).toBe('SEQUENTIAL_CROSS_SELL');
+  network.mockResolvedValue(response({ policy: 'HISTORY_PREFIX_V1', evaluatedAt: combo.evaluatedAt,
+    items: [{ rank: 1, matchedItemsets: 1, nextItemsetOrder: 2, suggestedProductIds: ['another'], combo: temporal }] }));
+  await expect(personalCombos('test-token', signal)).rejects.toBeInstanceOf(ComboApiError);
+});
 
 test('Top-K uses exact string ID, relative URL, k=4 and AbortSignal', async () => {
   network.mockResolvedValue(response(topK));

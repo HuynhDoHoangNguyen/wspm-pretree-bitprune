@@ -29,6 +29,13 @@ public final class ComboReadResponse {
         public Detail { items = List.copyOf(items); }
     }
     public record Recommendation(int rank, Detail combo) {}
+    public record PersonalRecommendation(int rank, int matchedItemsets, long nextItemsetOrder,
+            List<String> suggestedProductIds, Detail combo) {
+        public PersonalRecommendation { suggestedProductIds = List.copyOf(suggestedProductIds); }
+    }
+    public record Personalized(String policy, Instant evaluatedAt, List<PersonalRecommendation> items) {
+        public Personalized { items = List.copyOf(items); }
+    }
     public record TopK(String productId, int requestedK, int effectiveK, Instant evaluatedAt,
             BatchProvenance provenance, List<Recommendation> items) {
         public TopK { items = List.copyOf(items); }

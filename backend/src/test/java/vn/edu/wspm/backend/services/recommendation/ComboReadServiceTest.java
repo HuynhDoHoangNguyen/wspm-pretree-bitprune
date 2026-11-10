@@ -36,6 +36,37 @@ class ComboReadServiceTest {
     }
     private void active() { when(repository.activeBatches()).thenReturn(List.of(batch)); }
 
+    @Test void personalProductContextFiltersBeforeCapNotAfterGlobalTopK() {
+        when(repository.activeBatches()).thenReturn(List.of(new BatchRow("b","r","s","WSPM_PRETREE",
+                ComboReadService.RANKING_POLICY,"stored-policy",1,BigInteger.TEN)));
+        when(repository.productExists("target")).thenReturn(true);
+        when(repository.history("user")).thenReturn(List.of(new HistoryRow("order",NOW,"p")));
+        when(repository.candidates("b",NOW,0,false)).thenReturn(List.of(
+                combo("first","PUBLISHED","SEQUENTIAL_CROSS_SELL",null,null),
+                combo("second","PUBLISHED","SEQUENTIAL_CROSS_SELL",null,null)));
+        when(repository.items(List.of("first","second"))).thenReturn(List.of(item("first"),item("second"),
+                new ItemRow("first",2,1,1,false,true,null,"other","Other",null,null,null,BigDecimal.ONE),
+                new ItemRow("second",2,1,1,false,true,null,"target","Target",null,null,null,BigDecimal.ONE)));
+        var result=service.personalized("user","target");
+        assertEquals(List.of("second"),result.items().stream().map(i->i.combo().comboId()).toList());
+    }
+
+    @Test void personalRankingAppliesCapAfterMatchingAcrossCandidatePages() {
+        active();
+        when(repository.history("user")).thenReturn(List.of(new HistoryRow("order",NOW,"p")));
+        var nonMatches=java.util.stream.IntStream.range(0,20)
+                .mapToObj(i -> combo("same"+i,"PUBLISHED","SAME_ORDER_BUNDLE",null,null)).toList();
+        when(repository.candidates("b",NOW,0,false)).thenReturn(nonMatches);
+        var temporal=combo("next","PUBLISHED","SEQUENTIAL_CROSS_SELL",null,null);
+        when(repository.candidates("b",NOW,20,false)).thenReturn(List.of(temporal));
+        when(repository.items(List.of("next"))).thenReturn(List.of(item("next"),
+                new ItemRow("next",2,1,1,false,true,BigDecimal.ONE,"future","Next",null,null,null,BigDecimal.ONE)));
+        var result=service.personalized("user");
+        assertEquals(1,result.items().size());assertEquals(List.of("future"),result.items().getFirst().suggestedProductIds());
+        assertEquals(1,result.items().getFirst().rank());
+        verify(repository).candidates("b",NOW,20,false);
+    }
+
     @Test void emptyDatabaseReturnsEmptyWithoutFixture() {
         when(repository.productExists("p")).thenReturn(true);
         when(repository.activeBatches()).thenReturn(List.of());
@@ -122,13 +153,14 @@ class ComboReadServiceTest {
     }
 
     @ParameterizedTest @ValueSource(strings = {"SEQUENTIAL_CROSS_SELL", "MIXED_SEQUENCE"})
-    void sequentialWithoutPrefixProofFailsClosedForListAndDetail(String kind) {
+    void temporalKindsFromVerifiedRepositoryAreReadableWithOrderedItems(String kind) {
         active(); when(repository.productExists("p")).thenReturn(true);
         var row = combo("c", "PUBLISHED", kind, null, null);
         when(repository.detail("b", "c", NOW)).thenReturn(List.of(row));
-        assertThrows(ApplicationException.class, () -> service.detail("c"));
+        when(repository.items(List.of("c"))).thenReturn(List.of(item("c")));
+        assertEquals(kind, service.detail("c").kind());
         when(repository.topK("b", "p", 4, NOW)).thenReturn(List.of(row));
-        assertTrue(service.topK("p", 4).items().isEmpty());
+        assertEquals(kind, service.topK("p",4).items().getFirst().combo().kind());
     }
 
     @Test void utcValidityIncludesFromButExcludesToAndFuture() {

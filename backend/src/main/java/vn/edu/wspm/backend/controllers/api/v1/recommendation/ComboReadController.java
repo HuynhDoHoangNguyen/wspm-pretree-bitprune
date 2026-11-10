@@ -23,6 +23,13 @@ public class ComboReadController {
 
     public ComboReadController(ComboReadService service) { this.service = service; }
 
+    @GetMapping("/latest")
+    public ApiResponse<java.util.List<Detail>> latest(@RequestParam MultiValueMap<String, String> parameters,
+            HttpServletRequest request) {
+        validateParameters(parameters, Set.of());
+        return ApiResponse.success(service.latest(), RequestIdFilter.requestId(request));
+    }
+
     @GetMapping
     public ApiResponse<TopK> topK(@RequestParam MultiValueMap<String, String> parameters,
             HttpServletRequest request) {

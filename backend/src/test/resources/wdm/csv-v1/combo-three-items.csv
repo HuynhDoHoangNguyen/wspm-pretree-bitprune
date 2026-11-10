@@ -1,0 +1,10 @@
+order_id,order_item_id,customer_code,ordered_at,status,product_id,sku_snapshot,product_name_snapshot,quantity,list_unit_price,allocated_discount_amount,line_total,currency_code
+three-same,1,THREE-SAME,2026-11-01T00:00:01.000000Z,COMPLETED,native-keyboard,H-K,Historical Keyboard,1,100.00,0.00,100.00,VND
+three-same,2,THREE-SAME,2026-11-01T00:00:01.000000Z,COMPLETED,native-mouse,H-M,Historical Mouse,1,100.00,0.00,100.00,VND
+three-same,3,THREE-SAME,2026-11-01T00:00:01.000000Z,COMPLETED,native-bag,H-B,Historical Bag,1,100.00,0.00,100.00,VND
+three-seq-1,4,THREE-SEQUENTIAL,2026-11-01T00:00:01.000000Z,COMPLETED,native-keyboard,H-K,Historical Keyboard,1,100.00,0.00,100.00,VND
+three-seq-2,5,THREE-SEQUENTIAL,2026-11-01T00:00:02.000000Z,COMPLETED,native-mouse,H-M,Historical Mouse,1,100.00,0.00,100.00,VND
+three-seq-3,6,THREE-SEQUENTIAL,2026-11-01T00:00:03.000000Z,COMPLETED,native-bag,H-B,Historical Bag,1,100.00,0.00,100.00,VND
+three-mixed-1,7,THREE-MIXED,2026-11-01T00:00:01.000000Z,COMPLETED,native-keyboard,H-K,Historical Keyboard,1,100.00,0.00,100.00,VND
+three-mixed-1,8,THREE-MIXED,2026-11-01T00:00:01.000000Z,COMPLETED,native-mouse,H-M,Historical Mouse,1,100.00,0.00,100.00,VND
+three-mixed-2,9,THREE-MIXED,2026-11-01T00:00:02.000000Z,COMPLETED,native-bag,H-B,Historical Bag,1,100.00,0.00,100.00,VND

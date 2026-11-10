@@ -30,6 +30,84 @@ class ComboManagementMySqlTest {
     ComboManagementService service(javax.sql.DataSource ds){return new ComboManagementService(ds,new JdbcComboAdminReader(ds),authority(),clock);}
     AdminPrincipal principal(){return new AdminPrincipal(actor,List.of("ADMIN"));}
     Command command(String decision,String note,String token){return new Command(decision,note,token);}
+    ComboPublicationService publications() {
+        return new ComboPublicationService(fixture.ds, new JdbcComboAdminReader(fixture.ds), authority());
+    }
+    String approveSameOrder() {
+        String combo = fixture.jdbc.queryForList("SELECT combo_id FROM COMBO WHERE batch_id=? AND combo_kind='SAME_ORDER_BUNDLE'", String.class, fixture.batch).getFirst();
+        assertEquals("APPLIED", service.review(combo, command("APPROVE", null, service.detail(combo).reviewToken()), principal()).outcome());
+        return combo;
+    }
+    @Test void publicationReadsAllKindsAndPersonalHistoryWithoutFlatteningOrCrossIdentity() {
+        for (String combo : fixture.jdbc.queryForList("SELECT combo_id FROM COMBO WHERE batch_id=?", String.class, fixture.batch))
+            assertEquals("APPLIED", service.review(combo, command("APPROVE", null, service.detail(combo).reviewToken()), principal()).outcome());
+        assertEquals(3, publications().publish(fixture.batch, principal()).publishedCount());
+        var repository = new vn.edu.wspm.backend.repositories.recommendation.ComboReadRepository(fixture.jdbc);
+        var reader = new vn.edu.wspm.backend.services.recommendation.ComboReadService(repository,
+                new vn.edu.wspm.backend.mappers.ComboReadMapper(), Clock.systemUTC());
+        assertEquals(Set.of("SAME_ORDER_BUNDLE","SEQUENTIAL_CROSS_SELL","MIXED_SEQUENCE"),
+                repository.topK(fixture.batch,fixture.products.getFirst(),20,Instant.now()).stream().map(r -> r.kind()).collect(java.util.stream.Collectors.toSet()));
+        assertEquals(2, reader.latest().size());
+        String customer="C"+UUID.randomUUID().toString().replace("-","");
+        fixture.jdbc.update("INSERT INTO CUSTOMER(customer_id,user_id,anonymous_code) VALUES(?,?,?)",customer,actor,customer);
+        String order="O"+UUID.randomUUID().toString().replace("-","");
+        fixture.jdbc.update("INSERT INTO ORDERS(order_id,order_number,customer_id,ordered_at,status,source) VALUES(?,?,?,'2026-01-01','COMPLETED','TEST')",order,order,customer);
+        fixture.jdbc.update("INSERT INTO ORDER_ITEM(order_id,product_id,quantity,list_unit_price,line_total,sku_snapshot,product_name_snapshot) VALUES(?,?,1,1,1,'TEST','TEST')",order,fixture.products.getFirst());
+        var personal=reader.personalized(actor);
+        assertEquals(1,personal.items().size()); // mixed prefix lacks the second product in same order
+        assertEquals("SEQUENTIAL_CROSS_SELL",personal.items().getFirst().combo().kind());
+        assertEquals(List.of(fixture.products.get(2)),personal.items().getFirst().suggestedProductIds());
+        assertTrue(reader.personalized("another-account").items().isEmpty());
+        // A later separate order containing the missing product cannot complete the mixed first itemset.
+        String second="O"+UUID.randomUUID().toString().replace("-","");
+        fixture.jdbc.update("INSERT INTO ORDERS(order_id,order_number,customer_id,ordered_at,status,source) VALUES(?,?,?,'2026-01-02','COMPLETED','TEST')",second,second,customer);
+        fixture.jdbc.update("INSERT INTO ORDER_ITEM(order_id,product_id,quantity,list_unit_price,line_total,sku_snapshot,product_name_snapshot) VALUES(?,?,1,1,1,'TEST','TEST')",second,fixture.products.get(1));
+        assertEquals(1,reader.personalized(actor).items().size());
+        fixture.jdbc.update("UPDATE PRODUCT SET status='INACTIVE' WHERE product_id=?",fixture.products.get(2));
+        assertTrue(reader.personalized(actor).items().isEmpty());
+        assertEquals(1,reader.latest().size());
+    }
+    @Test void explicitPublicationExposesOnlyApprovedSameOrderAndPreservesAudit() {
+        String combo = approveSameOrder();
+        var audit = fixture.jdbc.queryForMap("SELECT reviewed_by,reviewed_at FROM COMBO WHERE combo_id=?", combo);
+        var result = publications().publish(fixture.batch, principal());
+        assertEquals(1, result.publishedCount()); assertEquals("ACTIVE", result.status());
+        assertEquals("PUBLISHED", fixture.jdbc.queryForObject("SELECT status FROM COMBO WHERE combo_id=?", String.class, combo));
+        assertEquals(2, fixture.jdbc.queryForObject("SELECT COUNT(*) FROM COMBO WHERE batch_id=? AND status='DRAFT'", Integer.class, fixture.batch));
+        assertEquals(audit, fixture.jdbc.queryForMap("SELECT reviewed_by,reviewed_at FROM COMBO WHERE combo_id=?", combo));
+        var publicReader = new vn.edu.wspm.backend.repositories.recommendation.ComboReadRepository(fixture.jdbc);
+        assertTrue(publicReader.topK(fixture.batch, fixture.products.getFirst(), 5, Instant.now()).stream().anyMatch(c -> combo.equals(c.comboId())));
+        assertEquals(result, publications().publish(fixture.batch, principal()));
+    }
+    @Test void publicationRejectsNoApprovalStaleEvidenceAndNonAdminWithoutActivating() {
+        assertThrows(vn.edu.wspm.backend.exception.ApplicationException.class, () -> publications().publish(fixture.batch, principal()));
+        approveSameOrder();
+        var unavailable = new ComboPublicationService(fixture.ds, new JdbcComboAdminReader(fixture.ds), b -> ComboReviewAuthority.Check.unavailable());
+        assertThrows(vn.edu.wspm.backend.exception.ApplicationException.class, () -> unavailable.publish(fixture.batch, principal()));
+        assertThrows(vn.edu.wspm.backend.exception.ApplicationException.class, () -> publications().publish(fixture.batch, new AdminPrincipal(actor, List.of("CUSTOMER"))));
+        assertEquals("DRAFT", fixture.jdbc.queryForObject("SELECT status FROM COMBO_BATCH WHERE batch_id=?", String.class, fixture.batch));
+        assertEquals(0, fixture.jdbc.queryForObject("SELECT COUNT(*) FROM COMBO WHERE batch_id=? AND status='PUBLISHED'", Integer.class, fixture.batch));
+    }
+    @Test void switchingBatchesArchivesPreviousAndConcurrentPublicationKeepsOneActive() throws Exception {
+        approveSameOrder(); String first = fixture.batch; var firstPublisher = publications();
+        firstPublisher.publish(first, principal());
+        setup(); approveSameOrder(); String second = fixture.batch;
+        publications().publish(second, principal());
+        assertEquals("ARCHIVED", fixture.jdbc.queryForObject("SELECT status FROM COMBO_BATCH WHERE batch_id=?", String.class, first));
+        setup(); approveSameOrder(); String third = fixture.batch;
+        setup(); approveSameOrder(); String fourth = fixture.batch;
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            var p = new ComboPublicationService(fixture.ds, new JdbcComboAdminReader(fixture.ds),
+                    bundle -> new ComboReviewAuthority.Check(new Policy("CONTROLLED_PUBLICATION_V1"), new Evidence(true,true), "fixture"));
+            var actorNow = principal(); var gate = new CountDownLatch(1);
+            var a = pool.submit(() -> { gate.await(); return p.publish(third, actorNow); });
+            var b = pool.submit(() -> { gate.await(); return p.publish(fourth, actorNow); });
+            gate.countDown(); assertEquals("ACTIVE", a.get(20, TimeUnit.SECONDS).status());
+            assertEquals("ACTIVE", b.get(20, TimeUnit.SECONDS).status());
+            assertEquals(1, fixture.jdbc.queryForObject("SELECT COUNT(*) FROM COMBO_BATCH WHERE status='ACTIVE'", Integer.class));
+        } finally { pool.shutdownNow(); }
+    }
     @Test void batchHistoryPagesParentsAndLightListNeverInvokesReviewAuthority(){
         int before=fixture.jdbc.queryForObject("SELECT COUNT(*) FROM COMBO_BATCH",Integer.class);
         fixture.jdbc.update("UPDATE COMBO_BATCH SET created_at='2098-01-01 00:00:00' WHERE batch_id=?",fixture.batch);

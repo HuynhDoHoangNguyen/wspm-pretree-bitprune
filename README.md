@@ -175,13 +175,15 @@ công bố đầy đủ; UI không mở bàn giao Combo từ metadata chưa xác
 > 
 > Hệ thống tích hợp sẵn **Flyway Migration** và quét `classpath:db/migration` khi
 > Backend khởi động. Nhánh hiện tại chứa `V1__initial_schema.sql` và
-> `V2__complete_laptop_combo_schema.sql` và `V3__mining_run_execution_ownership.sql`.
+> `V2__complete_laptop_combo_schema.sql`, `V3__mining_run_execution_ownership.sql`,
+> `V4__mining_run_metadata_provenance.sql` và `V5__native_combo_generation_evidence.sql`.
 > WDM-06.2 bổ sung `V4__mining_run_metadata_provenance.sql`: hai bảng
 > `RUN_PROVENANCE` và `RUN_RESULT_PUBLICATION`. Luồng tạo/chạy run mới cần V4;
 > Hibernate validate riêng không xác minh hai bảng native-SQL này. V4 được kiểm
 > thử trên MySQL riêng, chưa áp dụng vào DB owner trong task này. Flyway sẽ tự
 > xét V4 khi chạy bản backend mới; cần triển khai migration có chủ đích trước
-> khi dùng datasource owner. Pattern persistence vẫn thuộc các task tiếp theo.
+> khi dùng datasource owner. V5 bổ sung bằng chứng sinh/lưu Combo native;
+> các luồng Pattern/Combo hiện đã tích hợp với kết quả mining được công bố.
 > V3 bổ sung ba cột ownership/lease nullable cho MINING_RUN; đã kiểm thử upgrade
 > trên MySQL riêng, chưa áp dụng vào database của owner trong task WDM-05.5.
 > Trong WDM-05.7 (2026-11-07), đã xác minh database local `127.0.0.1:3307/wspm_combo`
@@ -247,19 +249,113 @@ Mọi request gọi API từ frontend sẽ tự động được chuyển tiếp
 
 ---
 
+## Ảnh sản phẩm và banner
+
+Ảnh sản phẩm nằm trong `backend/uploads/products`. Trong `.env` local, đặt
+`PRODUCT_IMAGES_ROOT` thành đường dẫn tuyệt đối tới thư mục này, ví dụ:
+
+```properties
+PRODUCT_IMAGES_ROOT=E:/University/HK1-2026-2027/Khoa-Luan/wspm-pretree-bitprune/backend/uploads/products
+```
+
+Khởi động lại backend sau khi đổi cấu hình. Mẫu `.env.example` dùng đường dẫn
+tương đối `./backend/uploads/products` khi chạy backend từ repo root; đổi sang
+đường dẫn tuyệt đối nếu chạy từ thư mục khác. Backend phục vụ ảnh tại
+`/uploads/products/<tên-file>`; frontend dev chuyển request này qua proxy sang
+backend, cùng với API. Chỉ các file JPG/JPEG, PNG và GIF hợp lệ được phục vụ;
+ảnh sản phẩm không nằm trong `frontend/public`. URL trong database phải khớp tên
+file thực tế. Thư mục upload vẫn được Git ignore; khi chuyển máy cần chép ảnh
+cùng với database. Không chạy lại seeder chỉ để sửa đường dẫn ảnh.
+
+Sáu banner `banner01.webp` đến `banner06.webp` nằm trong
+`frontend/public/images/banners`, được frontend phục vụ trực tiếp tại
+`/images/banners/<tên-file>`. Carousel trang chủ dùng các file này và giữ tỷ lệ
+ảnh trên desktop/mobile. Backend không cần đọc hoặc hỗ trợ WebP để hiển thị
+banner. Khi deploy, cần chuyển tiếp `/uploads/products/` tới backend và phục vụ
+banner từ bản build frontend.
+
+## Luồng tích hợp TV3 — Customer & Monitoring
+
+Để chạy mining và lưu kết quả, `.env` cần có `WDM_EXECUTION_ENABLED=true` và
+`WDM_RESULT_PUBLICATION_ENABLED=true`. Khởi động lại backend sau khi đổi cấu hình.
+Các thiết lập Auth và khóa context Combo vẫn theo cấu hình hiện hành; không có
+tài khoản, secret hay kết quả mining được tự tạo bởi giao diện TV3.
+
+1. Admin upload, kiểm tra và chuyển đổi snapshot tại `/admin/datasets`.
+2. Tạo RUN tại `/admin/mining-runs`, đợi thực thi thành công và công bố kết quả
+   mining đầy đủ. Mở Pattern/Combo từ chi tiết RUN.
+3. Tại `/admin/combos`, sinh đề xuất, lưu DRAFT và duyệt các combo muốn đưa ra
+   khách hàng. Mở batch rồi bấm **Công bố batch cho khách hàng**.
+4. Công bố chỉ chuyển combo `APPROVED` thuộc ba loại được hỗ trợ sang
+   `PUBLISHED`; kiểm tra lại bằng chứng và dữ liệu sản phẩm trong giao dịch.
+   Batch cũ được `ARCHIVED`, batch mới thành `ACTIVE`. Batch đã kích hoạt không
+   tiếp tục duyệt; hãy duyệt xong trước khi công bố. Gửi lại yêu cầu cho batch
+   đang ACTIVE không tạo thêm lần công bố. Combo tuần tự giữ nguyên thứ tự từng
+   bước mua, không hiển thị thành mua cùng đơn.
+5. Khách mở `/products`, chọn sản phẩm và xem Top-K combo đã công bố; mở
+   `/combos/{comboId}` để xem chi tiết. Chưa có batch hợp lệ thì hiển thị trạng
+   thái rỗng, không dùng kết quả minh họa thay thế.
+
+Client có bộ lọc tên/danh mục/khoảng giá, sắp xếp và phân trang tại `/products`;
+hai combo mới nhất nằm dưới bộ lọc. Trang chi tiết có thông tin catalog, card
+gợi ý có checkbox và sản phẩm liên quan cùng danh mục. Tổng giá đang chọn dùng
+giá hiện tại và số lượng, chưa áp dụng ưu đãi combo hay tạo đơn hàng.
+
+Combo không có dữ liệu sẽ ẩn cả khu vực. Trang chi tiết ưu tiên gợi ý cá nhân,
+loại trùng rồi hiển thị tối đa hai card nhỏ trong cột thông tin bên phải; dưới
+bộ lọc DSSP mỗi card mới nhất hiển thị từng sản phẩm thành phần. Hướng dẫn kiểm
+tra batch G502 → Bose và tạo ba ví dụ ba sản phẩm ở
+[hướng dẫn combo ba sản phẩm](docs/wdm/combo-three-items-guide.md).
+
+Gợi ý theo lịch sử dùng `GET /api/v1/recommendations/combos/personalized` với
+Bearer của phiên hiện tại, không nhận userId. Backend đối chiếu các đơn COMPLETED
+với tiền tố mẫu và gợi ý bước tiếp theo chưa mua; xem
+[hợp đồng HISTORY_PREFIX_V1](docs/wdm/client-combo-contract.md). Khách chưa đăng
+nhập vẫn xem được gợi ý theo sản phẩm và
+`GET /api/v1/recommendations/combos/latest` (hai combo mới công bố).
+
+Kiểm tra trên dữ liệu development hiện có: duyệt và công bố batch chứa combo
+G502 → Bose, đăng nhập `customer_006` bằng mật khẩu bạn đã cấp, rồi mở `/products`
+hoặc chi tiết G502. Chỉ khi lịch sử COMPLETED và các điều kiện hiệu lực còn phù
+hợp mới xuất hiện Bose ở phần **Gợi ý cho lần mua tiếp theo**. Không tạo lại seed,
+không đổi mật khẩu để kiểm tra; trạng thái dữ liệu này cần xác nhận tại lúc chạy.
+
+Lịch sử, giám sát và biểu đồ tại `/admin/mining-run-history`,
+`/admin/mining-monitoring`, `/admin/mining-comparison`. API lịch sử TV3 dùng
+`GET /api/v1/admin/mining-run-history` (page/size/algorithm/status) và
+`GET /api/v1/admin/mining-run-history/{runId}`. API trạng thái WDM giữ nguyên
+`GET /api/v1/admin/mining-runs/{runId}`; hai API có DTO riêng.
+API công bố Combo là `POST /api/v1/admin/combos/batches/{batchId}/publication`,
+không nhận body/query, yêu cầu shared ADMIN Bearer Auth.
+
+Biểu đồ RUN thật hiển thị số liệu đã lưu theo đơn vị ms, JVM heap lấy mẫu theo
+bytes và số pattern khi cấu hình nguồn phù hợp. Không tự tính speedup hay kết
+luận cải thiện nếu chưa có bằng chứng đầy đủ về cấu hình, điều kiện đo và toàn bộ
+`pattern -> exact support`. Mining-core và các hợp đồng nghiên cứu giữ nguyên.
+
+Kiểm thử xuyên suốt bằng dữ liệu tổng hợp và hai engine thật: build frontend,
+`mvn -pl backend -am package -DskipTests`, rồi chạy
+`$env:TV2_NATIVE_COMBO_GATE='1'; node frontend/test/e2e/engine-run.mjs`.
+Runner tạo MySQL/storage riêng và lưu bằng chứng trong `.agent-workspace/phase-wdm/`;
+không dùng database làm việc. Xem thêm `frontend/test/e2e/README.md`.
+
 ## 🛠️ Các câu lệnh hữu ích khác
 
 ### Chạy kiểm thử tự động (Unit / Integration Tests)
 ```powershell
 # Chạy toàn bộ test cả hệ thống
-mvn test
+mvn test -Dp1.schema.db.approved=true
 
 # Chỉ chạy test thuật toán khai phá mẫu (mining-core)
 mvn -pl mining-core test
 
 # Chỉ chạy test backend (controller, service, repository, entity validation)
-mvn -pl backend -am test
+mvn -pl backend -am test -Dp1.schema.db.approved=true
 ```
+
+`p1.schema.db.approved=true` bật test schema/entity P1 bằng dữ liệu tổng hợp
+trên MySQL container riêng. Test này cố ý báo lỗi nếu không bật opt-in;
+không kết nối database làm việc. Docker Desktop phải đang chạy.
 
 ### Chạy trực tiếp thuật toán Mining mẫu trong terminal
 Hai runner dưới đây sử dụng tập dữ liệu chuẩn Table 1 từ bài báo gốc (`mining-core/src/test/resources/datasets/wspm/table1.spmf`):

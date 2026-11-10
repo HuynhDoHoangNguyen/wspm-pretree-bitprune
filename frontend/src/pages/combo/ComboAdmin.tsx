@@ -5,6 +5,7 @@ import { Audit, ComboClient, ComboClientError, ComboDetail, ComboFilters, ComboP
 import { comboHttpClient } from './ComboHttpClient';
 import PublishedComboInputPanel from './PublishedComboInputPanel';
 import ComboBatchHistory from './ComboBatchHistory';
+import ComboPublicationPanel from './ComboPublicationPanel';
 import { useInRouterContext, useSearchParams } from 'react-router-dom';
 
 const statuses: Record<string, string> = { DRAFT: 'Bản nháp', APPROVED: 'Đã duyệt nội bộ', REJECTED: 'Đã từ chối', PUBLISHED: 'Đã công bố', ARCHIVED: 'Đã lưu trữ' };
@@ -157,6 +158,7 @@ function ComboAdminView({ client, initialBatchId, embedded = false }: { client: 
     }
   };
   return <Stack spacing="lg" className={classes.page}>
+    {initialBatchId && <ComboPublicationPanel batchId={initialBatchId} client={client} onPublished={invalidate} batchStatus={data?.items[0]?.data.batchStatus}/>}
     {!embedded && <PublishedComboInputPanel/>}
     {!embedded && <Stack spacing={4} className={classes.header}><Text size="sm" color="dimmed">Dữ liệu &amp; Khai phá</Text>
       <Title order={2}>Quản lý Combo</Title>

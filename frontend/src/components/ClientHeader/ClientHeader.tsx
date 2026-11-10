@@ -130,7 +130,7 @@ function ClientHeader() {
               size="md"
               radius="md"
               icon={<Search size={16}/>}
-              sx={{ width: 600 }}
+              sx={{ width: 600, maxWidth: '100%' }}
               value={search}
               onChange={(event) => setSearch(event.currentTarget.value)}
               onKeyDown={handleSearchInput}
@@ -232,8 +232,8 @@ function ClientHeader() {
                 opened={openedCategoryMenu}
                 onClose={() => setOpenedCategoryMenu(false)}
                 target={(
-                  <Button component={Link} to="/categories" leftIcon={<List size={16}/>} radius="md">
-                    Danh mục sản phẩm
+                  <Button component={Link} to="/products" leftIcon={<List size={16}/>} radius="md">
+                    Danh sách sản phẩm
                   </Button>
                 )}
                 width={widthHeaderStack}

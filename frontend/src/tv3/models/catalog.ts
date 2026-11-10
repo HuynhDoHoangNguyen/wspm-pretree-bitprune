@@ -25,4 +25,5 @@ export interface ProductImageResponse {
 
 export interface ProductDetailResponse extends ProductResponse {
   readonly images: readonly ProductImageResponse[];
+  readonly information?: { sku: string | null; categoryName: string | null; shortDescription: string | null; description: string | null; currencyCode: string | null } | null;
 }

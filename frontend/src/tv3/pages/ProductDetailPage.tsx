@@ -3,6 +3,7 @@ import { Alert, Anchor, Box, Card, Container, SimpleGrid, Stack, Text, Title, us
 import { CatalogApiError, getProduct } from '../api/catalog';
 import { ProductDetailResponse } from '../models/catalog';
 import ProductComboSection from '../components/ProductComboSection';
+import RelatedProducts from 'components/combo-recommendations/RelatedProducts';
 
 export interface ProductDetailPageProps {
   productId: string;
@@ -76,27 +77,41 @@ function ProductInformation({ product }: { product: ProductDetailResponse }) {
           </SimpleGrid>
         )}
       </Stack>
-      <Card radius="md" shadow="sm" p="lg">
+      <Card radius="md" shadow="sm" p="lg" data-testid="product-information">
         <Stack spacing="md">
           <Title order={1}>{name}</Title>
           <Text color="pink" size="xl" weight={500}>
-            {product.price === null ? 'Chưa có giá' : `${priceFormatter.format(product.price)} ₫`}
+            {product.price === null ? 'Chưa có giá' : `${priceFormatter.format(product.price)} ${product.information?.currencyCode && product.information.currencyCode !== 'VND' ? product.information.currencyCode : '₫'}`}
           </Text>
-          <Box component="dl" sx={{ margin: 0, overflowWrap: 'anywhere', '& dd': { margin: '0 0 16px' } }}>
-            <Text component="dt" weight={600}>Mã sản phẩm</Text>
-            <Text component="dd">{product.productId}</Text>
-            <Text component="dt" weight={600}>Mã danh mục</Text>
-            <Text component="dd">{product.categoryId ?? 'Chưa có danh mục'}</Text>
-            <Text component="dt" weight={600}>Trạng thái</Text>
-            <Text component="dd">{product.productStatus ?? 'Chưa có thông tin'}</Text>
-            <Text component="dt" weight={600}>Ngày tạo</Text>
-            <Text component="dd">
-              {product.createdAt === null ? 'Chưa có thông tin' : (
-                <time dateTime={product.createdAt}>{product.createdAt}</time>
-              )}
-            </Text>
+          {product.information && <Stack spacing="sm">
+            {product.information.sku && <Text size="sm">Mã hàng: {product.information.sku}</Text>}
+            {product.information.categoryName && <Text size="sm">Danh mục: {product.information.categoryName}</Text>}
+            <Text size="sm" color={product.productStatus === 'ACTIVE' ? 'teal' : 'dimmed'}>
+              {product.productStatus === 'ACTIVE' ? 'Đang kinh doanh' : 'Hiện chưa kinh doanh'}</Text>
+            {product.information.shortDescription && <Text>{product.information.shortDescription}</Text>}
+            {product.information.description && <Box>
+              <Title order={3}>Mô tả sản phẩm</Title>
+              <Text mt="xs" sx={{ whiteSpace: 'pre-wrap' }}>{product.information.description}</Text>
+            </Box>}
+          </Stack>}
+          <Box component="details" sx={{ color: '#6b7280', fontSize: 13 }}>
+            <summary>Thông tin tham chiếu sản phẩm</summary>
+            <Box component="dl" sx={{ margin: 0, overflowWrap: 'anywhere', '& dd': { margin: '0 0 16px' } }}>
+              <Text component="dt" weight={600}>Mã sản phẩm</Text>
+              <Text component="dd">{product.productId}</Text>
+              <Text component="dt" weight={600}>Mã danh mục</Text>
+              <Text component="dd">{product.categoryId ?? 'Chưa có danh mục'}</Text>
+              <Text component="dt" weight={600}>Trạng thái</Text>
+              <Text component="dd">{product.productStatus ?? 'Chưa có thông tin'}</Text>
+              <Text component="dt" weight={600}>Ngày tạo</Text>
+              <Text component="dd">
+                {product.createdAt === null ? 'Chưa có thông tin' : (
+                  <time dateTime={product.createdAt}>{product.createdAt}</time>
+                )}
+              </Text>
+            </Box>
           </Box>
-          {/* Combo cards require a verified public API/contract; no substitute data is rendered. */}
+          <ProductComboSection productId={product.productId}/>
         </Stack>
       </Card>
     </SimpleGrid>
@@ -143,7 +158,7 @@ export default function ProductDetailPage({ productId, productListHref, onBackTo
         ) : state.status === 'success' && (
           <React.Fragment key={state.productId}>
             <ProductInformation product={state.product}/>
-            <ProductComboSection productId={state.product.productId}/>
+            <RelatedProducts productId={state.product.productId} categoryId={state.product.categoryId}/>
           </React.Fragment>
         )}
       </Stack>

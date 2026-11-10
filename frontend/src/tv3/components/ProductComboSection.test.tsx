@@ -1,6 +1,6 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { act, fireEvent, render as renderUI, screen } from '@testing-library/react';
+import { act, fireEvent, render as renderUI, screen, waitFor } from '@testing-library/react';
 import { listPublicCombos } from '../api/combos';
 import { PublicCombo, PublicTopK } from '../models/combos';
 import ProductComboSection from './ProductComboSection';
@@ -80,7 +80,8 @@ test('loads exact product and renders API order without ranking locally', async 
 test('true empty has no fixture cards', async () => {
   list.mockResolvedValue({ ...result('p'), items: [] });
   render(<ProductComboSection productId="p"/>);
-  expect(await screen.findByText(/Hiện chưa có combo/)).toBeVisible();
+  await waitFor(() => expect(screen.queryByText('Đang tải Combo…')).not.toBeInTheDocument());
+  expect(screen.queryByRole('region', { name: 'Combo gợi ý' })).not.toBeInTheDocument();
   expect(screen.queryByRole('article')).not.toBeInTheDocument();
 });
 test('error offers retry and recovers', async () => {
@@ -98,7 +99,7 @@ test('product change aborts and ignores late success, unmount aborts next reques
   const oldSignal = list.mock.calls[0][1];
   view.rerender(<ProductComboSection productId="new"/>);
   expect(oldSignal.aborted).toBe(true);
-  await screen.findByText(/Hiện chưa có combo/);
+  await waitFor(() => expect(screen.queryByText('Đang tải Combo…')).not.toBeInTheDocument());
   await act(async () => resolveOld(result('old')));
   expect(screen.queryByText(combo.name)).not.toBeInTheDocument();
   const nextSignal = list.mock.calls[1][1];

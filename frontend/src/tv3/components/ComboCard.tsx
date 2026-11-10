@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Anchor, Badge, Box, Card, Group, Image, Stack, Text, Title } from '@mantine/core';
 import { displayMoney } from '../api/combos';
+import { comboKindLabel } from 'components/combo-recommendations/ComboSelection';
 import { PublicCombo } from '../models/combos';
 
 export function ComboPricing({ combo }: { combo: PublicCombo }) {
@@ -26,7 +27,7 @@ export default function ComboCard({ combo, rank, productId }: { combo: PublicCom
   const href = '/combos/' + encodeURIComponent(combo.comboId) + '?' + new URLSearchParams({ productId });
   return <Card component="article" radius="md" shadow="sm" p="lg" sx={{ height: '100%', overflowWrap: 'anywhere' }}>
     <Stack spacing="sm">
-      <Badge color="blue">Gợi ý {rank}</Badge>
+      <Badge color="blue">Gợi ý {rank} · {comboKindLabel[combo.kind]}</Badge>
       <Title order={3}>{combo.name}</Title>
       <Text size="xs" color="dimmed">Mã Combo: {combo.comboId}</Text>
       {combo.explanation && <Text size="sm">{combo.explanation}</Text>}
@@ -34,7 +35,7 @@ export default function ComboCard({ combo, rank, productId }: { combo: PublicCom
         {combo.items.map(item => <li key={`${item.itemsetOrder}:${item.itemOrder}`}>
           <Group noWrap spacing="xs" py={4}>
             <Image src={item.product.imageUrl || undefined} alt={item.product.name} width={44} height={44} fit="contain" withPlaceholder/>
-            <Text size="sm">{item.product.name} × {item.quantity}</Text>
+            <Text size="sm">{item.product.name} × {item.quantity}{combo.kind !== 'SAME_ORDER_BUNDLE' ? ` · Bước ${item.itemsetOrder}` : ''}</Text>
           </Group>
         </li>)}
       </Box>

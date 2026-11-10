@@ -8,7 +8,7 @@ export class CatalogApiError extends Error {
     public readonly status: number,
     public readonly code: string,
     message: string,
-    public readonly requestId: string | null,
+    public readonly requestId: string | null
   ) {
     super(message);
     this.name = 'CatalogApiError';
@@ -41,7 +41,9 @@ function isImage(value: unknown): value is ProductImageResponse {
 }
 
 function isDetail(value: unknown): value is ProductDetailResponse {
-  return isProduct(value) && isObject(value) && Array.isArray(value.images) && value.images.every(isImage);
+  return isProduct(value) && isObject(value) && Array.isArray(value.images) && value.images.every(isImage)
+    && (value.information === undefined || value.information === null || (isObject(value.information)
+      && ['sku', 'categoryName', 'shortDescription', 'description', 'currencyCode'].every(key => nullableString((value.information as JsonObject)[key]))));
 }
 
 function arrayOf<T>(isItem: (value: unknown) => value is T) {

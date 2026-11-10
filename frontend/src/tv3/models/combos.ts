@@ -11,7 +11,7 @@ export interface ComboBatchProvenance {
 export interface PublicCombo {
   comboId: string;
   name: string;
-  kind: 'SAME_ORDER_BUNDLE';
+  kind: 'SAME_ORDER_BUNDLE' | 'SEQUENTIAL_CROSS_SELL' | 'MIXED_SEQUENCE';
   status: 'PUBLISHED';
   explanation: string | null;
   validFrom: string | null;
@@ -47,4 +47,10 @@ export interface PublicTopK {
   evaluatedAt: string;
   provenance: ComboBatchProvenance | null;
   items: { rank: number; combo: PublicCombo }[];
+}
+
+export interface PersonalCombos {
+  policy: 'HISTORY_PREFIX_V1';
+  evaluatedAt: string;
+  items: { rank: number; matchedItemsets: number; nextItemsetOrder: number; suggestedProductIds: string[]; combo: PublicCombo }[];
 }

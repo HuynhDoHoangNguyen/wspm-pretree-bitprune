@@ -2,7 +2,7 @@ import { wdmApi, WdmApiError } from 'api/admin/data-mining';
 import { authSession } from 'auth/session';
 import { MiningRunDetail, MiningRunPage, MiningRunParams } from './MiningRun.types';
 
-const endpoint = '/v1/admin/mining-runs';
+const endpoint = '/v1/admin/mining-run-history';
 
 // Keep the existing UI error type while retaining shared transport correlation/details.
 export class MiningRunApiError extends WdmApiError {

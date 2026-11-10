@@ -26,6 +26,18 @@ public class ProductEntity {
     @Column(name = "name", length = 200)
     private String productName;
 
+    @Column(name = "sku", length = 80, insertable = false, updatable = false)
+    private String sku;
+
+    @Column(name = "short_description", length = 1000, insertable = false, updatable = false)
+    private String shortDescription;
+
+    @Column(name = "description", columnDefinition = "TEXT", insertable = false, updatable = false)
+    private String description;
+
+    @Column(name = "currency_code", length = 3, insertable = false, updatable = false)
+    private String currencyCode;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id")
     private CategoryEntity category;

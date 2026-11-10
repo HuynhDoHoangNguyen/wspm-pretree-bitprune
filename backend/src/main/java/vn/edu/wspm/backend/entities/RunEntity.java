@@ -144,6 +144,8 @@ public class RunEntity {
     public String getDatasetSource() { return datasetSource; }
     public Double getMinsupRatio() { return minsupRatio; }
     public Double getMinsupAbs() { return minsupAbs; }
+    public Double getEffectiveThreshold() { return minsupAbs; }
+    public Double getMinsupRelativeFraction() { return minsupRatio; }
     public Double getMeanW() { return meanW; }
     /** Compatibility wall-clock view; all new run timestamps use UTC Instant storage. */
     public LocalDateTime getRunTime() { return runTime != null ? LocalDateTime.ofInstant(runTime, ZoneOffset.UTC) : null; }

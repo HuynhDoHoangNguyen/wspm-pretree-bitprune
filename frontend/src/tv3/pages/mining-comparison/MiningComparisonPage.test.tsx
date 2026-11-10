@@ -66,7 +66,8 @@ test('comparison production includes later list pages and fetches details only f
   expect(within(table).getByRole('row', { name: /Output I\/O/ })).toHaveTextContent('Chưa có dữ liệu');
   expect(screen.getByText('Chưa đủ dữ liệu để so sánh hợp lệ')).toBeInTheDocument();
   expect(screen.queryByText(/Speedup|Runtime Reduction|Memory Reduction/)).not.toBeInTheDocument();
-  expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('img')).toHaveLength(3);
+  expect(screen.getByLabelText('Biểu đồ số liệu RUN đã lưu')).toBeInTheDocument();
 });
 
 test('comparison production clears the previous pair, aborts stale detail and reads the new selection', async () => {
@@ -109,7 +110,7 @@ test('comparison production never treats injected PreviewPairCheck as verified e
   expect(screen.getByText(/toàn bộ cấu hình mining; DTO chưa có K/)).toBeInTheDocument();
   expect(screen.getByText(/Chưa xác nhận cùng điều kiện đo/)).toBeInTheDocument();
   expect(screen.getByText(/Chưa xác nhận toàn bộ pattern/)).toBeInTheDocument();
-  expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('img')).toHaveLength(3);
   expect(screen.queryByText(/Speedup|Runtime Reduction|Memory Reduction/)).not.toBeInTheDocument();
 });
 
@@ -228,7 +229,7 @@ test('production uses the real RUN client, shared envelope and latest Auth trans
   try {
     show(); await screen.findByRole('table');
     expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
-      '/api/v1/admin/mining-runs?page=0&size=100', '/api/v1/admin/mining-runs/api-a', '/api/v1/admin/mining-runs/api-b',
+      '/api/v1/admin/mining-run-history?page=0&size=100', '/api/v1/admin/mining-run-history/api-a', '/api/v1/admin/mining-run-history/api-b',
     ]);
     fetcher.mock.calls.forEach(([, options]) => {
       expect(options.method).toBe('GET');

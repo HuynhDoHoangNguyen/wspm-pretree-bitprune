@@ -35,6 +35,12 @@ function ProductListRoute() {
     setParams(next, { replace: true });
   }, [categoryId, params, setParams]);
   return <ProductListPage categoryId={categoryId}
+    filters={{ q: params.get('q') ?? '', categoryId: categoryId ?? '', minPrice: params.get('minPrice') ?? '', maxPrice: params.get('maxPrice') ?? '', sort: params.get('sort') ?? 'name' }}
+    onFiltersChange={filters => {
+      const next = new URLSearchParams(params); next.delete('page');
+      Object.entries(filters).forEach(([key, value]) => { if (value) next.set(key, value); else next.delete(key); });
+      setParams(next);
+    }}
     page={categoryChanged ? 1 : parseCatalogPage(params.get('page'))}
     onPageChange={(page) => {
       const next = new URLSearchParams(params);

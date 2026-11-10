@@ -1,15 +1,35 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, createStyles, Grid, Group, Stack, Text, useMantineTheme } from '@mantine/core';
 import { Car, HeartHandshake, Stars } from 'tabler-icons-react';
 import { ClientCarousel } from 'components';
 
 const useStyles = createStyles((theme) => ({
+  banner: {
+    aspectRatio: '1903 / 580',
+    backgroundColor: theme.colorScheme === 'dark' ? theme.colors.dark[4] : theme.colors.gray[1],
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    '& img': { display: 'block', width: '100%', height: '100%', objectFit: 'contain' },
+  },
   rightBanner: {
     flexWrap: 'unset',
     backgroundColor: theme.colorScheme === 'dark' ? theme.colors.dark[4] : theme.colors.gray[1],
     borderRadius: theme.radius.md,
   },
 }));
+
+const banners = Array.from({ length: 6 }, (_, index) => ({
+  src: `/images/banners/banner${String(index + 1).padStart(2, '0')}.webp`,
+  alt: `Giới thiệu sản phẩm ${index + 1}`,
+}));
+
+function BannerSlide({ src, alt }: { src: string; alt: string }) {
+  const { classes } = useStyles();
+  const [failed, setFailed] = useState(false);
+  return <Box className={classes.banner}>
+    {failed ? <Text color="dimmed" role="status">Banner hiện chưa khả dụng.</Text>
+      : <img src={src} alt={alt} onError={() => setFailed(true)}/>}
+  </Box>;
+}
 
 function ClientHomeBanner() {
   const theme = useMantineTheme();
@@ -19,30 +39,7 @@ function ClientHomeBanner() {
     <Grid>
       <Grid.Col md={7} lg={8}>
         <ClientCarousel>
-          <Box
-            sx={{
-              height: '100%',
-              minHeight: 315,
-              backgroundImage: theme.fn.linearGradient(105, theme.colors.teal[3], theme.colors.lime[3]),
-            }}
-          >
-          </Box>
-          <Box
-            sx={{
-              height: '100%',
-              minHeight: 315,
-              backgroundImage: theme.fn.linearGradient(0, theme.colors.orange[3], theme.colors.red[3]),
-            }}
-          >
-          </Box>
-          <Box
-            sx={{
-              height: '100%',
-              minHeight: 315,
-              backgroundImage: theme.fn.linearGradient(0, theme.colors.indigo[3], theme.colors.cyan[3]),
-            }}
-          >
-          </Box>
+          {banners.map(banner => <BannerSlide key={banner.src} {...banner}/>)}
         </ClientCarousel>
       </Grid.Col>
       <Grid.Col md={5} lg={4}>

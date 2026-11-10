@@ -118,7 +118,7 @@ class ComboReadControllerTest {
     }
 
     @ParameterizedTest @ValueSource(strings = {"SEQUENTIAL_CROSS_SELL", "MIXED_SEQUENCE"})
-    void sequentialRemainsFailClosedThroughHttp(String kind) throws Exception {
+    void temporalRowsWithoutItemsRemainFailClosedThroughHttp(String kind) throws Exception {
         active();when(repository.productExists("p")).thenReturn(true);
         when(repository.topK("b", "p", 4, NOW)).thenReturn(List.of(combo("PUBLISHED", kind)));
         when(repository.detail("b", "c", NOW)).thenReturn(List.of(combo("PUBLISHED", kind)));

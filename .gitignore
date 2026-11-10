@@ -49,6 +49,8 @@ docs/wdm/*
 !docs/wdm/mining-request-contract.md
 !docs/wdm/mining-engine-contract.md
 !docs/wdm/persistence-schema-audit.md
+!docs/wdm/client-combo-contract.md
+!docs/wdm/combo-three-items-guide.md
 !docs/archive/
 !docs/archive/roadmaps/
 !docs/archive/roadmaps/**

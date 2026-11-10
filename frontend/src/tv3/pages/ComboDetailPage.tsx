@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Alert, Anchor, Badge, Button, Card, Container, Group, Image, Stack, Text, Title } from '@mantine/core';
 import { ComboApiError, displayMoney, isComboIdentifier, readPublicCombo } from '../api/combos';
 import { ComboPricing } from '../components/ComboCard';
+import { comboKindLabel } from 'components/combo-recommendations/ComboSelection';
 import { PublicCombo } from '../models/combos';
 
 interface Props { comboId: string; productId?: string | null }
@@ -48,10 +49,10 @@ export default function ComboDetailPage({ comboId, productId }: Props) {
       {combo && <>
         <Title order={1}>{combo.name}</Title>
         <Text>Mã Combo: {combo.comboId}</Text>
-        <Group><Badge>Mua cùng một lần</Badge><Badge color="green">Đã công bố</Badge></Group>
+        <Group><Badge>{comboKindLabel[combo.kind]}</Badge><Badge color="green">Đã công bố</Badge></Group>
         {combo.explanation && <Text>{combo.explanation}</Text>}
         {Array.from(groups.entries()).map(([order, items]) => <Stack key={order} spacing="sm">
-          <Title order={2}>Nhóm sản phẩm {order}</Title>
+          <Title order={2}>{combo.kind === 'SAME_ORDER_BUNDLE' ? 'Nhóm sản phẩm' : 'Bước mua'} {order}</Title>
           {items.map(item => <Card key={item.itemOrder} withBorder radius="md">
             <Group align="flex-start" noWrap>
               <Image src={item.product.imageUrl || undefined} alt={item.product.name} width={64} height={64} fit="contain" withPlaceholder/>

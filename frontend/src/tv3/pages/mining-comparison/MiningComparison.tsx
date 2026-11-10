@@ -101,6 +101,11 @@ function ComparisonValues({ a, b, data, preview }: { a: MiningRunDetail; b: Mini
   // Synthetic pair checks can unlock illustration only, never a production comparison.
   const check = preview ? data.previewChecks.find(item => item.preTreeRunId === a.runId && item.bitPruneRunId === b.runId) : undefined;
   const result = compareRuns(a, b, check);
+  const showSourceCharts = !preview && a.algorithm === 'WSPM_PRETREE' && b.algorithm === 'WSPM_BITPRUNE'
+    && a.status === 'SUCCEEDED' && b.status === 'SUCCEEDED' && !!a.snapshotId && a.snapshotId === b.snapshotId
+    && a.minsupMode === b.minsupMode && a.minsupConfigured === b.minsupConfigured
+    && nonNegative(a.effectiveThreshold) && a.effectiveThreshold > 0 && a.effectiveThreshold === b.effectiveThreshold
+    && nonNegative(a.patternCount) && a.patternCount === b.patternCount;
   const raw = (value: number | null, unit = '') => nonNegative(value) ? displayNumber(value, unit) : 'Chưa có dữ liệu';
   const rows: [string, string, string, string][] = [
     ['Tổng thực thi (ms)', raw(a.totalExecutionMs), raw(b.totalExecutionMs), displayNumber(result.eligible ? difference(a.totalExecutionMs, b.totalExecutionMs) : null, 'ms')],
@@ -142,7 +147,7 @@ function ComparisonValues({ a, b, data, preview }: { a: MiningRunDetail; b: Mini
     </Alert>
     {!result.eligible && <Alert color="yellow" title={preview ? 'RUN không đủ điều kiện so sánh' : 'Chưa đủ dữ liệu để so sánh hợp lệ'} role="alert">
       <ul>{result.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
-      Không tính chỉ số cải thiện hoặc hiển thị biểu đồ hiệu năng cho cặp này.
+      Không tính chỉ số cải thiện cho cặp này. Biểu đồ số liệu nguồn chỉ mô tả từng RUN, chưa chứng minh hiệu năng tương đương.
     </Alert>}
     {result.eligible && <>
       <Text color="blue" weight={600}>Cặp fixture đủ điều kiện minh họa — không kết luận nghiên cứu.</Text>
@@ -168,6 +173,14 @@ function ComparisonValues({ a, b, data, preview }: { a: MiningRunDetail; b: Mini
         <ComparisonChart title="Số lượng pattern" unit="pattern" a={a.patternCount} b={b.patternCount}/>
       </div>
     </>}
+    {showSourceCharts && <section aria-label="Biểu đồ số liệu RUN đã lưu">
+      <Text size="sm" color="dimmed">Số liệu nguồn của hai RUN đã chọn. Các cột dùng cùng đơn vị; không suy ra thuật toán nhanh hơn hoặc dùng ít bộ nhớ hơn.</Text>
+      <div className="mining-comparison-charts">
+        <ComparisonChart title="Số liệu tổng thực thi" unit="ms" a={a.totalExecutionMs} b={b.totalExecutionMs}/>
+        <ComparisonChart title="Số liệu JVM heap lấy mẫu" unit="bytes" a={a.peakSampledJvmHeapBytes} b={b.peakSampledJvmHeapBytes}/>
+        <ComparisonChart title="Số pattern đã lưu" unit="pattern" a={a.patternCount} b={b.patternCount}/>
+      </div>
+    </section>}
     <Paper withBorder p="lg" radius="lg">
       <Title order={2} mb="sm">Bảng đối chiếu RUN</Title>
       <Text color="dimmed" size="xs" mb="sm">Số liệu nguồn; chênh lệch = BitPrune − PreTree. Không diễn giải cặp không hợp lệ thành kết luận hiệu năng.</Text>

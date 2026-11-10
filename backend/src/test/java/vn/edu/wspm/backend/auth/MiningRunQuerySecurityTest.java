@@ -62,7 +62,8 @@ class MiningRunQuerySecurityTest {
     }
 
     private MockHttpServletRequestBuilder request(String suffix) {
-        String path = "/api/v1/admin/mining-runs" + suffix;
+        String path = (suffix.equals("/preview") || suffix.equals("/configuration-validation")
+                ? "/api/v1/admin/mining-runs" : "/api/v1/admin/mining-run-history") + suffix;
         return suffix.equals("/preview") || suffix.equals("/configuration-validation")
                 ? post(path).contentType(MediaType.APPLICATION_JSON).content("{}") : get(path);
     }

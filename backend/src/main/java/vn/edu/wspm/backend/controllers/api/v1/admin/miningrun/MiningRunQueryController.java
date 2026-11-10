@@ -15,7 +15,7 @@ import vn.edu.wspm.backend.services.miningrun.MiningRunQueryService;
 import vn.edu.wspm.backend.web.common.RequestIdFilter;
 
 @RestController
-@RequestMapping("/api/v1/admin/mining-runs")
+@RequestMapping("/api/v1/admin/mining-run-history")
 public class MiningRunQueryController {
 
     private final MiningRunQueryService miningRunQueryService;

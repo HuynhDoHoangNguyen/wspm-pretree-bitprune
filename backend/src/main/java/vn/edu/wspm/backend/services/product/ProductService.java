@@ -49,7 +49,10 @@ public class ProductService {
                 dto.productName(), dto.categoryId(), dto.productStatus(), dto.price(), dto.imageUrl(),
                 dto.createdAt(), images.stream().map(image ->
                     new ProductDetailResponse.Image(image.getImageId(),
-                            image.getImageUrl(), image.getAltText(), image.getDisplayOrder())).toList());
+                            image.getImageUrl(), image.getAltText(), image.getDisplayOrder())).toList(),
+                new ProductDetailResponse.Information(product.getSku(),
+                        product.getCategory() == null ? null : product.getCategory().getCategoryName(),
+                        product.getShortDescription(), product.getDescription(), product.getCurrencyCode()));
     }
 
     private List<ProductResponse> responses(List<ProductEntity> products) {

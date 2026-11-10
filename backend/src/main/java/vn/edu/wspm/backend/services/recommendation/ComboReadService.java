@@ -52,7 +52,7 @@ public class ComboReadService {
             if (combos.isEmpty()) return new TopK(productId, requested, limit, at, mapper.batch(batch), List.of());
             var items = repository.items(combos.stream().map(ComboRow::comboId).toList()).stream()
                     .collect(Collectors.groupingBy(ItemRow::comboId));
-            var selected = combos;
+            var selected = combos.stream().filter(c -> !items.getOrDefault(c.comboId(), List.of()).isEmpty()).toList();
             var result = IntStream.range(0, selected.size()).mapToObj(i -> new Recommendation(i + 1,
                     mapper.detail(selected.get(i), batch,
                             items.getOrDefault(selected.get(i).comboId(), List.of()), at))).toList();
@@ -75,6 +75,63 @@ public class ComboReadService {
         } catch (DataAccessException failure) { throw unavailable("detail", failure); }
     }
 
+    public List<Detail> latest() {
+        try {
+            Instant at = clock.instant().truncatedTo(ChronoUnit.MICROS);
+            var batch = activeBatch();
+            if (batch == null) return List.of();
+            var rows = repository.candidates(batch.batchId(), at, 0, true).stream()
+                    .filter(c -> publiclyReadable(c, at)).limit(2).toList();
+            if (rows.isEmpty()) return List.of();
+            var items = repository.items(rows.stream().map(ComboRow::comboId).toList()).stream()
+                    .collect(Collectors.groupingBy(ItemRow::comboId));
+            return rows.stream().filter(c -> !items.getOrDefault(c.comboId(), List.of()).isEmpty())
+                    .map(c -> mapper.detail(c, batch, items.get(c.comboId()), at)).toList();
+        } catch (DataAccessException failure) { throw unavailable("latest", failure); }
+    }
+
+    /** Identity must come from SharedRequestAuthenticator, never a query parameter. */
+    public Personalized personalized(String authenticatedUserId) {
+        return personalized(authenticatedUserId, null);
+    }
+
+    public Personalized personalized(String authenticatedUserId, String productId) {
+        validateId(authenticatedUserId, "identity");
+        if (productId != null) validateId(productId, "productId");
+        try {
+            if (productId != null && !repository.productExists(productId)) throw notFound();
+            Instant at = clock.instant().truncatedTo(ChronoUnit.MICROS);
+            var results = new java.util.ArrayList<PersonalRecommendation>();
+            var batch = activeBatch();
+            if (batch == null) return new Personalized(HistoryPrefixMatcher.POLICY, at, results);
+            var history = repository.history(authenticatedUserId);
+            if (history.isEmpty()) return new Personalized(HistoryPrefixMatcher.POLICY, at, results);
+            int cap = (int) Math.min(DEFAULT_K, batch.topK());
+            var matcher = new HistoryPrefixMatcher();
+            for (int offset = 0; results.size() < cap; offset += 20) {
+                var rows = repository.candidates(batch.batchId(), at, offset, false);
+                if (rows.isEmpty()) break;
+                var items = repository.items(rows.stream().map(ComboRow::comboId).toList()).stream()
+                        .collect(Collectors.groupingBy(ItemRow::comboId));
+                for (var row : rows) {
+                    if (results.size() == cap) break;
+                    if (!publiclyReadable(row, at) || "SAME_ORDER_BUNDLE".equals(row.kind())) continue;
+                    var contents = items.getOrDefault(row.comboId(), List.of());
+                    if (productId != null && contents.stream().noneMatch(i -> productId.equals(i.productId()))) continue;
+                    var match = matcher.match(contents, history);
+                    if (match.isPresent()) {
+                        var m = match.get();
+                        results.add(new PersonalRecommendation(results.size() + 1, m.matchedItemsets(),
+                                m.nextItemsetOrder(), m.suggestedProductIds(), mapper.detail(row, batch, contents, at)));
+                    }
+                }
+                if (rows.size() < 20) break;
+            }
+            log.debug("Personal combo read completed: resultCount={}", results.size());
+            return new Personalized(HistoryPrefixMatcher.POLICY, at, results);
+        } catch (DataAccessException failure) { throw unavailable("personalized", failure); }
+    }
+
     private BatchRow activeBatch() {
         var rows = repository.activeBatches();
         if (rows.isEmpty()) return null;
@@ -92,7 +149,8 @@ public class ComboReadService {
     }
 
     private static boolean publiclyReadable(ComboRow row, Instant at) {
-        return "PUBLISHED".equals(row.status()) && "SAME_ORDER_BUNDLE".equals(row.kind())
+        return "PUBLISHED".equals(row.status()) && java.util.Set.of(
+                "SAME_ORDER_BUNDLE", "SEQUENTIAL_CROSS_SELL", "MIXED_SEQUENCE").contains(row.kind())
                 && (row.validFrom() == null || !at.isBefore(row.validFrom()))
                 && (row.validTo() == null || at.isBefore(row.validTo()));
     }
