@@ -1,5 +1,10 @@
 # Tạo combo ba sản phẩm cho đủ ba loại
 
+> Bộ demo mới có ít nhất 5 itemset, 5 sequence, 3 mixed, DB riêng, tài khoản và
+> giới hạn lưu nháp: [hướng dẫn demo](../demo/combo-demo/README.md). Phần dưới là
+> hướng dẫn ba sản phẩm trước đó; dùng hợp đồng client hiện tại cho quyền xem
+> combo temporal (cần đăng nhập và khớp lịch sử).
+
 ## 1. Hiển thị combo G502 → Bose đang có
 
 Kiểm tra chỉ đọc trên database local ngày 2026-11-10 xác nhận:

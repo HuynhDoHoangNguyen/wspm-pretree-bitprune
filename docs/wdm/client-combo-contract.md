@@ -1,10 +1,124 @@
 # Client combo contract — HISTORY_PREFIX_V1
 
+## Selection and available stock — owner decision 2026-11-11
+
+Latest is labelled **Top Combo mới nhất**, retains five public same-order bundles
+in publication order and displays 🔥 #1..#N plus an explicit detail-popup link.
+Individual product names in that popup navigate to the corresponding product.
+The source product ID is forwarded through inline cards, popup links and the
+direct Combo route. For same-order itemsets, that product stays fully visible;
+other unselected products use reduced opacity, selected products use full
+opacity. No flame is attached to the context product in the detail section.
+
+`product.availableQuantity` is a required nullable decimal integer string:
+sum of `on_hand_quantity - reserved_quantity` across ACTIVE warehouses. This is
+an application policy approved with the implementation plan, not a mining
+formula. Zero means no available units; null means no active inventory data.
+The existing grouped JDBC item query reads stock for all returned items without
+per-item HTTP calls. Missing stock is never defaulted to an invented amount.
+
+Checkboxes start unchecked; UI quantities start at 1 independently of persisted
+COMBO_ITEM quantities. Unchecked quantities are disabled. Checked quantities must
+be exact integers in [1, availableQuantity]; unknown/zero stock cannot be selected.
+Only selected valid quantities contribute to exact decimal current-price totals.
+No selection yields 0. Combo/context changes and reopening a popup start fresh.
+Sequential/mixed selectable rows remain restricted to the server-verified next
+itemset. The visible **Thêm vào giỏ hàng** button is always disabled, has no
+callback or supplementary note. Reads never reserve stock or write a cart/order.
+
+Stock is the state observed by the read request, not a reservation or checkout
+guarantee. No schema migration or mining/ranking/threshold changes are involved.
+
+## Draft persistence limit — owner decision 2026-11-11
+
+Native preview accepts optional integer `draftLimit` in [1,1000]. The current UI
+always sends it (default 20), independently of preview `k`, anchor and customer
+`recommendationK`. After eligibility and structural grouping, select global Top-N
+by existing SUPPORT_THEN_PATTERN_WEIGHT_V1: exact support descending, pattern
+weight descending, UTF-8 canonical pattern, numeric pattern ID. No per-kind quota
+is implied. Mining output and metric formulas are unchanged.
+
+Preview returns both `groups` (all valid groups) and `plannedGroups` (selected
+count). Persistence receives only selected groups/fields and reproduces that
+selection from the signed context on submit, reconcile and review. Changing the
+limit invalidates preview and requires a new write identity. Omitted limits and
+historical contexts preserve full-group persistence; explicit null/non-integral
+or out-of-range limits are rejected at the HTTP boundary. No schema migration.
+
+Reproducible catalog-based CSV, standalone SQL seed, demo accounts and manual
+steps: [Combo demo](../demo/combo-demo/SEEDER2.md). This section supersedes older
+statements that every new UI request always persists all eligible groups.
+
 Owner authorization: client recommendation plan accepted 2026-11-10.
 This is an application policy (implementation inference), not a change to mining
 support, weights, generation, pruning or the frozen algorithms.
 
 ## Publication and public reads
+
+### Current discovery policy — compact Combo popup
+
+The owner authorized separate public bundles and personal temporal suggestions.
+Public top-K/product discovery, latest and public detail now expose only
+`SAME_ORDER_BUNDLE`. Repository kind filtering occurs before ranking/LIMIT;
+latest retains `published_at DESC, combo_id ASC` and at most five entries.
+The five-entry Latest limit is the owner's 2026-11-11 correction: with at least
+five eligible published bundles, all five appear directly. Latest cards omit the
+duplicate linked Combo title and same-order badge; product names, prices and
+images remain. Other client same-order cards omit the kind badge too; temporal
+kind labels remain available.
+Eligibility/publication checks remain unchanged for all three kinds. Temporal
+combos remain publishable but are read through authenticated recommendations.
+
+`GET /api/v1/recommendations/combos/personalized?comboId=...` accepts exactly one
+combo ID, mutually exclusive with `productId`. Authentication precedes parameter
+processing. It returns one `HISTORY_PREFIX_V1` match in the existing envelope,
+or 404 for an unavailable/nonmatching combo. This exact lookup verifies current
+eligibility and the authenticated identity's history independently of list top-K.
+Only next-step suggested product IDs are selectable; query input never supplies
+completed steps, another user ID or suggested product IDs. Responses are no-store.
+
+Cards open a compact Modal over the current page. The popup revalidates reads,
+shows current product prices, quantities, checkboxes and the exact selected total,
+and omits mining/provenance metadata. Public 404 may resolve through authenticated
+exact lookup; other failures remain retryable errors. Token/identity changes hide
+old data immediately, cancel requests and discard late responses. Modal close,
+Escape and browser Back preserve the underlying page/filter state. Existing
+`/combos/:comboId` links render the same modal with a product/list return path.
+No cart, checkout, order write or implicit combo discount is implemented.
+
+Product-detail personal suggestions suppress a matched recommendation when its
+next-step `suggestedProductIds` contains the currently viewed product. Apply this
+context filter before K, and mirror it defensively in the client. Suppress the
+whole recommendation rather than splitting a mixed same-order step. Global
+personal suggestions, public same-order bundles and history matching are unchanged.
+
+This section supersedes earlier statements below permitting public temporal
+discovery/detail and the older full-page technical detail UI. The history matcher,
+publication/review rules, mining outputs and earlier evidence are unchanged;
+earlier acceptance results describe their historical scope.
+
+Verification on 2026-11-10:
+
+- Focused backend unit/controller/security/mapping/matcher checks: 76 passed.
+  `ComboManagementMySqlTest`: 11 passed on owned disposable MySQL, including
+  public same-order filtering, exact personal lookup and cross-identity denial.
+- Full frontend suite: 83 suites / 1132 tests passed; two opt-in live tests
+  skipped. TypeScript and production build passed with existing warnings.
+- Production UI with mocked HTTP: Edge 1440px/390px passed public, sequential
+  and mixed popup selection, guest denial, exact totals, Back/Escape, preserved
+  query and absence of business writes/browser errors. Sidebar navigation smoke
+  also passed both viewports. This does not claim full native mining E2E rerun.
+- The local backend was rebuilt/restarted only after a read-only check found no
+  queued/running mining rows. Flyway reported V5 up to date and no migration.
+  Live anonymous reads returned latest 200/empty, personal 401 and temporal
+  public detail 404. No owner-data seed/review/publication was performed.
+- Evidence is retained under ignored
+  `.agent-workspace/combo-popup-139eafec94394a26992245f4b6d37e59/`:
+  `frontend-results.json`, `mysql.log`, `build-verified.log`, `browser/result.json`,
+  `navigation/result.json`, screenshots and backend startup/package logs.
+  `backend-before.jar` retains the previous runtime artifact. The preliminary
+  failed-build directory remains after automatic cleanup review returned
+  `blocked by policy`; no pre-existing source or evidence was deleted.
 
 Only explicitly APPROVED combos in a DRAFT batch may be published by ADMIN.
 Existing transactional review authority, freshness, source and catalog checks
@@ -51,7 +165,7 @@ as tie-break; 'latest' is not sales popularity.
 
 - GET /api/v1/recommendations/combos?productId=...&k=1..20: public context.
 - GET /api/v1/recommendations/combos/{comboId}: public complete steps.
-- GET /api/v1/recommendations/combos/latest: public newest two eligible combos.
+- GET /api/v1/recommendations/combos/latest: public newest five eligible same-order combos.
 - GET /api/v1/recommendations/combos/personalized: Bearer required; optional single
   productId scopes combo membership before matching/ranking/K (never a user ID);
   returns policy, evaluatedAt and up to four ranked matches, matchedItemsets,
@@ -136,6 +250,30 @@ pointing to repository sources solely to package an isolated JAR while the owner
 default JAR was locked. It is not a production build configuration change.
 Intermediate task build folders were retained after automatic deletion review
 returned `blocked by policy`; no pre-existing files were deleted or restored.
+
+## Customer Top-K configuration — 2026-11-10
+
+`recommendationK` is an integer from 1 through 20 (default 5) on the Admin
+generation preview command. It is independent of presentation `k` and anchor.
+The signed context freezes it; writer evidence and `COMBO_BATCH.top_k` retain
+the chosen value. All eligible groups are persisted, including groups beyond K.
+Changing customer K after saving requires a new batch identity. Old signed
+contexts retain their original cap (5 for selected-product/category policies).
+
+Public product recommendations omit the optional HTTP `k` and use the active
+batch cap. An explicit request can reduce, never exceed, that cap. Public results
+contain only same-order bundles; personal results contain history-matched
+sequential/mixed recommendations. Each channel independently applies batch K
+after its eligibility, product/history and self-suggestion filters. Ranking
+remains support descending, pattern weight descending, then stable canonical/ID
+ties. Fewer eligible recommendations can yield fewer than K.
+
+Product detail initially shows two cards; “Xem thêm gợi ý” exposes the remaining
+returned cards and “Thu gọn” restores the compact view. Product-list personal
+recommendations remain fully accessible. Latest is a separate publication-time
+feed of at most five same-order bundles. This supersedes the permanent two-card
+limit recorded in historical FIX-AC04 below. No cart, order, mining threshold,
+algorithm or review/publication policy changes are part of this feature.
 
 ## Compact layout correction — 2026-11-10
 

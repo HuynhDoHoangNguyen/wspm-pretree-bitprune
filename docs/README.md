@@ -1,5 +1,8 @@
 # Documentation map
 
+Demo ứng dụng: [Combo đủ ba loại và giới hạn lưu nháp](demo/combo-demo/README.md)
+gồm CSV theo catalog hiện tại, runner DB riêng và tài khoản xem thử.
+
 Đây là điểm vào cho tài liệu nghiên cứu. Không đọc toàn bộ `docs/research/` cho
 mọi task; chọn tài liệu theo phạm vi để tránh làm đầy context bằng lịch sử không
 liên quan.

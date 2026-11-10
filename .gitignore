@@ -36,6 +36,10 @@ results/*
 
 # Keep reproducibility notes while excluding locally acquired source documents.
 docs/*
+!docs/demo/
+docs/demo/*
+!docs/demo/combo-demo/
+!docs/demo/combo-demo/**
 !docs/README.md
 !docs/auth/
 docs/auth/*

@@ -1,0 +1,202 @@
+[
+  {
+    "sku": "SV3V2-P01",
+    "name": "Laptop Lenovo ThinkPad T14",
+    "price": "14500000.00",
+    "productId": "44911b23-5ce3-5f64-b506-40475571552e",
+    "categoryId": "e94fd8e6-4e01-54d7-9872-73b19997722f",
+    "categoryName": "Laptop",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P02",
+    "name": "Laptop Dell XPS 13 9350",
+    "price": "12000000.00",
+    "productId": "6233689c-6c43-5900-82dc-71a469a702d3",
+    "categoryId": "e94fd8e6-4e01-54d7-9872-73b19997722f",
+    "categoryName": "Laptop",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P03",
+    "name": "Laptop Apple MacBook Air 15 inch M4",
+    "price": "32000000.00",
+    "productId": "351f011a-2ad4-5926-a8f9-8060a029a230",
+    "categoryId": "e94fd8e6-4e01-54d7-9872-73b19997722f",
+    "categoryName": "Laptop",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P04",
+    "name": "Loa Bose MediaMate",
+    "price": "1500000.00",
+    "productId": "ff61761c-4237-50e3-a649-ed7e240da45f",
+    "categoryId": "5bd6a957-c0d1-5c73-a237-4fe41d161727",
+    "categoryName": "Loa",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P05",
+    "name": "Loa Bluetooth JBL Flip 3",
+    "price": "1800000.00",
+    "productId": "d0b6e9d6-1153-5c18-aae5-0ed36613d08c",
+    "categoryId": "5bd6a957-c0d1-5c73-a237-4fe41d161727",
+    "categoryName": "Loa",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P06",
+    "name": "Bàn phím Lenovo",
+    "price": "250000.00",
+    "productId": "9270d3f2-d6fc-59c8-ae62-af405760bd7f",
+    "categoryId": "8b877527-9862-571f-bf47-61cb515da304",
+    "categoryName": "Bàn phím",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P07",
+    "name": "Bàn phím cơ Keychron K4",
+    "price": "1900000.00",
+    "productId": "d4a0fa3a-4423-5ea6-b7c5-3ecad512e05c",
+    "categoryId": "8b877527-9862-571f-bf47-61cb515da304",
+    "categoryName": "Bàn phím",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P08",
+    "name": "Bàn phím Bluetooth Logicool K380 (layout Nhật)",
+    "price": "850000.00",
+    "productId": "e67ef12e-6769-57f0-8660-04509d9aaf02",
+    "categoryId": "8b877527-9862-571f-bf47-61cb515da304",
+    "categoryName": "Bàn phím",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P09",
+    "name": "Máy chơi game Nintendo Switch",
+    "price": "7500000.00",
+    "productId": "5834abaf-2c90-525b-8805-13e5361862d3",
+    "categoryId": "f7418e6b-2772-5ed6-b5b8-9bebf809f7c4",
+    "categoryName": "Máy chơi game",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P10",
+    "name": "Máy chơi game Sony PlayStation 4",
+    "price": "6500000.00",
+    "productId": "15150afe-c955-5864-8459-e404001cfbe4",
+    "categoryId": "f7418e6b-2772-5ed6-b5b8-9bebf809f7c4",
+    "categoryName": "Máy chơi game",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P11",
+    "name": "Chuột không dây Logitech M196",
+    "price": "250000.00",
+    "productId": "31053a4f-cc1c-5637-93f3-4c60ca57d8af",
+    "categoryId": "56f90ed8-3291-5285-9e08-91b94aa88ecc",
+    "categoryName": "Chuột",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P12",
+    "name": "Chuột gaming Logitech G502 Hero",
+    "price": "1100000.00",
+    "productId": "b39d390d-6719-535c-acc6-cd6dbf08f72c",
+    "categoryId": "56f90ed8-3291-5285-9e08-91b94aa88ecc",
+    "categoryName": "Chuột",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P13",
+    "name": "Chuột Bluetooth Logitech M557",
+    "price": "650000.00",
+    "productId": "e51c64db-1103-5604-a38a-23fea797616a",
+    "categoryId": "56f90ed8-3291-5285-9e08-91b94aa88ecc",
+    "categoryName": "Chuột",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P14",
+    "name": "CPU AMD Ryzen 5 3400G",
+    "price": "2300000.00",
+    "productId": "954aa1f1-78de-5021-a1cc-9abf58112d32",
+    "categoryId": "60d15200-9739-5f4e-a6c0-ac8be9633054",
+    "categoryName": "CPU",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P15",
+    "name": "CPU Intel Core i7-12700KF",
+    "price": "6200000.00",
+    "productId": "b2484b99-4d31-50c1-8bd0-02813a36fa70",
+    "categoryId": "60d15200-9739-5f4e-a6c0-ac8be9633054",
+    "categoryName": "CPU",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P16",
+    "name": "PC Dell OptiPlex 790",
+    "price": "5500000.00",
+    "productId": "75931024-d6d0-5631-8b7e-288519e6c32f",
+    "categoryId": "ec3fb12d-abd1-5b4d-bb5b-b41819cea002",
+    "categoryName": "PC",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P17",
+    "name": "Mini PC Apple Mac mini M4",
+    "price": "16500000.00",
+    "productId": "d4ef642a-8f01-5925-a1c8-892a4d7abbe0",
+    "categoryId": "ec3fb12d-abd1-5b4d-bb5b-b41819cea002",
+    "categoryName": "PC",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P18",
+    "name": "Mini PC Intel NUC 2820FYKH",
+    "price": "3500000.00",
+    "productId": "9a0be66d-8710-53d2-b6fc-0ee83b8c2423",
+    "categoryId": "ec3fb12d-abd1-5b4d-bb5b-b41819cea002",
+    "categoryName": "PC",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P19",
+    "name": "Balo Wenger",
+    "price": "950000.00",
+    "productId": "407ef449-c328-548e-82fb-3e1523965fee",
+    "categoryId": "9a453e78-cdaa-50b9-adf3-d6293ce7d1b4",
+    "categoryName": "Balo",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  },
+  {
+    "sku": "SV3V2-P20",
+    "name": "Balo Eastpak Sugarbush đen",
+    "price": "1200000.00",
+    "productId": "46244aa8-931d-526f-915e-1f5eb2533627",
+    "categoryId": "9a453e78-cdaa-50b9-adf3-d6293ce7d1b4",
+    "categoryName": "Balo",
+    "productStatus": "ACTIVE",
+    "categoryStatus": "ACTIVE"
+  }
+]
