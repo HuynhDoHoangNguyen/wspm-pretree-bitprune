@@ -36,6 +36,9 @@ public class ProductEntity {
     @Column(name = "current_price", precision = 19, scale = 2)
     private BigDecimal price;
 
+    @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
+    private java.time.LocalDateTime createdAt;
+
     protected ProductEntity() {}
 
     public ProductEntity(

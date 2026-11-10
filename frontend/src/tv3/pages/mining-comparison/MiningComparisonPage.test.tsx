@@ -1,0 +1,238 @@
+import React from 'react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { getMiningRun, listMiningRuns } from '../mining-run/MiningRun.api';
+import type { MiningRunDetail } from '../mining-run/MiningRun.types';
+import MiningComparison from './MiningComparison';
+import MiningComparisonPage from './MiningComparisonPage';
+import { authSession } from 'auth/session';
+import { setWdmAuthAdapter } from 'api/admin/data-mining';
+
+jest.mock('../mining-run/MiningRun.api', () => ({ listMiningRuns: jest.fn(), getMiningRun: jest.fn() }));
+const list = listMiningRuns as jest.MockedFunction<typeof listMiningRuns>;
+const detail = getMiningRun as jest.MockedFunction<typeof getMiningRun>;
+const resizeObserver = Object.getOwnPropertyDescriptor(window, 'ResizeObserver');
+beforeAll(() => Object.defineProperty(window, 'ResizeObserver', {
+  configurable: true,
+  value: class { observe() { return undefined; } unobserve() { return undefined; } disconnect() { return undefined; } },
+}));
+afterAll(() => {
+  if (resizeObserver) Object.defineProperty(window, 'ResizeObserver', resizeObserver);
+  else Reflect.deleteProperty(window, 'ResizeObserver');
+});
+function run(runId: string, algorithm: MiningRunDetail['algorithm']): MiningRunDetail {
+  return {
+    runId, algorithm, status: 'SUCCEEDED', datasetSource: 'ORDERS', snapshotId: 'same-snapshot',
+    minsupMode: 'ABSOLUTE', minsupConfigured: 1, effectiveThreshold: 1, minsupRelativeFraction: null,
+    patternCount: 12, candidateCount: 30, totalExecutionMs: 120, peakSampledJvmHeapBytes: 2048,
+    createdAt: '2026-11-06T00:00:00Z', startedAt: '2026-11-06T00:00:01Z', finishedAt: '2026-11-06T00:00:02Z',
+    maxW: 1, minW: .1, meanW: .5, datasetIoMs: 10, preprocessingMs: 20, dfsMiningMs: 50,
+    completeAlgorithmMs: 90, outputIoMs: null, errorMessage: null, sequenceCount: 100,
+    distinctItemCount: 20, validationStatus: 'VALID',
+  };
+}
+const a = run('api-a', 'WSPM_PRETREE'), b = run('api-b', 'WSPM_BITPRUNE'), b2 = run('api-b2', 'WSPM_BITPRUNE');
+const page = (items: MiningRunDetail[], index = 0, totalPages = 1) => ({ items, page: index, size: 100, totalElements: items.length, totalPages });
+const admin = { userId: 'admin-1', username: 'unit', email: null, displayName: 'Admin', status: 'ACTIVE' as const,
+  roles: ['ADMIN'], emailVerified: false };
+beforeEach(() => {
+  authSession.unauthorized();
+  authSession.useStore.setState({ status: 'authenticated', user: admin, accessToken: 'unit-token', forbidden: false, error: null });
+  list.mockReset(); detail.mockReset(); list.mockResolvedValue(page([]));
+  detail.mockImplementation(async id => [a, b, b2].find(r => r.runId === id) as MiningRunDetail);
+});
+afterEach(() => { authSession.unauthorized(); });
+function show() { return render(<MiningComparisonPage/>); }
+
+test('comparison production loads the existing API and renders empty without details or fixtures', async () => {
+  show(); expect(screen.getByRole('status')).toHaveTextContent('Đang tải RUN so sánh');
+  expect(await screen.findByText('Chưa có RUN để so sánh.')).toBeInTheDocument();
+  expect(list).toHaveBeenCalledWith({ page: 0, size: 100, algorithm: '', status: '' }, expect.any(AbortSignal));
+  expect(detail).not.toHaveBeenCalled();
+  expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  expect(screen.queryByText(/Dữ liệu minh họa/)).not.toBeInTheDocument();
+});
+
+test('comparison production includes later list pages and fetches details only for the selected pair', async () => {
+  list.mockResolvedValueOnce(page([a], 0, 2)).mockResolvedValueOnce(page([b, b2], 1, 2));
+  show();
+  const table = await screen.findByRole('table');
+  expect(list).toHaveBeenCalledTimes(2);
+  expect(list.mock.calls[1][0].page).toBe(1);
+  expect(detail.mock.calls.map(([id]) => id)).toEqual(['api-a', 'api-b']);
+  expect(screen.getByLabelText('RUN B — WSPM_BitPrune')).toHaveValue('api-b');
+  expect(within(table).getByRole('row', { name: /Tổng thực thi/ })).toHaveTextContent('120120');
+  expect(within(table).getByRole('row', { name: /Đỉnh JVM heap lấy mẫu/ })).toHaveTextContent('2.0482.048');
+  expect(within(table).getByRole('row', { name: /Dataset I\/O/ })).toHaveTextContent('1010');
+  expect(within(table).getByRole('row', { name: /Output I\/O/ })).toHaveTextContent('Chưa có dữ liệu');
+  expect(screen.getByText('Chưa đủ dữ liệu để so sánh hợp lệ')).toBeInTheDocument();
+  expect(screen.queryByText(/Speedup|Runtime Reduction|Memory Reduction/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('img')).not.toBeInTheDocument();
+});
+
+test('comparison production clears the previous pair, aborts stale detail and reads the new selection', async () => {
+  list.mockResolvedValue(page([a, b, b2]));
+  let finish: (value: MiningRunDetail) => void = () => undefined;
+  detail.mockImplementation(id => id === b.runId ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(a.runId === id ? a : b2));
+  show();
+  await waitFor(() => expect(detail).toHaveBeenCalledTimes(2));
+  const signal = detail.mock.calls[0][1];
+  fireEvent.change(screen.getByLabelText('RUN B — WSPM_BitPrune'), { target: { value: 'api-b2' } });
+  expect(await screen.findByRole('table')).toBeInTheDocument();
+  expect(signal?.aborted).toBe(true);
+  expect(detail).toHaveBeenCalledWith('api-b2', expect.any(AbortSignal));
+  await act(async () => { finish({ ...b, totalExecutionMs: 999999 }); });
+  expect(screen.queryByText(/999.999/)).not.toBeInTheDocument();
+  expect(screen.getByLabelText('RUN B — WSPM_BitPrune')).toHaveValue('api-b2');
+});
+
+test('comparison production list errors retry the shared API and do not fallback to fixtures', async () => {
+  list.mockRejectedValueOnce(new Error('Unavailable')); show();
+  fireEvent.click(await screen.findByRole('button', { name: 'Thử lại' }));
+  expect(await screen.findByText('Chưa có RUN để so sánh.')).toBeInTheDocument();
+  expect(list).toHaveBeenCalledTimes(2);
+});
+
+test('comparison production detail errors retry the selected pair without refetching lists', async () => {
+  list.mockResolvedValue(page([a, b])); detail.mockRejectedValueOnce(new Error('Unavailable')); show();
+  fireEvent.click(await screen.findByRole('button', { name: 'Thử lại chi tiết' }));
+  expect(await screen.findByRole('table')).toBeInTheDocument();
+  expect(list).toHaveBeenCalledTimes(1);
+  expect(detail).toHaveBeenCalledTimes(4);
+});
+
+test('comparison production never treats injected PreviewPairCheck as verified evidence', async () => {
+  render(<MiningComparison source={{ load: async () => ({ runs: [a, b], previewChecks: [{
+    origin: 'PREVIEW_ONLY', preTreeRunId: a.runId, bitPruneRunId: b.runId,
+    configurationVerified: true, measurementConditionsVerified: true, fullPatternSupportMatch: true,
+  }] }) }}/>);
+  expect(await screen.findByText('Chưa đủ dữ liệu để so sánh hợp lệ')).toBeInTheDocument();
+  expect(screen.getByText(/toàn bộ cấu hình mining; DTO chưa có K/)).toBeInTheDocument();
+  expect(screen.getByText(/Chưa xác nhận cùng điều kiện đo/)).toBeInTheDocument();
+  expect(screen.getByText(/Chưa xác nhận toàn bộ pattern/)).toBeInTheDocument();
+  expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  expect(screen.queryByText(/Speedup|Runtime Reduction|Memory Reduction/)).not.toBeInTheDocument();
+});
+
+test.each([
+  [{ snapshotId: 'other' }, /Dataset\/snapshot không trùng/],
+  [{ effectiveThreshold: 2 }, /Minsup cấu hình\/ngưỡng hiệu lực khác nhau/],
+  [{ patternCount: 13 }, /Số pattern khác nhau/],
+  [{ status: 'RUNNING' }, /Cả hai RUN phải hoàn thành/],
+] as const)('comparison production rejects incompatible metadata %j', async (changes, reason) => {
+  list.mockResolvedValue(page([a, b])); detail.mockImplementation(async id => id === a.runId ? a : { ...b, ...changes });
+  show();
+  expect(await screen.findByText(reason)).toBeInTheDocument();
+  expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  expect(screen.queryByText(/Speedup|Runtime Reduction|Memory Reduction/)).not.toBeInTheDocument();
+});
+
+test('comparison production with only one algorithm explains the missing pair without requesting details', async () => {
+  list.mockResolvedValue(page([a])); show();
+  expect(await screen.findByText(/Không có RUN phù hợp:/)).toBeInTheDocument();
+  expect(detail).not.toHaveBeenCalled();
+});
+
+test.each([
+  [page([a], 0, 2), page([a, b], 1, 2)],
+  [page([a], 1, 2)],
+  [{ ...page([a]), totalPages: -1 }],
+])('invalid pagination or duplicate RUNs fail without partial data or details', async (...pages) => {
+  pages.forEach(result => list.mockResolvedValueOnce(result));
+  show();
+  expect(await screen.findByRole('button', { name: 'Thử lại' })).toBeVisible();
+  expect(detail).not.toHaveBeenCalled();
+  expect(screen.queryByRole('table')).not.toBeInTheDocument();
+});
+
+test('PERCENT remains visible and explicitly unsupported without changing saved values', async () => {
+  const percent = { ...a, minsupMode: 'PERCENT', minsupConfigured: 14, minsupRelativeFraction: .14, effectiveThreshold: .98 };
+  list.mockResolvedValue(page([percent, b]));
+  detail.mockImplementation(async id => id === a.runId ? percent : b);
+  show();
+  const table = await screen.findByRole('table');
+  expect(within(table).getByRole('row', { name: /Mode support đã lưu/ })).toHaveTextContent('PERCENT');
+  expect(within(table).getByRole('row', { name: /Ngưỡng hiệu lực/ })).toHaveTextContent('0,98');
+  expect(within(table).getByRole('row', { name: /MaxW/ })).toHaveTextContent('11');
+  expect(screen.getByText(/không tự chuyển PERCENT thành RELATIVE/)).toBeVisible();
+  expect(screen.queryByRole('img')).not.toBeInTheDocument();
+});
+
+test.each(['logout', 'identity', 'forbidden', 'role', 'unavailable', 'same-user-relogin'])(
+  '%s clears private data, aborts pending detail and requires a fresh authorized load', async change => {
+    list.mockResolvedValue(page([a, b, b2]));
+    show(); await screen.findByRole('table');
+    let finish: (value: MiningRunDetail) => void = () => undefined;
+    detail.mockImplementation(id => id === b2.runId ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(a));
+    fireEvent.change(screen.getByLabelText('RUN B — WSPM_BitPrune'), { target: { value: b2.runId } });
+    await waitFor(() => expect(detail).toHaveBeenCalledWith(b2.runId, expect.any(AbortSignal)));
+    const oldSignal = detail.mock.calls[detail.mock.calls.length - 1][1];
+    list.mockResolvedValue(page([]));
+    act(() => {
+      if (change === 'logout') authSession.unauthorized();
+      if (change === 'identity') authSession.useStore.setState({ user: { ...admin, userId: 'admin-2' } });
+      if (change === 'forbidden') authSession.forbidden();
+      if (change === 'role') authSession.useStore.setState({ user: { ...admin, roles: ['CUSTOMER'] } });
+      if (change === 'unavailable') authSession.useStore.setState({ status: 'unavailable' });
+      if (change === 'same-user-relogin') {
+        authSession.unauthorized();
+        authSession.useStore.setState({ status: 'authenticated', user: admin, accessToken: 'new-token', forbidden: false });
+      }
+    });
+    expect(oldSignal?.aborted).toBe(true);
+    expect(screen.queryByLabelText('RUN B — WSPM_BitPrune')).not.toBeInTheDocument();
+    await act(async () => { finish({ ...b2, totalExecutionMs: 999999 }); });
+    expect(screen.queryByText(/999.999/)).not.toBeInTheDocument();
+    if (!['identity', 'same-user-relogin'].includes(change)) {
+      act(() => authSession.useStore.setState({ status: 'authenticated', user: admin, accessToken: 'new-token', forbidden: false }));
+    }
+    expect(await screen.findByText('Chưa có RUN để so sánh.')).toBeVisible();
+    expect(list).toHaveBeenCalledTimes(2);
+  }
+);
+
+test('unmount aborts list discovery and late list results never request details', async () => {
+  let finish: (value: ReturnType<typeof page>) => void = () => undefined;
+  list.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const view = show();
+  await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+  const signal = list.mock.calls[0][1];
+  view.unmount();
+  expect(signal?.aborted).toBe(true);
+  await act(async () => { finish(page([a, b])); });
+  expect(detail).not.toHaveBeenCalled();
+});
+
+test('a missing or mismatched detail cannot render source data and can retry', async () => {
+  list.mockResolvedValue(page([a, b]));
+  detail.mockResolvedValueOnce(a).mockResolvedValueOnce({ ...b, runId: 'unexpected' });
+  show();
+  expect(await screen.findByRole('button', { name: 'Thử lại chi tiết' })).toBeVisible();
+  expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Thử lại chi tiết' }));
+  expect(await screen.findByRole('table')).toBeVisible();
+});
+
+test('production uses the real RUN client, shared envelope and latest Auth transport for list and details', async () => {
+  const originalFetch = global.fetch;
+  const fetcher = jest.fn().mockImplementation(async (url: string) => ({
+    ok: true, status: 200, body: null,
+    headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? 'application/json' : name === 'X-Request-Id' ? 'comparison-request' : null },
+    text: async () => JSON.stringify({ code: 'SUCCESS', message: 'Request completed successfully.', requestId: 'comparison-request',
+      data: url.includes('?') ? page([a, b]) : url.endsWith(a.runId) ? a : b }),
+  } as unknown as Response));
+  global.fetch = fetcher;
+  setWdmAuthAdapter({ getAccessToken: authSession.token, getSessionSignal: authSession.signal,
+    onUnauthorized: authSession.unauthorized, onForbidden: authSession.forbidden });
+  const actual = jest.requireActual('../mining-run/MiningRun.api') as typeof import('../mining-run/MiningRun.api');
+  list.mockImplementation(actual.listMiningRuns); detail.mockImplementation(actual.getMiningRun);
+  try {
+    show(); await screen.findByRole('table');
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      '/api/v1/admin/mining-runs?page=0&size=100', '/api/v1/admin/mining-runs/api-a', '/api/v1/admin/mining-runs/api-b',
+    ]);
+    fetcher.mock.calls.forEach(([, options]) => {
+      expect(options.method).toBe('GET');
+      expect(options.headers.get('Authorization')).toBe('Bearer unit-token');
+    });
+  } finally { global.fetch = originalFetch; setWdmAuthAdapter(null); }
+});

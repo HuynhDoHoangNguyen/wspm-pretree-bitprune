@@ -27,13 +27,16 @@ class ProductServiceTest {
     @Mock
     private ProductMapper productMapper;
 
+    @Mock
+    private vn.edu.wspm.backend.repositories.ProductImageRepository productImageRepository;
+
     @InjectMocks
     private ProductService productService;
 
     @Test
     @DisplayName("findAll returns mapped product response list")
     void shouldFindAllProducts() {
-        ProductEntity entity = org.mockito.Mockito.mock(ProductEntity.class);
+        ProductEntity entity = new ProductEntity("prod-1", "Product A", null, "ACTIVE", BigDecimal.TEN);
         ProductResponse response = new ProductResponse("prod-1", "Product A", "cat-1", "ACTIVE", BigDecimal.TEN);
 
         given(productRepository.findAllByOrderByProductNameAsc()).willReturn(List.of(entity));

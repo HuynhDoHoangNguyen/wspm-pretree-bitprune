@@ -88,6 +88,7 @@ import ClientReward from 'pages/client-reward';
 import ClientSignup from 'pages/client-signup';
 import ClientForgotPassword, { ClientChangePassword } from 'pages/client-forgot-password';
 import { AuthRoutes } from 'auth/AuthBoundary';
+import { createTV3ClientRoutes } from 'tv3/routing/routes';
 
 const queryClient = new QueryClient();
 
@@ -106,6 +107,7 @@ function App() {
               <AuthRoutes>
                 <Route path="/" element={<Client/>}>
                   <Route index element={<ClientHome/>}/>
+                  {createTV3ClientRoutes()}
                   <Route path="/*" element={<ClientError/>}/>
                   <Route path="/all-categories" element={<ClientAllCategories/>}/>
                   <Route path="/category/:slug" element={<ClientCategory/>}/>

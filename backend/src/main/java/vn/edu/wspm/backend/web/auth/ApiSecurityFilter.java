@@ -43,9 +43,12 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
                                                     "/api/v1/auth/" + name)))
                     .toList();
     private static final List<PathPattern> PUBLIC_READS =
-            List.of("/api/health", "/api/v1/products", "/api/v1/categories").stream()
+            List.of("/api/health", "/api/v1/products", "/api/v1/products/{productId}", "/api/v1/categories").stream()
                     .map(PathPatternParser.defaultInstance::parse)
                     .toList();
+    private static final List<PathPattern> COMBO_READS =
+            List.of("/api/v1/recommendations/combos", "/api/v1/recommendations/combos/{comboId}")
+                    .stream().map(PathPatternParser.defaultInstance::parse).toList();
     private final StrictHttpFirewall firewall = new StrictHttpFirewall();
     private final ObjectMapper mapper;
     private final SharedRequestAuthenticator authenticator;
@@ -109,6 +112,8 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
                         .pathWithinApplication();
         if (ADMIN.matches(path) || AUTH.stream().anyMatch(route -> route.path().matches(path)))
             return true;
+        if ("GET".equals(request.getMethod()) && COMBO_READS.stream().anyMatch(route -> route.matches(path)))
+            return true;
         return ("GET".equals(request.getMethod()) || "HEAD".equals(request.getMethod()))
                 && PUBLIC_READS.stream().anyMatch(route -> route.matches(path));
     }
@@ -118,6 +123,13 @@ public class ApiSecurityFilter extends OncePerRequestFilter {
         PathContainer path =
                 RequestPath.parse(request.getRequestURI(), request.getContextPath())
                         .pathWithinApplication();
+        // Combo reads are GET-only; preserve the existing Catalog HEAD policy.
+        if (COMBO_READS.stream().anyMatch(route -> route.matches(path))
+                && !"GET".equals(request.getMethod())) {
+            response.setHeader("Allow", "GET");
+            reject(request, response, ErrorCode.METHOD_NOT_ALLOWED, "Request method is not supported.");
+            return false;
+        }
         for (AuthRoute route : AUTH) {
             if (!route.path().matches(path) || route.allowed(request.getMethod())) continue;
             // Keep identity authentication ahead of method/resource disclosure.

@@ -14,6 +14,8 @@ public interface ProductRepository
 
     List<ProductEntity> findAllByOrderByProductNameAsc();
 
+    List<ProductEntity> findAllByOrderByCreatedAtDescProductIdAsc();
+
     /** Candidates only: database collation can match more than exact Java strings. */
     @Query("select p.productId from ProductEntity p where p.productId in :ids")
     List<String> findReferenceCandidates(@Param("ids") Collection<String> ids);

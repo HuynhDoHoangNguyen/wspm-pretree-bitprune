@@ -1,38 +1,20 @@
 import React from 'react';
 import { Button, Grid, Group, Skeleton, Stack, Text, Title, useMantineTheme } from '@mantine/core';
 import { AlertTriangle, List, Marquee } from 'tabler-icons-react';
-import { ClientProductCard } from 'components';
-import { useQuery } from 'react-query';
-import FetchUtils, { ErrorMessage, ListResponse } from 'utils/FetchUtils';
-import { ClientListedProductResponse } from 'types';
-import ResourceURL from 'constants/ResourceURL';
-import NotifyUtils from 'utils/NotifyUtils';
+import { Link } from 'react-router-dom';
+import useLatestProducts from 'tv3/hooks/useLatestProducts';
+import ProductCard from 'tv3/components/ProductCard';
 
 function ClientHomeLatestProducts() {
   const theme = useMantineTheme();
 
-  const requestParams = { size: 12, newable: true, saleable: true };
-
-  const {
-    data: productResponses,
-    isLoading: isLoadingProductResponses,
-    isError: isErrorProductResponses,
-  } = useQuery<ListResponse<ClientListedProductResponse>, ErrorMessage>(
-    ['client-api', 'products', 'getAllProducts', requestParams],
-    () => FetchUtils.get(ResourceURL.CLIENT_PRODUCT, requestParams),
-    {
-      onError: () => NotifyUtils.simpleFailed('Lấy dữ liệu không thành công'),
-      refetchOnWindowFocus: false,
-      keepPreviousData: true,
-    }
-  );
-  const products = productResponses as ListResponse<ClientListedProductResponse>;
+  const state = useLatestProducts();
 
   let resultFragment;
 
-  if (isLoadingProductResponses) {
+  if (state.status === 'loading') {
     resultFragment = (
-      <Stack>
+      <Stack role="status" aria-label="Đang tải sản phẩm mới nhất">
         {Array(5).fill(0).map((_, index) => (
           <Skeleton key={index} height={50} radius="md"/>
         ))}
@@ -40,30 +22,30 @@ function ClientHomeLatestProducts() {
     );
   }
 
-  if (isErrorProductResponses) {
+  if (state.status === 'error') {
     resultFragment = (
-      <Stack my={theme.spacing.xl} sx={{ alignItems: 'center', color: theme.colors.pink[6] }}>
+      <Stack role="alert" my={theme.spacing.xl} sx={{ alignItems: 'center', color: theme.colors.pink[6] }}>
         <AlertTriangle size={125} strokeWidth={1}/>
         <Text size="xl" weight={500}>Đã có lỗi xảy ra</Text>
       </Stack>
     );
   }
 
-  if (products && products.totalElements === 0) {
+  if (state.status === 'success' && state.products.length === 0) {
     resultFragment = (
-      <Stack my={theme.spacing.xl} sx={{ alignItems: 'center', color: theme.colors.blue[6] }}>
+      <Stack role="status" my={theme.spacing.xl} sx={{ alignItems: 'center', color: theme.colors.blue[6] }}>
         <Marquee size={125} strokeWidth={1}/>
         <Text size="xl" weight={500}>Không có sản phẩm</Text>
       </Stack>
     );
   }
 
-  if (products && products.totalElements > 0) {
+  if (state.status === 'success' && state.products.length > 0) {
     resultFragment = (
       <Grid>
-        {products.content.map((product, index) => (
-          <Grid.Col key={index} span={6} sm={4} md={3}>
-            <ClientProductCard product={product}/>
+        {state.products.map((product) => (
+          <Grid.Col key={product.productId} span={6} sm={4} md={3}>
+            <ProductCard product={product} getProductHref={(id) => '/products/' + encodeURIComponent(id)}/>
           </Grid.Col>
         ))}
       </Grid>
@@ -78,7 +60,7 @@ function ClientHomeLatestProducts() {
             Sản phẩm mới nhất
           </Text>
         </Title>
-        <Button variant="light" leftIcon={<List size={16}/>} radius="md">
+        <Button component={Link} to="/products" variant="light" leftIcon={<List size={16}/>} radius="md">
           Xem tất cả
         </Button>
       </Group>

@@ -29,7 +29,7 @@ class ResponseJsonContractTest {
                 "ACTIVE", new BigDecimal("123456789.25"))), "request-1"), """
                 {"code":"SUCCESS","message":"Request completed successfully.","requestId":"request-1",
                  "data":[{"productId":"9007199254740993","productName":"Chuột","categoryId":null,
-                          "productStatus":"ACTIVE","price":123456789.25}]}
+                          "productStatus":"ACTIVE","price":123456789.25,"imageUrl":null,"createdAt":null}]}
                 """);
         json(new CategoryResponse("category-1", null), """
                 {"categoryId":"category-1","categoryName":null}

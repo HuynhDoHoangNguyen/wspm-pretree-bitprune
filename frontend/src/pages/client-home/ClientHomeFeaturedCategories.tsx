@@ -1,12 +1,17 @@
 import React from 'react';
-import { Button, Card, Grid, Group, Stack, Text, Title, useMantineTheme } from '@mantine/core';
-import { List } from 'tabler-icons-react';
-import PageConfigs from 'pages/PageConfigs';
+import { Alert, Button, Grid, Group, Stack, Text, Title } from '@mantine/core';
+import { Backpack, Cpu, DeviceDesktop, DeviceGamepad, DeviceLaptop, DeviceSpeaker, Icon, Keyboard, List, Mouse } from 'tabler-icons-react';
 import { Link } from 'react-router-dom';
-import MockUtils from 'utils/MockUtils';
+import useCatalogCategories from 'tv3/hooks/useCatalogCategories';
+import CategoryCard from 'tv3/components/CategoryCard';
+
+export const categoryIcons: ReadonlyMap<string, Icon> = new Map([
+  ['balo', Backpack], ['bàn phím', Keyboard], ['chuột', Mouse], ['cpu', Cpu],
+  ['laptop', DeviceLaptop], ['loa', DeviceSpeaker], ['máy chơi game', DeviceGamepad], ['pc', DeviceDesktop],
+]);
 
 function ClientHomeFeaturedCategories() {
-  const theme = useMantineTheme();
+  const state = useCatalogCategories();
 
   return (
     <Stack>
@@ -19,37 +24,20 @@ function ClientHomeFeaturedCategories() {
             Danh mục nổi bật
           </Text>
         </Title>
-        <Button component={Link} to="/all-categories" variant="light" leftIcon={<List size={16}/>} radius="md">
+        <Button component={Link} to="/categories" variant="light" leftIcon={<List size={16}/>} radius="md">
           Xem tất cả
         </Button>
       </Group>
-      <Grid>
-        {MockUtils.featuredCategories.map(category => {
-          const CategoryIcon = PageConfigs.categorySlugIconMap[category.categorySlug];
-
-          return (
-            <Grid.Col key={category.categorySlug} span={6} sm={4} md={3}>
-              <Card
-                radius="md"
-                shadow="sm"
-                p="lg"
-                component={Link}
-                to={'/category/' + category.categorySlug}
-                sx={{
-                  '&:hover': {
-                    backgroundColor: theme.colorScheme === 'dark' ? theme.colors.dark[5] : theme.colors.gray[0],
-                  },
-                }}
-              >
-                <Group>
-                  <CategoryIcon size={50} strokeWidth={1}/>
-                  <Text>{category.categoryName}</Text>
-                </Group>
-              </Card>
-            </Grid.Col>
-          );
-        })}
-      </Grid>
+      {state.status === 'loading' ? <Text role="status">Đang tải danh mục…</Text>
+        : state.status === 'error' ? <Alert role="alert" color="red">Không tải được danh mục. Vui lòng thử lại sau.</Alert>
+          : state.categories.length === 0 ? <Text role="status">Chưa có danh mục có sản phẩm.</Text>
+            : <Grid>
+              {state.categories.map((category) => (
+                <Grid.Col key={category.categoryId} span={6} sm={4} md={3}>
+                  <CategoryCard category={category} icon={categoryIcons.get(category.categoryName?.trim().toLowerCase() || '') || List}/>
+                </Grid.Col>
+              ))}
+            </Grid>}
     </Stack>
   );
 }

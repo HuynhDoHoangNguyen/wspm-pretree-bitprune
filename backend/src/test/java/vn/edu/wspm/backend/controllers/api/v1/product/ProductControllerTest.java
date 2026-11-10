@@ -32,7 +32,11 @@ class ProductControllerTest {
         ProductController controller = new ProductController(productService);
         mockMvc =
                 MockMvcBuilders.standaloneSetup(controller)
+                        .setControllerAdvice(new vn.edu.wspm.backend.exception.GlobalExceptionHandler())
                         .addFilters(new vn.edu.wspm.backend.web.common.RequestIdFilter())
+                        .addFilters(new vn.edu.wspm.backend.web.auth.ApiSecurityFilter(
+                                tools.jackson.databind.json.JsonMapper.builder().build(),
+                                org.mockito.Mockito.mock(vn.edu.wspm.backend.web.auth.SharedRequestAuthenticator.class)))
                         .build();
     }
 
@@ -61,5 +65,30 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$.data[0].categoryId").value("cat-1"))
                 .andExpect(jsonPath("$.data[0].productStatus").value("ACTIVE"))
                 .andExpect(jsonPath("$.data[0].price").value(1200.0));
+    }
+
+    @Test void publicDetailUsesSameEnvelopeAndReturns404ForMissingProduct() throws Exception {
+        var created = java.time.LocalDateTime.parse("2026-11-03T10:20:30.123456");
+        given(productService.findById("p1")).willReturn(
+                new vn.edu.wspm.backend.dto.product.ProductDetailResponse("p1", "Laptop", "cat",
+                        "DISCONTINUED", new BigDecimal("123.45"), null, created, List.of()));
+        mockMvc.perform(get("/api/v1/products/p1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.productStatus").value("DISCONTINUED"))
+                .andExpect(jsonPath("$.data.price").value(123.45))
+                .andExpect(jsonPath("$.data.createdAt").value("2026-11-03T10:20:30.123456"))
+                .andExpect(jsonPath("$.data.images").isEmpty());
+        given(productService.findById("missing")).willThrow(new vn.edu.wspm.backend.exception.ApplicationException(
+                vn.edu.wspm.backend.exception.ErrorCode.RESOURCE_NOT_FOUND));
+        mockMvc.perform(get("/api/v1/products/missing"))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test void latestIsExplicitAndInvalidSortIsRejected() throws Exception {
+        given(productService.findLatest()).willReturn(List.of());
+        mockMvc.perform(get("/api/v1/products?sort=latest")).andExpect(status().isOk());
+        org.mockito.Mockito.verify(productService).findLatest();
+        org.mockito.Mockito.verify(productService, org.mockito.Mockito.never()).findAll();
+        mockMvc.perform(get("/api/v1/products?sort=unknown")).andExpect(status().isBadRequest());
     }
 }

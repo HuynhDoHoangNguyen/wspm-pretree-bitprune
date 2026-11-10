@@ -1,16 +1,22 @@
 import React from 'react';
 import { matchPath, Route } from 'react-router-dom';
-import { Database, ListSearch, PlayerPlay } from 'tabler-icons-react';
+import { Activity, ChartBar, Database, History, ListSearch, PlayerPlay } from 'tabler-icons-react';
 import ManagerPath from 'constants/ManagerPath';
 import DataMiningGuard from './DataMiningGuard';
 import DatasetsPage from './DatasetsPage';
 import MiningRunsPage from './MiningRunsPage';
 import PatternsPage from './PatternsPage';
 import SnapshotDetailPage from './SnapshotDetailPage';
+import MiningRunHistory from 'tv3/pages/mining-run/MiningRunHistory';
+import MiningMonitoringPage from 'tv3/pages/mining-monitoring/MiningMonitoringPage';
+import MiningComparisonPage from 'tv3/pages/mining-comparison/MiningComparisonPage';
 
 export const dataMiningPages = [
   { path: ManagerPath.DATASETS, label: 'Dữ liệu khai phá', Component: DatasetsPage, Icon: Database },
   { path: ManagerPath.MINING_RUNS, label: 'Lần chạy khai phá', Component: MiningRunsPage, Icon: PlayerPlay },
+  { path: '/admin/mining-run-history', label: 'Lịch sử Mining RUN', Component: MiningRunHistory, Icon: History },
+  { path: '/admin/mining-monitoring', label: 'Giám sát Mining', Component: MiningMonitoringPage, Icon: Activity },
+  { path: '/admin/mining-comparison', label: 'So sánh thuật toán', Component: MiningComparisonPage, Icon: ChartBar },
   { path: ManagerPath.PATTERNS, label: 'Mẫu khai phá', Component: PatternsPage, Icon: ListSearch },
 ];
 

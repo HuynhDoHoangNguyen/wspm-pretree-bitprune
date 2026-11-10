@@ -232,7 +232,7 @@ function ClientHeader() {
                 opened={openedCategoryMenu}
                 onClose={() => setOpenedCategoryMenu(false)}
                 target={(
-                  <Button onClick={() => setOpenedCategoryMenu((o) => !o)} leftIcon={<List size={16}/>} radius="md">
+                  <Button component={Link} to="/categories" leftIcon={<List size={16}/>} radius="md">
                     Danh mục sản phẩm
                   </Button>
                 )}
