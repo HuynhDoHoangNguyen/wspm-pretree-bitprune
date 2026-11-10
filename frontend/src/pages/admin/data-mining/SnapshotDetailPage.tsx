@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { Alert, Anchor, Badge, Button, Group, Paper, Stack, Text, Title } from '@mantine/core';
 import { datasetApi, SnapshotDetail, ValidationReport, WdmApiError } from 'api/admin/data-mining';
 import useTitle from 'hooks/use-title';
@@ -9,6 +9,7 @@ import SnapshotValidationPanel from './SnapshotValidationPanel';
 import SnapshotConversionPanel from './SnapshotConversionPanel';
 import useWorkspaceStyles from './workspace.styles';
 import CopyValue from './CopyValue';
+import { StoragePanel } from './WorkspacePanels';
 
 const tabs = [{ key: 'source', label: '1. Dữ liệu gốc' }, { key: 'validation', label: '2. Kiểm tra dữ liệu' },
   { key: 'conversion', label: '3. Chuyển đổi & thống kê' }];
@@ -61,6 +62,8 @@ function RawDownload({ detail }: { detail: SnapshotDetail }) {
 export default function SnapshotDetailPage() {
   useTitle('Chi tiết snapshot');
   const id = useParams<{ snapshotId: string }>().snapshotId || '';
+  const location = useLocation();
+  const back = (location.state as { returnTo?: string } | null)?.returnTo;
   const { classes } = useWorkspaceStyles();
   const [params, setParams] = useSearchParams();
   const [selection, setSelection] = useState({ id: '', tab: 'source' });
@@ -111,7 +114,7 @@ export default function SnapshotDetailPage() {
     : detail?.conversionStatus === 'SUCCEEDED' ? 'Xem kết quả chuyển đổi' : detail?.conversionStatus === 'RUNNING' ? 'Theo dõi chuyển đổi'
       : detail?.conversionStatus === 'FAILED' ? 'Xem lỗi chuyển đổi' : 'Mở bước chuyển đổi';
   return <div className={classes.root}><Stack spacing="lg">
-    <Anchor component={Link} to="/admin/datasets">Về trang dữ liệu</Anchor>
+    <Anchor component={Link} to={back?.startsWith('/admin/datasets?') ? back : '/admin/datasets'}>Về trang dữ liệu</Anchor>
     <div className={classes.hero}><Stack spacing="sm">
       <Group position="apart"><Title order={2}>Chi tiết snapshot</Title><Group spacing="xs">
         {detail && <Badge color={detail.conversionStatus === 'SUCCEEDED' ? 'teal' : detail.validationStatus === 'INVALID' || detail.conversionStatus === 'FAILED' ? 'red' : 'blue'}>
@@ -131,6 +134,9 @@ export default function SnapshotDetailPage() {
       Có thông báo cần xem tại bước {validationActivity.error ? 'Kiểm tra dữ liệu' : 'Chuyển đổi & thống kê'}. Hãy mở bước đó để xem chi tiết và kiểm tra lại trạng thái.
     </Alert>}
     {detail && <>
+      <Group><Anchor component={Link} to={'/admin/mining-runs?tab=history&snapshotId=' + detail.snapshotId}>Xem lịch sử run của dữ liệu này</Anchor>
+        {detail.conversionStatus === 'SUCCEEDED' && <Button component={Link} to={'/admin/mining-runs?snapshotId=' + detail.snapshotId}>Chạy với dữ liệu này</Button>}</Group>
+      <StoragePanel snapshotId={detail.snapshotId}/>
       <Paper withBorder radius="md" p="md"><dl className={classes.summary}>
         <Field label="Tên nguồn" value={detail.sourceName}/>
         <Field label="Trạng thái kiểm tra" value={detail.validationStatus ? validations[detail.validationStatus] : null}/>

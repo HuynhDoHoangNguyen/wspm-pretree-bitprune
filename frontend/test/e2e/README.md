@@ -1,5 +1,270 @@
 # Browser E2E gates
 
+## Native WDM-06 → Combo generation/review gate
+
+Build current frontend into a fresh `BUILD_PATH`, compile/package backend, set
+`WDM_E2E_BUILD_DIR`, then run from repository root:
+
+```powershell
+$env:TV2_NATIVE_COMBO_GATE='1'
+$env:WDM_ENGINE_REGRESSION='0'
+node frontend/test/e2e/engine-run.mjs
+```
+
+This mode reuses the real Engine E2E runner with owned MySQL/Flyway V1–V5, shared
+Auth/CSRF, current application build and production business policy. It uploads
+`native-combo.csv`, validates/converts, runs both engines and publishes through
+native WDM services. No Pattern or Combo is seeded. Explicit synthetic catalog
+uses the approved category IDs. UI preview writes no batch; generation persists
+all validated groups beyond K, then native review checks current catalog/evidence.
+The gate tests stable retry/reconciliation, two Admin contexts, principal audit,
+protected mining readback and restart with execution disabled. It is fixture
+correctness evidence, not live rollout or performance acceptance.
+
+Evidence is retained under ignored `.agent-workspace/phase-wdm/TV2-NATIVE-COMBO-*`.
+If an existing serving JVM holds the backend JAR, do not replace/stop it implicitly.
+`WDM_E2E_BACKEND_JAR` can point to an owned Boot JAR copy updated with all current
+compiled `BOOT-INF/classes` by JDK `jar --update`. Dependencies/core remain from
+the Maven package; runner verifies the nested core hash. Record this packaging
+method and JAR/source hashes; it is separate from a fresh Maven release package.
+No source changes may be made while a gate runs (the runner compares inventories).
+
+After WDM-06 integration, `/admin/patterns` and its detail route belong to the
+published-result pages. The retained TV2 filter Explorer uses
+`/admin/pattern-explorer` and `/api/v1/admin/pattern-runs/...`; its fixture runner
+follows those separate routes. The WDM publication endpoints remain unchanged.
+The TV2 migration-review candidates still require version/schema reconciliation
+with production V3/V4 before their old disposable schema harness can be reused.
+
+TV2 Pattern/Combo fixture gate: `node frontend/test/e2e/tv2-run.mjs` from root.
+It uses a test-classpath backend, actual application build and owned disposable
+MySQL with V1–V4. It does not use the running demo server or fake HTTP responses.
+See [NEXT-04 manual setup and mining handoff](../../../docs/research/TV2-NEXT-04_manual_and_mining_handoff.md)
+for compilation/classpath prerequisites, optional manual mode, expected results
+and cleanup. Its fixture acceptance is separate from real mining acceptance.
+
+## WDM-06.12 Final Result E2E gate
+
+From the repository root (PowerShell), use a fresh build directory and compile
+the production package plus test helpers, without `clean`:
+
+```powershell
+$env:BUILD_PATH='../.agent-workspace/phase-wdm/WDM-06.12-build-' + [guid]::NewGuid().ToString('N')
+$env:CI='false'
+npm --prefix frontend run build
+mvn -B -pl backend -am package -DskipTests
+$env:WDM_E2E_BUILD_DIR=$env:BUILD_PATH.Substring(3)
+$env:WDM_FINAL_RESULT_GATE='1'
+Remove-Item Env:WDM_FINAL_RESULT_CONTROLS_ONLY -ErrorAction SilentlyContinue
+$env:WDM_ENGINE_REGRESSION='1'
+node frontend/test/e2e/engine-run.mjs
+```
+
+`WDM_FINAL_RESULT_GATE=1` selects `final-result-cases.mjs`. Unset it to run the
+independent 05.10 engine or 06.11 publication modes. Each invocation creates a
+new evidence directory, labelled MySQL 8.4 container, private storage and Java
+processes; it does not change owner `.env`, database, or running application.
+Only the invocation's owned runtime/container/temp files are cleaned. Evidence
+is retained on failure and success; no credentials or tokens are exported.
+For a focused control-development run only, set `WDM_FINAL_RESULT_CONTROLS_ONLY=1`
+and `WDM_ENGINE_REGRESSION=0`. This skips the full matrix/multipage/restart checks,
+labels RESULT scope `FOCUSED_CONTROLS_ONLY`, and cannot satisfy the final AC gate.
+Unset `WDM_FINAL_RESULT_CONTROLS_ONLY` for the final full run.
+If Windows locks an existing backend JAR, package to a fresh owned output directory
+and set `WDM_E2E_BACKEND_JAR` to that workspace-relative JAR path and
+`WDM_E2E_BACKEND_TEST_CLASSES` to its compiled test-classes directory. The runner
+still extracts and verifies the actual packaged core bytes and helper allowlist;
+it does not stop an owner process to replace a locked artifact.
+
+Preparation uploads/validates/converts snapshots through real APIs. All six tiny
+matrix runs (two engines times ABSOLUTE 0.1 / PERCENT 14 / PERCENT 100) and both
+multipage runs, plus both numeric-item-order regressions, are created through the
+real Admin form and HTTP 202. Original
+input, complete maps and raw-double metadata are captured atomically in the
+test-only transparent delegate before return. Serial call indices bind each
+capture to its actual request/run; retained-Outcome polling is not used.
+`FinalResultE2EVerifier.java` reuses the accepted core oracle bridge and the exact
+core bytes extracted from the backend JAR. It is not production code.
+
+`backend/src/test/resources/wdm/csv-v1/multipage.csv` is a synthetic CSV-v1
+correctness fixture, not acquired transaction data. Customers MP-A and MP-B each
+have orders at 00:00:01/02/03.000000Z on 2026-11-01; their product itemsets are
+`<(mp-p1 mp-p2)(mp-p1 mp-p3)(mp-p2)>`. One order remains one itemset; each customer
+remains one sequence. There are at most 4*4*2 subsequence choices per sequence.
+The focused core test independently enumerates the expected full map and requires
+more than 20 patterns. The gate checks the converted structure explicitly:
+after the tiny fixture allocates IDs 1..3, these products use global IDs 4..6.
+No mined output is seeded and no threshold is adjusted to obtain pagination.
+
+`numeric-item-order.csv` is an independent hand-authored synthetic regression:
+ten customers, each with one order containing one distinct product. All ten
+singleton patterns have support 1 at ABSOLUTE 0.1. After the earlier fixtures,
+global item IDs are 7..16, crossing 9/10. The original query sorted the decimal
+CHAR alias (`10,11,...,7,8,9`) instead of the numeric column and publication
+rejected the manifest. The corrected query orders by `s.item_id`. Both engines'
+original/direct/oracle maps and every downstream layer must still agree across
+restart. This does not alter numeric comparisons, mining, schema or manifest
+version; it restores the contract's existing numeric item ordering.
+
+The gate compares every DB temporal coordinate, every API and rendered UI
+page/detail, all item statistics, actual UI downloads and the production Java
+provider. It repeats all reads across real JVM restart and execution-disabled
+restart, checks historical catalog snapshots and hashes mining/result/Combo
+tables to reject read-side writes (Auth lifecycle writes are excluded). Each DB
+corruption uses a separate genuine run and is never repaired. Copied artifacts
+exercise the independent verifier separately. Edge network throttling changes
+timing only for real request/download cancellation on run change, logout and
+role loss; it does not fabricate HTTP success responses.
+
+`PREPARATION.json`, `FLYWAY.tsv`, pre-return captures, `*-ORACLE.log`, full
+`<runId>-<phase>.json` comparisons, screenshots and `RESULT.json` identify each
+layer. `REGRESSION.log` exists only with `WDM_ENGINE_REGRESSION=1`. A browser PASS
+does not itself close AC11/12 or grant owner acceptance: run frontend regression,
+TypeScript, targeted lint and build separately, then review the contract AC table.
+This is correctness evidence, not a performance benchmark or owner rollout.
+
+## WDM-06.11 publication gate
+
+Build the frontend to a fresh task-owned BUILD_PATH, package the reactor with
+`mvn -B -pl backend -am package -DskipTests` (keep test helper compilation), then
+set `WDM_E2E_BUILD_DIR` to that build and `WDM_RESULT_PUBLICATION_GATE=1` before
+running `node frontend/test/e2e/engine-run.mjs`. Set `WDM_ENGINE_REGRESSION=1` to
+run the full core/backend suite on this gate's disposable datasource. Owner DB,
+.env and owner processes are untouched. The harness now expects Flyway V1–V4.
+
+This mode enables the actual publication consumer and records each original
+engine map inside the transparent test-only engine delegate before returning it.
+It verifies both engines against DB/browser-download full maps, published
+Explorer/detail navigation, capacity reuse through a third run, empty output,
+actual JVM restart, anonymous export denial and post-publication corruption.
+No original Outcome polling race is needed. Helpers stay outside production JARs.
+Evidence lives in a unique ignored WDM-06.11 directory with RESULT/PREPARATION,
+Flyway history, original maps, downloaded JSON, logs and desktop/mobile images.
+Credentials/tokens are never written into evidence. Observations are correctness
+evidence, not performance measurements.
+
+## WDM-05.10 real Engine E2E Gate
+
+Use existing pinned dependencies, JDK 21, Maven, Node, Docker/MySQL 8.4 and
+Microsoft Edge. From repository root, build to a **fresh** output directory:
+
+```powershell
+$env:BUILD_PATH='../.agent-workspace/phase-wdm/WDM-05.10-build-' + [guid]::NewGuid().ToString('N')
+$env:CI='false'
+npm --prefix frontend run build
+mvn -B -pl backend -am package -DskipTests
+$env:WDM_E2E_BUILD_DIR=$env:BUILD_PATH.Substring(3)
+$env:WDM_ENGINE_REGRESSION='1'
+node frontend/test/e2e/engine-run.mjs
+```
+
+`-DskipTests` still compiles the test-only helpers; do not use
+`-Dmaven.test.skip=true` or `clean`. A normal production build retains existing
+lint warnings; strict `CI=true` currently rejects unrelated legacy warnings.
+The regression flag runs the full core/backend suites serially on this gate's
+owned datasource after browser cases. Without the flag, that regression is
+not executed and must be reported separately. Run frontend regression/type/lint
+checks separately; the runner never changes dependency versions.
+
+This runner serves the actual CRA build over loopback HTTPS with Secure cookies
+and real shared Auth. A new labelled disposable MySQL starts empty and receives
+actual Flyway V1, V2, V3 and Hibernate validation. It uses neither the earlier
+definitions-only dataset bootstrap nor a mocked Auth/HTTP success harness.
+Owner `.env`, database, running processes and storage are not modified.
+
+Production classes/dependencies are extracted from the exact backend JAR.
+Only four explicitly allowed E2E helper classes, compiled from backend test
+sources outside production component scan, are added to that application's
+classpath. No JUnit/test-library classpath or public observation route is added.
+The original retained result is read non-destructively in the same JVM using a
+bounded, atomically published run-ID inbox. A transparent test-only engine
+delegate captures actual structural input and supports a bounded first-call
+latch. It always calls the real engine; it never substitutes results or metrics.
+Neither helper nor the core oracle bridge may occur in production JARs.
+
+Eight base browser groups cover the real CSV upload/validation/conversion and
+downloads, both engines at ABSOLUTE 0.1/PERCENT 14/PERCENT 100, queued-artifact
+tamper, loss of an actual committed 202, and zero/underflow refusal. Each JVM
+retains at most two runs; each positive pair also proves a third POST gets 503
+without insertion. JVMs restart between batches; no automatic acknowledgement
+or durable pattern storage is introduced. Hidden tabs are brought forward for
+UI assertions because the real client deliberately pauses background polling.
+
+Every successful original full canonical `Pattern.serialize() -> exact support`
+map/count is compared against both direct engines and the existing independent
+tiny-database oracle. The separate Java verifier uses byte-identical packaged
+core code, confirms downloaded publication hashes, actual engine input structure,
+configured/resolved raw double bits and per-run native metrics vs DB/API/UI.
+Copied support/structural/deletion/one-ULP corruption controls must fail. Any
+unexpected mining disagreement stops the gate; never adjust thresholds or core
+to make it pass. R6 stays open; zero controls never enter an engine.
+
+Evidence goes to a unique ignored `.agent-workspace/phase-wdm/WDM-05.10-*`
+directory: `PREPARATION.json` (source/build/helper/tool hashes), `FLYWAY.tsv`,
+`RESULT.json`, downloaded synthetic artifacts, complete `.map.tsv`/`.properties`
+captures, verifier/negative-control/service logs and desktop/mobile screenshots.
+Original files and failed attempts remain for review. No passwords, JWTs, cookie
+jars or Auth storage dumps are written. Private staging/TLS/storage is removed
+only after absolute-path ownership checks; only this invocation's labelled
+container and spawned JVM/browser are stopped. Timing/heap observations under
+test instrumentation are correctness evidence, not performance benchmarks.
+
+The real gate also covers the actual Admin shell's run-detail route. The former
+mocked smoke entry did not include that shell and could not catch its missing
+run-detail allowlist; `src/App.test.tsx` now provides a focused regression.
+
+The workspace follow-up extends this same real gate with snapshot rediscovery
+after URL-filtered refresh, current SPMF/mapping storage metadata, denial of all
+four new read endpoints to anonymous clients, newest-first run history, and
+full retained capacity without release. It captures storage/history desktop/
+mobile and full-capacity screenshots. Select the "Tạo dữ liệu mới" tab before file-picker
+upload in the library. The extra group gives eight browser groups plus the
+optional ninth reactor-regression group. Timestamp decoders accept live Instant
+nanoseconds as well as persisted DATETIME microseconds. Legacy display/ID
+limitations are covered by focused MySQL and frontend tests, without manually
+seeding mining results or changing the real browser acquisition fixture.
+
+## WDM-05.9 metrics UI extension (mocked HTTP)
+
+From repository root:
+
+```powershell
+node frontend/test/e2e/execution-ui-smoke.mjs --metrics
+```
+
+This preserves the six execution UI groups and adds four metrics groups: both
+verified algorithm identifiers/native-counter labels, historical unknown scopes,
+missing versus measured zero/output absence, and stale metrics on failed GET.
+Synthetic values test full unsigned precision and presentation, not mining output
+or benchmark performance. One request produces one status/metrics snapshot;
+the panel must not issue its own GET.
+
+The flag retains separate evidence in a fresh `.agent-workspace/phase-wdm/WDM-05.9-browser-*` directory,
+including measured desktop/mobile/legacy screenshots and RESULT.json. The default
+05.8 mode/output path remains supported. Both modes use fixture identity in the
+real client/store/guard and intercepted HTTP, not a real backend/Auth/DB gate.
+
+## WDM-05.8 browser UI smoke (mocked HTTP)
+
+Run from repository root with existing pinned E2E dependencies installed:
+
+```powershell
+node frontend/test/e2e/execution-ui-smoke.mjs
+```
+
+The test-only entry bundles actual Admin configuration/detail routes, guard,
+hooks and shared API client with esbuild. It installs a synthetic identity in
+the real in-memory store and intercepts HTTP through Playwright; this does not
+verify real backend/shared-Auth/database integration or replace WDM-05.10.
+No production test hook, dependency update, real account or owner DB is used.
+
+Six groups cover SUPPORTED create/double click, queued/running/succeeded polling,
+direct refresh GET only, GET error retaining the last snapshot, lost POST without
+replay and CUSTOMER guard. Desktop/mobile screenshots (including a 390px
+horizontal-overflow check) and RESULT.json are retained under ignored
+`.agent-workspace/phase-wdm/WDM-05.8-browser-*`. Every invocation preserves prior evidence. The local server uses an ephemeral
+loopback port; browser/server are closed after the run, with no artifact deletion.
+
 ## WDM-04.6 configuration gate
 
 Dataset mode now runs **25 cases: the existing 17 plus 8 configuration groups**.
@@ -233,3 +498,12 @@ Admin home, upload receipt, Admin account, snapshot desktop/mobile/dark and clie
 account. These are review evidence, not screenshots of development/user data or
 a claim of complete WCAG/cross-browser certification. Auth mode retains its
 separate session-race harness and optional CRA proxy check.
+
+Run-detail header polish keeps these fixture-only smoke modes. It adds a grouped
+summary, compact run ID with exact full-URL copying, readable UTC+07 update time
+(raw UTC retained in the time element), and dataset/history navigation buttons.
+The smoke also intercepts read-only workspace capacity/dataset/storage requests;
+these fixtures do not prove real backend availability. Desktop/mobile screenshots
+in the fresh evidence directory cover the header and unchanged metrics rendering.
+`header-desktop.png` and `header-mobile.png` are cropped summary previews;
+`completed*.png` includes dataset navigation and the full detail page.

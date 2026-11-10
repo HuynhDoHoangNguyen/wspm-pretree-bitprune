@@ -239,6 +239,29 @@ it('retains an in-flight validation and its report while tabs change without rep
   expect(fetchMock.mock.calls.map(call => call[1].method)).toEqual(['GET', 'POST', 'GET']);
 });
 
+it('ignores a conversion reply after navigation to another snapshot', async () => {
+  fetchMock.mockImplementation((url: string) => Promise.resolve(json(url.includes('/validation')
+    ? { ...reportData(), rawSizeBytes: detail.rawSizeBytes }
+    : url.includes(otherId) ? { ...detail, snapshotId: otherId, sourceName: 'other.csv' } : { ...detail, validationStatus: 'VALID' })));
+  let finish!: (response: Response) => void;
+  conversionFetchMock.mockImplementation((url: string, opts: RequestInit) => opts.method === 'POST'
+    ? new Promise(resolve => { finish = resolve; })
+    : Promise.resolve(json({ ...conversionData('NOT_STARTED'), snapshotId: url.split('/').slice(-2)[0] })));
+  render(page(id, 'conversion'));
+  await screen.findByText('original.csv');
+  await within(screen.getByRole('region', { name: 'Chuyển đổi dữ liệu' })).findByText('Trạng thái conversion: NOT_STARTED');
+  const start = screen.getByRole('button', { name: 'Chuyển đổi dữ liệu', exact: true });
+  await waitFor(() => expect(start).toBeEnabled()); fireEvent.click(start);
+  const signal = conversionFetchMock.mock.calls.find(call => call[1].method === 'POST')![1].signal as AbortSignal;
+  fireEvent.click(screen.getByRole('button', { name: 'Mở snapshot khác' }));
+  await screen.findByText('other.csv');
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish(denied(503)));
+  expect(screen.queryByText('original.csv')).not.toBeInTheDocument();
+  expect(screen.queryByText(/Có thông báo cần xem tại bước/)).not.toBeInTheDocument();
+  expect(conversionFetchMock.mock.calls.filter(call => call[1].method === 'POST')).toHaveLength(1);
+});
+
 it('keeps conversion active across tab changes and exposes a hidden-step error without replay', async () => {
   const saved = { ...detail, validationStatus: 'VALID' };
   fetchMock.mockImplementation((url: string) => Promise.resolve(json(url.includes('/validation')
@@ -247,6 +270,10 @@ it('keeps conversion active across tab changes and exposes a hidden-step error w
   conversionFetchMock.mockResolvedValueOnce(json(conversionData('NOT_STARTED')))
     .mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })).mockResolvedValueOnce(denied(503));
   render(page(id, 'conversion'));
+  await screen.findByText('original.csv');
+  expect(screen.getByRole('tab', { name: /3. Chuyển đổi/ })).toHaveAttribute('aria-selected', 'true');
+  await within(screen.getByRole('region', { name: 'Chuyển đổi dữ liệu' })).findByText('Trạng thái conversion: NOT_STARTED');
+  expect(conversionFetchMock.mock.calls.map(call => call[1].method)).toEqual(['GET']);
   const start = await screen.findByRole('button', { name: 'Chuyển đổi dữ liệu', exact: true });
   await waitFor(() => expect(start).toBeEnabled()); fireEvent.click(start);
   const signal = conversionFetchMock.mock.calls[1][1].signal as AbortSignal;

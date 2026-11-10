@@ -49,7 +49,7 @@ export async function runConfigurationCases({ test, context, login, origin, sql,
   function business() { return { snapshot: snapshot(), mapping: sql('SELECT * FROM ITEM_MAPPING ORDER BY item_id;'), files: files(), runs: sql('SELECT COUNT(*) FROM MINING_RUN;') }; }
   async function session() { const ctx = await context(); return { ctx, ...await login(ctx) }; }
   async function upload(page) {
-    await page.goto(origin + '/admin/datasets');
+    await page.goto(origin + '/admin/datasets?tab=create');
     await page.getByLabel('Tệp CSV', { exact: true }).setInputFiles(path.join(resources, 'round-trip.csv'));
     const arrived = page.waitForResponse(r => r.url() === origin + base && r.request().method() === 'POST');
     await page.getByRole('button', { name: 'Upload CSV', exact: true }).click();

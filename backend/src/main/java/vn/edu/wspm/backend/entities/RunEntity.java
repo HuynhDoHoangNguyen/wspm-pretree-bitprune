@@ -45,11 +45,44 @@ public class RunEntity {
     @Column(name = "mean_w")
     private Double meanW;
 
+    @Column(name = "max_w")
+    private Double maxW;
+
+    @Column(name = "min_w")
+    private Double minW;
+
     @Column(name = "created_at")
     private Instant runTime;
 
+    @Column(name = "started_at")
+    private Instant startedAt;
+    @Column(name = "finished_at")
+    private Instant finishedAt;
+    @Column(name = "error_message", length = 2000)
+    private String errorMessage;
+    @Column(name = "execution_owner_id", length = 40)
+    private String executionOwnerId;
+    @Column(name = "execution_attempt_id", length = 40)
+    private String executionAttemptId;
+    @Column(name = "execution_lease_until")
+    private Instant executionLeaseUntil;
+
     @Column(name = "total_execution_ms")
     private Long totalExecutionMs;
+
+    @Column(name = "dataset_io_ms") private Long datasetIoMs;
+    @Column(name = "preprocessing_ms") private Long preprocessingMs;
+    @Column(name = "dfs_mining_ms") private Long dfsMiningMs;
+    @Column(name = "complete_algorithm_ms") private Long completeAlgorithmMs;
+    @Column(name = "output_io_ms") private Long outputIoMs;
+
+    public Long getDatasetIoMs() { return datasetIoMs; }
+    public Long getPreprocessingMs() { return preprocessingMs; }
+    public Long getDfsMiningMs() { return dfsMiningMs; }
+    public Long getCompleteAlgorithmMs() { return completeAlgorithmMs; }
+    public Long getOutputIoMs() { return outputIoMs; }
+    public Long getTotalExecutionMs() { return totalExecutionMs; }
+    public Long getPeakSampledJvmHeapBytes() { return peakSampledJvmHeapBytes; }
 
     @Column(name = "peak_sampled_jvm_heap_bytes")
     private Long peakSampledJvmHeapBytes;
@@ -59,45 +92,6 @@ public class RunEntity {
 
     @Column(name = "candidate_count")
     private Long candidateCount;
-
-    @Column(name = "max_w")
-    private Double maxW;
-
-    @Column(name = "min_w")
-    private Double minW;
-
-    @Column(name = "dataset_io_ms")
-    private Long datasetIoMs;
-
-    @Column(name = "preprocessing_ms")
-    private Long preprocessingMs;
-
-    @Column(name = "dfs_mining_ms")
-    private Long dfsMiningMs;
-
-    @Column(name = "complete_algorithm_ms")
-    private Long completeAlgorithmMs;
-
-    @Column(name = "output_io_ms")
-    private Long outputIoMs;
-
-    @Column(name = "error_message", length = 2000)
-    private String errorMessage;
-
-    @Column(name = "started_at")
-    private Instant startedAt;
-
-    @Column(name = "finished_at")
-    private Instant finishedAt;
-
-    @Column(name = "execution_owner_id", length = 40)
-    private String executionOwnerId;
-
-    @Column(name = "execution_attempt_id", length = 40)
-    private String executionAttemptId;
-
-    @Column(name = "execution_lease_until")
-    private Instant executionLeaseUntil;
 
     protected RunEntity() {
     }
@@ -114,6 +108,18 @@ public class RunEntity {
         entity.runTime = createdAt;
         return entity;
     }
+
+    public String getMinsupMode() { return minsupMode; }
+    public Double getMinsupConfigured() { return minsupConfigured; }
+    public Double getMaxW() { return maxW; }
+    public Double getMinW() { return minW; }
+    public Instant getCreatedAt() { return runTime; }
+    public Instant getStartedAt() { return startedAt; }
+    public Instant getFinishedAt() { return finishedAt; }
+    public String getErrorMessage() { return errorMessage; }
+    public String getExecutionOwnerId() { return executionOwnerId; }
+    public String getExecutionAttemptId() { return executionAttemptId; }
+    public Instant getExecutionLeaseUntil() { return executionLeaseUntil; }
 
     public RunEntity(String runId, String algorithm, String datasetSource,
                      Double minsupRatio, Double minsupAbs, Long sequenceCount,
@@ -192,25 +198,4 @@ public class RunEntity {
     @Transient
     public Double getCoefDelta() { return null; }
     public void setCoefDelta(Double ignored) { }
-
-    public String getMinsupMode() { return minsupMode; }
-    public Double getMinsupConfigured() { return minsupConfigured; }
-    public Double getMaxW() { return maxW; }
-    public Double getMinW() { return minW; }
-    public Long getDatasetIoMs() { return datasetIoMs; }
-    public Long getPreprocessingMs() { return preprocessingMs; }
-    public Long getDfsMiningMs() { return dfsMiningMs; }
-    public Long getCompleteAlgorithmMs() { return completeAlgorithmMs; }
-    public Long getOutputIoMs() { return outputIoMs; }
-    public String getErrorMessage() { return errorMessage; }
-    public Instant getStartedAt() { return startedAt; }
-    public Instant getFinishedAt() { return finishedAt; }
-    public Double getEffectiveThreshold() { return minsupAbs; }
-    public Double getMinsupRelativeFraction() { return minsupRatio; }
-    public Instant getCreatedAt() { return runTime; }
-    public Long getTotalExecutionMs() { return totalExecutionMs; }
-    public Long getPeakSampledJvmHeapBytes() { return peakSampledJvmHeapBytes; }
-    public String getExecutionOwnerId() { return executionOwnerId; }
-    public String getExecutionAttemptId() { return executionAttemptId; }
-    public Instant getExecutionLeaseUntil() { return executionLeaseUntil; }
 }

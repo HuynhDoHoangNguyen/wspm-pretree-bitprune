@@ -1,92 +1,92 @@
-/** @jest-environment node */
 import { runInThisContext } from 'vm';
 import { createWdmApiClient } from './client';
-import { createRunResultApi, readPatternDetail, readPatternPage } from './run-results';
+import { createRunResultApi, readRunResultMetadata, readPatternPage, RunResultMetadata } from './run-results';
+Object.assign(globalThis, runInThisContext('({ Headers, Response })'));
+const id = '10000000-0000-4000-8000-000000000001';
+export const resultMetadata = (): RunResultMetadata => ({ runId: id, executionStatus: 'SUCCEEDED', publicationStatus: 'NOT_PUBLISHED',
+  manifestVersion: null, resultSha256: null, committedAt: null,
+  provenance: { version: 'RUN_PROVENANCE_V1', conversionFormatVersion: 'CONVERSION_V1', snapshotId: id, attemptId: id,
+    validationSha256: 'a'.repeat(64), sequenceSha256: 'b'.repeat(64), mappingSha256: 'c'.repeat(64), sequenceCount: '4' },
+  storedPatternCount: '18446744073709551615', storedPatternItemCount: '9007199254740993', storedRunItemCount: '3',
+  completeness: 'UNVERIFIED', stagingReadable: true, publishedReadable: false, eligibleForCombo: false });
+test('exact metadata counts survive while private/unknown properties are stripped', () => {
+  const original = resultMetadata();
+  expect(readRunResultMetadata({ ...original, path: 'secret', provenance: { ...original.provenance, rawReference: 'secret' } }, id)).toEqual(original);
+});
+test.each([0, null, '01', '-1', '18446744073709551616', 'Infinity'])('rejects unsafe count representation %s', count => {
+  expect(() => readRunResultMetadata({ ...resultMetadata(), storedPatternCount: count }, id)).toThrow();
+});
+test.each([{ completeness: 'COMPLETE' }, { eligibleForCombo: true }, { publishedReadable: true }, { stagingReadable: false },
+  { runId: id.replace(/1$/, '2') }, { provenance: null }, { manifestVersion: 'UNEXPECTED' }])('rejects inconsistent visibility/binding %j', patch => {
+  expect(() => readRunResultMetadata({ ...resultMetadata(), ...patch }, id)).toThrow();
+});
+test('legacy and unsupported committed markers remain explicitly unverified', () => {
+  const legacy = { ...resultMetadata(), publicationStatus: 'UNVERIFIED', provenance: null, stagingReadable: false };
+  expect(readRunResultMetadata(legacy, id).provenance).toBeNull();
+  const committed = { ...resultMetadata(), publicationStatus: 'COMMITTED', stagingReadable: false, manifestVersion: 'FUTURE',
+    resultSha256: 'd'.repeat(64), committedAt: '2026-11-08T00:00:00.123456Z' };
+  expect(readRunResultMetadata(committed, id).publishedReadable).toBe(false);
+  expect(() => readRunResultMetadata({ ...committed, committedAt: 'invalid' }, id)).toThrow();
+});
+test('client GET uses shared Auth, correct endpoint, abort signal and no query or write', async () => {
+  const fetchMock = jest.fn().mockResolvedValue(new Response(JSON.stringify({ code: 'SUCCESS', message: 'Request completed successfully.', data: resultMetadata(), requestId: 'results-request' }),
+    { status: 200, headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'results-request' } }));
+  const api = createRunResultApi(createWdmApiClient({ fetchImpl: fetchMock, getAuthAdapter: () => ({ getAccessToken: () => 'token' }) }));
+  const controller = new AbortController();
+  expect(await api.metadata(id, controller.signal)).toEqual(resultMetadata());
+  expect(fetchMock).toHaveBeenCalledTimes(1); const [path, options] = fetchMock.mock.calls[0];
+  expect(path).toBe('/api/v1/admin/mining-runs/' + id + '/results'); expect(options.method).toBe('GET');
+  expect(options.body).toBeUndefined(); expect(options.headers.get('Authorization')).toBe('Bearer token'); expect(options.signal).toBeDefined();
+  expect(() => api.metadata('../bad')).toThrow(); expect(fetchMock).toHaveBeenCalledTimes(1);
+});
 
-Object.assign(globalThis, runInThisContext('({ fetch, Headers, Response, Blob })'));
-const runId = '10000000-0000-4000-8000-000000000001';
-const id = '18446744073709551615';
-const metadata = () => ({ runId, executionStatus: 'SUCCEEDED', publicationStatus: 'COMMITTED',
-  manifestVersion: 'WDM_RESULT_MANIFEST_V1', resultSha256: 'a'.repeat(64), committedAt: '2026-11-09T10:00:00.000000Z',
-  provenance: { version: 'RUN_PROVENANCE_V1', conversionFormatVersion: 'CONVERSION_ARTIFACT_V1', snapshotId: runId,
-    attemptId: runId, validationSha256: 'b'.repeat(64), sequenceSha256: 'c'.repeat(64), mappingSha256: 'd'.repeat(64), sequenceCount: '100' },
-  storedPatternCount: '1', storedPatternItemCount: '2', storedRunItemCount: '2', completeness: 'COMPLETE_VERIFIED',
-  stagingReadable: false, publishedReadable: true, eligibleForCombo: true });
-const pattern = () => ({ patternId: id, runId, canonicalPattern: '<(1)(2)>', canonicalPatternHash: 'e'.repeat(64),
-  supportAbs: '53', supportRatio: .53, weightedSupport: 2.5474406991260925, patternWeight: .375,
+const pattern = () => ({ patternId: '18446744073709551615', runId: id, canonicalPattern: '<(1)(2)>', canonicalPatternHash: 'a'.repeat(64),
+  supportAbs: '3', supportRatio: 0.75, weightedSupport: 0.375, patternWeight: 0.5,
   patternWeightPolicy: 'EQ2_EQ3_ARITHMETIC_MEAN_V1', itemsetCount: 2, patternItemCount: 2 });
-const page = () => ({ result: metadata(), items: [pattern()], page: 1, size: 20, total: '1' });
-const detail = () => ({ result: metadata(), pattern: pattern(), itemsets: [1, 2].map(i => ({
-  itemsetOrder: i, items: [{ itemOrder: 1, itemId: i, productId: 'product-' + i, productNameSnapshot: 'Historical name',
-    skuSnapshot: 'Historical SKU', itemWeight: i * .25, occurrenceCount: '9007199254740993', sequenceSupport: '53' }],
-})) });
-function response(data: unknown) {
-  return new Response(JSON.stringify({ code: 'SUCCESS', message: 'Request completed successfully.', data, requestId: 'p3-read' }), {
-    status: 200, headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'p3-read' },
-  });
-}
+const patternPage = () => ({ result: { ...resultMetadata(), storedPatternCount: '1' }, items: [pattern()], page: 1, size: 20, total: '1' });
+test('pattern page keeps exact IDs, canonical boundaries and selects public fields', () => {
+  const v = patternPage();
+  expect(readPatternPage({ ...v, items: [{ ...pattern(), privatePath: 'secret' }] }, id, 1)).toEqual(v);
+});
+test.each([{ patternId: 1 }, { patternId: '0' }, { patternId: '18446744073709551616' }, { supportAbs: '5' },
+  { runId: id.replace(/1$/, '2') }, { patternWeight: Infinity }, { supportRatio: -1 }, { weightedSupport: NaN },
+  { patternWeightPolicy: 'FUTURE' }, { itemsetCount: 3 }, { patternItemCount: 0 }, { canonicalPatternHash: 'bad' }])('rejects malformed pattern %j', patch => {
+  expect(() => readPatternPage({ ...patternPage(), items: [{ ...pattern(), ...patch }] }, id, 1)).toThrow();
+});
+test.each([{ page: 2 }, { size: 100 }, { total: '2' }, { items: [] }, { total: 1 },
+  { result: { ...patternPage().result, stagingReadable: false } }])('rejects malformed page %j', patch => {
+  expect(() => readPatternPage({ ...patternPage(), ...patch }, id, 1)).toThrow();
+});
+test('empty and out-of-range pages are accepted without coercing large totals', () => {
+  expect(readPatternPage({ ...patternPage(), items: [], total: '0', result: { ...patternPage().result, storedPatternCount: '0' } }, id, 1).items).toEqual([]);
+  expect(readPatternPage({ ...patternPage(), items: [], page: 3 }, id, 3).page).toBe(3);
+  const total = '18446744073709551615';
+  expect(readPatternPage({ ...patternPage(), total, result: { ...patternPage().result, storedPatternCount: total },
+    items: Array.from({ length: 20 }, (_, i) => ({ ...pattern(), patternId: String(i + 1) })) }, id, 1).total).toBe(total);
+});
+test('pattern client uses staging query, Auth, GET and cancellation; invalid input never fetches', async () => {
+  const fetchMock = jest.fn().mockResolvedValue(new Response(JSON.stringify({ code: 'SUCCESS', message: 'Request completed successfully.', data: patternPage(), requestId: 'patterns-request' }),
+    { status: 200, headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'patterns-request' } }));
+  const api = createRunResultApi(createWdmApiClient({ fetchImpl: fetchMock, getAuthAdapter: () => ({ getAccessToken: () => 'token' }) }));
+  const controller = new AbortController(); expect(await api.patterns(id, 1, controller.signal)).toEqual(patternPage());
+  const [path, options] = fetchMock.mock.calls[0]; const url = new URL(path, 'https://test.invalid');
+  expect(url.pathname).toBe('/api/v1/admin/mining-runs/' + id + '/patterns');
+  expect(Object.fromEntries(url.searchParams)).toEqual({ view: 'staging', page: '1', size: '20' });
+  expect(options.method).toBe('GET'); expect(options.body).toBeUndefined(); expect(options.headers.get('Authorization')).toBe('Bearer token');
+  for (const page of [0, -1, NaN, 1.5, 100001]) expect(() => api.patterns(id, page)).toThrow();
+  expect(() => api.patterns('invalid')).toThrow(); expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(options.signal).toBeDefined();
+});
 
-test('published page preserves full string IDs and persisted weighted values', () => {
-  expect(readPatternPage(page(), runId, 1)).toEqual(page());
-  const large = page();
-  large.result.provenance.sequenceCount = '18446744073709551615';
-  large.items[0].supportAbs = '9007199254740993';
-  expect(readPatternPage(large, runId, 1).items[0].supportAbs).toBe('9007199254740993');
+test('weighted support above one is displayed as an absolute weighted value', () => {
+  expect(readPatternPage({ ...patternPage(), items: [{ ...pattern(), weightedSupport: 2.25 }] }, id, 1).items[0].weightedSupport).toBe(2.25);
 });
-test('detail retains separate itemsets and historical product fields', () => {
-  const read = readPatternDetail(detail(), runId, id);
-  expect(read.pattern.canonicalPattern).toBe('<(1)(2)>');
-  expect(read.itemsets).toHaveLength(2);
-  expect(read.itemsets[1].items[0].occurrenceCount).toBe('9007199254740993');
-  expect(read.itemsets[0].items[0].productNameSnapshot).toBe('Historical name');
+test('cancels a pending pattern read through the shared client signal', async () => {
+  let finish!: (response: Response) => void;
+  const fetchMock = jest.fn().mockImplementation(() => new Promise(done => { finish = done; }));
+  const api = createRunResultApi(createWdmApiClient({ fetchImpl: fetchMock, getAuthAdapter: () => ({ getAccessToken: () => 'token' }) }));
+  const controller = new AbortController(); const request = api.patterns(id, 1, controller.signal);
+  controller.abort(); expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
+  finish(new Response('{}', { status: 200 })); await expect(request).rejects.toMatchObject({ kind: 'aborted' });
 });
-test.each([{ patternId: 12 }, { supportAbs: 53 }, { patternWeight: NaN }, { patternWeightPolicy: 'UNKNOWN' },
-  { runId: '20000000-0000-4000-8000-000000000002' }, { supportAbs: '0' }])('rejects invalid persisted pattern %j', patch => {
-  expect(() => readPatternPage({ ...page(), items: [{ ...pattern(), ...patch }] }, runId, 1)).toThrow();
-});
-test('uses authenticated GET, one-based page and explicit published view', async () => {
-  const fetchMock = jest.fn().mockResolvedValue(response(page()));
-  const api = createRunResultApi(createWdmApiClient({ fetchImpl: fetchMock,
-    getAuthAdapter: () => ({ getAccessToken: () => 'test-token' }) }));
-  const controller = new AbortController();
-  await api.patterns(runId, 1, controller.signal, 'published');
-  const [path, options] = fetchMock.mock.calls[0];
-  const url = new URL(path, 'https://test.invalid');
-  expect(url.pathname).toBe('/api/v1/admin/mining-runs/' + runId + '/patterns');
-  expect(Object.fromEntries(url.searchParams)).toEqual({ view: 'published', page: '1', size: '20' });
-  expect(options.method).toBe('GET'); expect(options.body).toBeUndefined();
-  expect(options.headers.get('Authorization')).toBe('Bearer test-token');
-  expect(options.signal).toBeDefined(); expect(fetchMock).toHaveBeenCalledTimes(1);
-});
-test('does not fall back to staging when published was requested', async () => {
-  const staging = { ...page(), result: { ...metadata(), publicationStatus: 'NOT_PUBLISHED', manifestVersion: null,
-    resultSha256: null, committedAt: null, completeness: 'UNVERIFIED', stagingReadable: true, publishedReadable: false, eligibleForCombo: false } };
-  const fetchMock = jest.fn().mockResolvedValue(response(staging));
-  const api = createRunResultApi(createWdmApiClient({ fetchImpl: fetchMock }));
-  await expect(api.patterns(runId, 1, undefined, 'published')).rejects.toMatchObject({ kind: 'response' });
-  expect(fetchMock).toHaveBeenCalledTimes(1);
-});
-test('rejects invalid page and overflow ID without network calls', () => {
-  const fetchMock = jest.fn(); const api = createRunResultApi(createWdmApiClient({ fetchImpl: fetchMock }));
-  expect(() => api.patterns(runId, 0, undefined, 'published')).toThrow();
-  expect(() => api.detail(runId, '18446744073709551616', undefined, 'published')).toThrow();
-  expect(fetchMock).not.toHaveBeenCalled();
-});
-test('rejects detail whose itemset boundaries disagree with canonical', () => {
-  const value = detail(); value.itemsets[1].itemsetOrder = 1;
-  expect(() => readPatternDetail(value, runId, id)).toThrow();
-});
-test('zero published patterns remain an explicit empty result', () => {
-  const value = { ...page(), items: [], total: '0', result: { ...metadata(), storedPatternCount: '0', eligibleForCombo: false } };
-  expect(readPatternPage(value, runId, 1).total).toBe('0');
-});
-test('cancels a pending GET without replaying it', async () => {
-  let finish!: (value: Response) => void;
-  const fetchMock = jest.fn().mockImplementation(() => new Promise(resolve => { finish = resolve; }));
-  const api = createRunResultApi(createWdmApiClient({ fetchImpl: fetchMock }));
-  const controller = new AbortController();
-  const pending = api.patterns(runId, 1, controller.signal, 'published'); controller.abort();
-  finish(response(page()));
-  await expect(pending).rejects.toMatchObject({ kind: 'aborted' });
-  expect(fetchMock).toHaveBeenCalledTimes(1);
-});
+

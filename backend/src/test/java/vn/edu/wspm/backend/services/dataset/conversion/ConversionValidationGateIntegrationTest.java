@@ -51,6 +51,7 @@ class ConversionValidationGateIntegrationTest {
         int count = 0;
         while (definitions.find()) { setup.execute(definitions.group()); count++; }
         assertEquals(47, count);
+        vn.edu.wspm.backend.testsupport.ExecutionSchema.apply(setup);
         p.add("spring.datasource.url", MYSQL::getJdbcUrl);
         p.add("spring.datasource.username", MYSQL::getUsername);
         p.add("spring.datasource.password", MYSQL::getPassword);

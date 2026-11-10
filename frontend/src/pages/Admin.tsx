@@ -21,8 +21,10 @@ export default function Admin() {
     <Button onClick={() => void authSession.checkIdentity().catch(() => undefined)}>Kiểm tra lại quyền</Button>
     <Button onClick={() => void signOut()}>Đăng xuất</Button>
   </Stack>;
-  const supported = ['/admin', '/admin/datasets', '/admin/mining-runs', '/admin/mining-run-history', '/admin/mining-monitoring', '/admin/mining-comparison', '/admin/patterns', ManagerPath.ACCOUNT].includes(normalized)
-    || matchPath(ManagerPath.DATASETS + '/:snapshotId', normalized) !== null;
+  const supported = ['/admin', '/admin/datasets', '/admin/mining-runs', '/admin/patterns', '/admin/mining-run-history', '/admin/mining-monitoring', '/admin/mining-comparison', '/admin/pattern-explorer', '/admin/combos', ManagerPath.ACCOUNT].includes(normalized)
+    || matchPath(ManagerPath.DATASETS + '/:snapshotId', normalized) !== null
+    || matchPath(ManagerPath.MINING_RUNS + '/:runId', normalized) !== null
+    || matchPath(ManagerPath.PATTERNS + '/:runId/:patternId', normalized) !== null;
   return <AppShell fixed header={<DefaultHeader/>} navbar={<DefaultNavbar/>}>
     {supported ? <Outlet/> : <Alert role="status">Chức năng legacy này chưa được nối với API hiện tại. Phiên đăng nhập đã được xác thực.</Alert>}
   </AppShell>;

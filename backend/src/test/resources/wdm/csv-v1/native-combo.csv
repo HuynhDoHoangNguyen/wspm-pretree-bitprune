@@ -1,0 +1,9 @@
+order_id,order_item_id,customer_code,ordered_at,status,product_id,sku_snapshot,product_name_snapshot,quantity,list_unit_price,allocated_discount_amount,line_total,currency_code
+n-a1,1,NATIVE-A,2026-11-01T00:00:01.000000Z,COMPLETED,native-laptop,H-L,Historical Laptop,1,100.00,0.00,100.00,VND
+n-a1,2,NATIVE-A,2026-11-01T00:00:01.000000Z,COMPLETED,native-keyboard,H-K,Historical Keyboard,1,100.00,0.00,100.00,VND
+n-a1,3,NATIVE-A,2026-11-01T00:00:01.000000Z,COMPLETED,native-mouse,H-M,Historical Mouse,1,100.00,0.00,100.00,VND
+n-a2,4,NATIVE-A,2026-11-01T00:00:02.000000Z,COMPLETED,native-bag,H-B,Historical Bag,1,100.00,0.00,100.00,VND
+n-b1,5,NATIVE-B,2026-11-01T00:00:01.000000Z,COMPLETED,native-laptop,H-L,Historical Laptop,1,100.00,0.00,100.00,VND
+n-b2,6,NATIVE-B,2026-11-01T00:00:02.000000Z,COMPLETED,native-keyboard,H-K,Historical Keyboard,1,100.00,0.00,100.00,VND
+n-b2,7,NATIVE-B,2026-11-01T00:00:02.000000Z,COMPLETED,native-mouse,H-M,Historical Mouse,1,100.00,0.00,100.00,VND
+n-b2,8,NATIVE-B,2026-11-01T00:00:02.000000Z,COMPLETED,native-bag,H-B,Historical Bag,1,100.00,0.00,100.00,VND

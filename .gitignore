@@ -47,6 +47,8 @@ docs/auth/*
 docs/wdm/*
 !docs/wdm/dataset-csv-contract.md
 !docs/wdm/mining-request-contract.md
+!docs/wdm/mining-engine-contract.md
+!docs/wdm/persistence-schema-audit.md
 !docs/archive/
 !docs/archive/roadmaps/
 !docs/archive/roadmaps/**

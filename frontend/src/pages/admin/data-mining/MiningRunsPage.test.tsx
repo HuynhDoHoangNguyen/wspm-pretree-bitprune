@@ -1,9 +1,9 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { MemoryRouter, useNavigate } from 'react-router-dom';
+import { MemoryRouter, useNavigate, Route, Routes } from 'react-router-dom';
 import { useSharedAuth } from 'auth/session';
-import { miningApi } from 'api/admin/data-mining';
+import { miningApi, miningRunApi } from 'api/admin/data-mining';
 import MiningRunsPage from './MiningRunsPage';
 jest.mock('auth/session', () => ({ useSharedAuth: jest.fn() }));
 const id = '11111111-2222-4333-8444-555555555555';
@@ -12,6 +12,14 @@ beforeEach(() => {
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: jest.fn(() => ({ matches: false, addListener: jest.fn(), removeListener: jest.fn() })) });
 });
 afterEach(() => jest.restoreAllMocks());
+it('opens a known run ID without a creation POST', () => {
+  const create = jest.spyOn(miningRunApi, 'create');
+  render(<MantineProvider><MemoryRouter initialEntries={['/admin/mining-runs']}><Routes>
+    <Route path="/admin/mining-runs" element={<MiningRunsPage/>}/><Route path="/admin/mining-runs/:runId" element={<p>Detail route</p>}/>
+  </Routes></MemoryRouter></MantineProvider>);
+  fireEvent.change(screen.getByLabelText('Run ID'), { target: { value: id } }); fireEvent.click(screen.getByRole('button', { name: 'Mở run theo ID' }));
+  expect(screen.getByText('Detail route')).toBeInTheDocument(); expect(create).not.toHaveBeenCalled();
+});
 it.each(['?snapshotId=' + id, '?snapshotId=bad', '?snapshotId=' + id + '&snapshotId=other'])('prefills untrusted query without sending POST: %s', query => {
   const preview = jest.spyOn(miningApi, 'preview'), validate = jest.spyOn(miningApi, 'validate');
   render(<MantineProvider><MemoryRouter initialEntries={['/admin/mining-runs' + query]}><MiningRunsPage/></MemoryRouter></MantineProvider>);

@@ -1,844 +1,548 @@
-# Từ điển dữ liệu hệ thống gợi ý combo cửa hàng laptop
+# Từ điển dữ liệu — Hệ thống combo laptop
 
-**Trạng thái:** V2 SCHEMA CONTRACT — application implementation còn từng phần
+Cập nhật: 2026-11-08. Bản tra cứu rút gọn cho MySQL 8.4; tên bảng/cột, kiểu,
+nullability, PK/UQ/FK dưới đây đối chiếu trực tiếp migration V2–V4.
+Chỉ đọc nhóm liên quan; DDL là nguồn chuẩn cho toàn bộ CHECK/default/index.
 
-Schema 45 bảng đã được đưa vào Flyway V2. Kiểm tra read-only database local ngày
-2026-11-03 xác nhận V2 thành công, checksum khớp và tập bảng thực tế khớp toàn bộ
-45 bảng V2. Trạng thái của môi trường khác chỉ được xác nhận bằng
-`flyway_schema_history`. Việc bảng tồn tại không đồng nghĩa entity, DTO, API hoặc
-frontend tương ứng đã hoàn tất.
+## 1. Trạng thái, nguồn chuẩn và quy ước
 
-Tài liệu này là danh mục đầy đủ các bảng và trường của schema V2. Nó phải được
-đọc cùng `laptop-combo-system-redesign.md`. Các kiểu dữ liệu đã được hiện thực
-cho MySQL 8.4 trong V2; mọi điều chỉnh tiếp theo phải dùng migration V3+ và không
-được thay đổi mining semantics hoặc làm mất khả năng tái lập.
+| Phần | Trạng thái được ghi nhận |
+|---|---|
+| V2 | 45 bảng; kiểm tra read-only local ngày 2026-11-03 ghi nhận SUCCESS, checksum 727165286, đủ bảng và không còn LEGACY_V1_* |
+| V3 | Thêm ownership/lease, không thêm bảng; checkpoint local WDM-05.7 ngày 2026-11-07 ghi nhận SUCCESS/checksum 1697070581 |
+| V4 | Thêm RUN_PROVENANCE và RUN_RESULT_PUBLICATION: tổng 47 bảng ứng dụng, không tính flyway_schema_history; owner deployment NOT VERIFIED |
+| Application | Auth và WDM đến 06.11 đã có nghiệm thu theo phạm vi ghi nhận; không suy ra commerce/Combo production hoàn tất |
+| WDM-06.12 | Owner yêu cầu làm lại; NOT VERIFIED, không dùng PASS cũ để đóng gate |
 
-## 1. Quy ước chung
+Đây là các mốc lịch sử, không phải DB inspection/test chạy lại khi rút gọn.
+Mỗi môi trường phải kiểm `flyway_schema_history`; có bảng không có nghĩa đã có API/UI.
 
-- ID nghiệp vụ công khai: `VARCHAR(40)` chứa UUID/ULID; không dùng số thứ tự dễ đoán.
-- ID dòng nội bộ dung lượng lớn: `BIGINT UNSIGNED AUTO_INCREMENT` khi phù hợp.
-- Tiền: `DECIMAL(19,2)`, luôn đi cùng `currency_code CHAR(3)`; không dùng `DOUBLE`.
-- Tỷ lệ/trọng số nghiên cứu: `DOUBLE` để tương thích baseline Java `double` đã đóng băng.
-- Thời gian: `DATETIME(6)` theo UTC; API chuyển timezone khi hiển thị.
-- Trạng thái: lưu `VARCHAR`, ánh xạ Java enum và có CHECK constraint/test transition.
-- Bảng mutable có `version BIGINT` cho optimistic locking.
-- Không hard-delete product, pattern, order, payment hoặc movement đã được tham chiếu.
-- PII không đi vào dataset/export mining; token/password chỉ lưu dạng hash.
-- Các cột `created_by`, `approved_by`, `reviewed_by`, `posted_by`, `activated_by`
-  tham chiếu `USER_ACCOUNT.user_id`.
+- DDL runtime: [V2](../../backend/src/main/resources/db/migration/V2__complete_laptop_combo_schema.sql),
+  [V3](../../backend/src/main/resources/db/migration/V3__mining_run_execution_ownership.sql),
+  [V4](../../backend/src/main/resources/db/migration/V4__mining_run_metadata_provenance.sql).
+- [Thiết kế hệ thống](laptop-combo-system-redesign.md) giải thích nghiệp vụ;
+  [WDM contract](../wdm/mining-request-contract.md) quy định run/publication hiện hành;
+  [Auth](../auth/README.md) quy định account/session thực thi.
+- Giữ Hibernate ddl-auto=validate; không sửa migration đã áp dụng, correction bằng migration mới.
+- Ký hiệu `TYPE?` là nullable; không có ? là NOT NULL. Cột cùng kiểu được gom chung.
+  PK: khóa chính; UQ: unique tuple; FK: quan hệ có trong DDL. Cardinality/check xuyên bảng
+  ngoài DDL vẫn cần application transaction/tests, không tự coi đã được DB bảo đảm.
+- ID công khai VARCHAR(40) chứa UUID/ULID; ID nội bộ có thể BIGINT UNSIGNED.
+  Tiền DECIMAL + currency, không DOUBLE; trọng số/ngưỡng DOUBLE theo baseline.
+  DATETIME(6) theo UTC; version dùng optimistic lock.
+- Không hard-delete lịch sử đã tham chiếu. PII không vào mining; password/token chỉ hash.
+  Các cột audit người thực hiện FK về USER_ACCOUNT theo DDL, không dùng display name.
 
 ## 2. Tài khoản và phân quyền
 
 ### 2.1 `USER_ACCOUNT`
 
-Mục đích: tài khoản đăng nhập dùng chung cho customer và nhân sự quản trị.
+- `VARCHAR(40)`: `user_id`; `VARCHAR(80)?`: `username`; `VARCHAR(254)?`: `email`.
+- `VARCHAR(32)?`: `phone`; `VARCHAR(255)`: `password_hash`; `VARCHAR(160)`: `display_name`.
+- `VARCHAR(24)`: `status`; `DATETIME(6)?`: `email_verified_at`, `phone_verified_at`, `last_login_at`; `BIGINT`: `version`.
+- `DATETIME(6)`: `created_at`, `updated_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `user_id` | `VARCHAR(40)` | PK |
-| `username` | `VARCHAR(80)` nullable | Tên đăng nhập đã normalize, unique khi có |
-| `email` | `VARCHAR(254)` nullable | Email normalize, unique khi có; PII |
-| `phone` | `VARCHAR(32)` nullable | Số điện thoại chuẩn hóa, unique khi có; PII |
-| `password_hash` | `VARCHAR(255)` | Hash mật khẩu local; không lưu mật khẩu thuần |
-| `display_name` | `VARCHAR(160)` | Tên hiển thị |
-| `status` | `VARCHAR(24)` | `PENDING`, `ACTIVE`, `LOCKED`, `DISABLED` |
-| `email_verified_at` | `DATETIME(6)` nullable | Thời điểm xác minh email |
-| `phone_verified_at` | `DATETIME(6)` nullable | Thời điểm xác minh điện thoại |
-| `last_login_at` | `DATETIME(6)` nullable | Lần đăng nhập gần nhất |
-| `version` | `BIGINT` | Optimistic lock |
-| `created_at`, `updated_at` | `DATETIME(6)` | Audit timestamps |
-
-Ít nhất một trong `username/email/phone` phải có giá trị. Không trả
-`password_hash` trong bất kỳ response nào.
+PK (user_id); UQ (username); UQ (email); UQ (phone).
+`status`: PENDING,ACTIVE,LOCKED,DISABLED.
+Mặc định: `status`=PENDING.
 
 ### 2.2 `ROLE`
 
-Mục đích: danh mục vai trò hệ thống.
+- `VARCHAR(40)`: `role_id`, `code`; `VARCHAR(100)`: `name`; `VARCHAR(500)?`: `description`.
+- `DATETIME(6)`: `created_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `role_id` | `VARCHAR(40)` | PK |
-| `code` | `VARCHAR(40)` | Unique; tối thiểu `CUSTOMER`, `ADMIN` |
-| `name` | `VARCHAR(100)` | Tên hiển thị |
-| `description` | `VARCHAR(500)` nullable | Mô tả quyền |
-| `created_at` | `DATETIME(6)` | Audit |
+PK (role_id); UQ (code).
 
 ### 2.3 `USER_ROLE`
 
-Mục đích: quan hệ nhiều-nhiều giữa account và role.
+- `VARCHAR(40)`: `user_id`, `role_id`; `DATETIME(6)`: `assigned_at`; `VARCHAR(40)?`: `assigned_by`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `user_id` | `VARCHAR(40)` | PK/FK → `USER_ACCOUNT` |
-| `role_id` | `VARCHAR(40)` | PK/FK → `ROLE` |
-| `assigned_at` | `DATETIME(6)` | Thời điểm gán |
-| `assigned_by` | `VARCHAR(40)` nullable | FK → người quản trị thực hiện |
+PK (user_id, role_id); FK (user_id) → USER_ACCOUNT; FK (role_id) → ROLE; FK (assigned_by) → USER_ACCOUNT(user_id).
 
 ### 2.4 `USER_SESSION`
 
-Mục đích: quản lý refresh session và revoke đăng nhập.
+- `VARCHAR(40)`: `session_id`, `user_id`; `VARCHAR(255)`: `refresh_token_hash`; `VARCHAR(500)?`: `device_info`.
+- `VARCHAR(128)?`: `ip_hash`; `DATETIME(6)`: `expires_at`, `created_at`, `last_used_at`; `DATETIME(6)?`: `revoked_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `session_id` | `VARCHAR(40)` | PK |
-| `user_id` | `VARCHAR(40)` | FK → `USER_ACCOUNT` |
-| `refresh_token_hash` | `VARCHAR(255)` | Unique hash; không lưu raw token |
-| `device_info` | `VARCHAR(500)` nullable | Mô tả thiết bị đã rút gọn |
-| `ip_hash` | `VARCHAR(128)` nullable | Hash IP nếu cần audit, không lưu mù quáng IP thô |
-| `expires_at` | `DATETIME(6)` | Hết hạn phiên |
-| `revoked_at` | `DATETIME(6)` nullable | Phiên đã revoke |
-| `created_at`, `last_used_at` | `DATETIME(6)` | Audit hoạt động |
+PK (session_id); UQ (refresh_token_hash); FK (user_id) → USER_ACCOUNT.
 
 ### 2.5 `USER_ADDRESS`
 
-Mục đích: địa chỉ lưu sẵn để điền checkout; không phải snapshot hóa đơn.
+- `VARCHAR(40)`: `user_address_id`, `user_id`; `VARCHAR(80)?`: `label`; `VARCHAR(160)`: `recipient_name`, `ward_name`, `district_name`, `province_name`.
+- `VARCHAR(32)`: `phone`; `VARCHAR(500)`: `address_line`; `VARCHAR(32)?`: `ward_code`, `district_code`, `province_code`.
+- `VARCHAR(20)?`: `postal_code`; `CHAR(2)`: `country_code`; `BOOLEAN`: `is_default`.
+- `DATETIME(6)`: `created_at`, `updated_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `user_address_id` | `VARCHAR(40)` | PK |
-| `user_id` | `VARCHAR(40)` | FK → `USER_ACCOUNT` |
-| `label` | `VARCHAR(80)` nullable | Ví dụ Nhà, Công ty |
-| `recipient_name` | `VARCHAR(160)` | PII |
-| `phone` | `VARCHAR(32)` | PII |
-| `address_line` | `VARCHAR(500)` | Số nhà/đường; PII |
-| `ward_code`, `district_code`, `province_code` | `VARCHAR(32)` nullable | Mã hành chính tại thời điểm lưu |
-| `ward_name`, `district_name`, `province_name` | `VARCHAR(160)` | Tên snapshot để hiển thị ổn định |
-| `postal_code` | `VARCHAR(20)` nullable | Mã bưu chính |
-| `country_code` | `CHAR(2)` | Mặc định `VN` |
-| `is_default` | `BOOLEAN` | Tối đa một địa chỉ mặc định/user ở application contract |
-| `created_at`, `updated_at` | `DATETIME(6)` | Audit |
+PK (user_address_id); FK (user_id) → USER_ACCOUNT.
+Mặc định: `country_code`=VN.
 
 ### 2.6 `CUSTOMER`
 
-Mục đích: định danh sequence khách hàng cho mining, tách khỏi PII đăng nhập.
+- `VARCHAR(40)`: `customer_id`; `VARCHAR(40)?`: `user_id`; `VARCHAR(80)`: `anonymous_code`.
+- `VARCHAR(80)?`: `segment`; `DATETIME(6)`: `created_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `customer_id` | `VARCHAR(40)` | PK; sequence identity |
-| `user_id` | `VARCHAR(40)` nullable | Unique FK → `USER_ACCOUNT`; null với guest/import ẩn danh |
-| `anonymous_code` | `VARCHAR(80)` | Unique pseudonym dùng trong dataset |
-| `segment` | `VARCHAR(80)` nullable | Nhãn nghiệp vụ, không dùng mặc định trong mining |
-| `created_at` | `DATETIME(6)` | Audit |
+PK (customer_id); UQ (user_id); UQ (anonymous_code); FK (user_id) → USER_ACCOUNT.
 
 ## 3. Catalog sản phẩm
 
 ### 3.1 `CATEGORY`
 
-Mục đích: danh mục laptop và phụ kiện.
+- `VARCHAR(40)`: `category_id`; `VARCHAR(160)`: `name`; `VARCHAR(180)`: `slug`.
+- `TEXT?`: `description`; `INT`: `display_order`; `VARCHAR(24)`: `status`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `category_id` | `VARCHAR(40)` | PK |
-| `name` | `VARCHAR(160)` | Tên danh mục |
-| `slug` | `VARCHAR(180)` | Unique URL slug |
-| `description` | `TEXT` nullable | Mô tả |
-| `display_order` | `INT` | Thứ tự UI |
-| `status` | `VARCHAR(24)` | `ACTIVE`, `INACTIVE` |
+PK (category_id); UQ (slug).
+`status`: ACTIVE,INACTIVE.
+Mặc định: `status`=ACTIVE.
 
 ### 3.2 `BRAND`
 
-Mục đích: hãng sản phẩm.
+- `VARCHAR(40)`: `brand_id`; `VARCHAR(160)`: `name`; `VARCHAR(180)`: `slug`.
+- `VARCHAR(24)`: `status`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `brand_id` | `VARCHAR(40)` | PK |
-| `name` | `VARCHAR(160)` | Tên hãng |
-| `slug` | `VARCHAR(180)` | Unique URL slug |
-| `status` | `VARCHAR(24)` | `ACTIVE`, `INACTIVE` |
+PK (brand_id); UQ (slug).
+`status`: ACTIVE,INACTIVE.
+Mặc định: `status`=ACTIVE.
 
 ### 3.3 `PRODUCT`
 
-Mục đích: SKU bán được và item nghiệp vụ ánh xạ sang mining item.
+- `VARCHAR(40)`: `product_id`, `category_id`; `VARCHAR(80)`: `sku`; `VARCHAR(200)`: `name`.
+- `VARCHAR(220)`: `slug`; `VARCHAR(40)?`: `brand_id`; `VARCHAR(1000)?`: `short_description`.
+- `TEXT?`: `description`; `JSON?`: `specifications_json`; `DECIMAL(19,2)`: `current_price`.
+- `CHAR(3)`: `currency_code`; `VARCHAR(1024)?`: `thumbnail_url`; `BOOLEAN`: `track_serial`.
+- `VARCHAR(24)`: `status`; `DATETIME(6)`: `price_updated_at`, `created_at`, `updated_at`; `BIGINT`: `version`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `product_id` | `VARCHAR(40)` | PK |
-| `sku` | `VARCHAR(80)` | Unique mã SKU |
-| `name` | `VARCHAR(200)` | Tên sản phẩm/cấu hình |
-| `slug` | `VARCHAR(220)` | Unique URL slug |
-| `category_id` | `VARCHAR(40)` | FK → `CATEGORY` |
-| `brand_id` | `VARCHAR(40)` nullable | FK → `BRAND` |
-| `short_description` | `VARCHAR(1000)` nullable | Mô tả ngắn |
-| `description` | `TEXT` nullable | Mô tả chi tiết |
-| `specifications_json` | `JSON` nullable | Thông số chỉ để render, không làm FK |
-| `current_price` | `DECIMAL(19,2)` | Giá bán hiện tại, không âm |
-| `currency_code` | `CHAR(3)` | Mặc định `VND` |
-| `thumbnail_url` | `VARCHAR(1024)` nullable | Ảnh card |
-| `track_serial` | `BOOLEAN` | Laptop/thiết bị cần quản lý serial |
-| `status` | `VARCHAR(24)` | `DRAFT`, `ACTIVE`, `INACTIVE`, `DISCONTINUED` |
-| `price_updated_at` | `DATETIME(6)` | Dùng kiểm tra quote stale |
-| `version` | `BIGINT` | Optimistic lock |
-| `created_at`, `updated_at` | `DATETIME(6)` | Audit |
-
-Không có `stock_quantity`; tồn kho chuẩn nằm tại `INVENTORY_BALANCE`.
+PK (product_id); UQ (sku); UQ (slug); FK (category_id) → CATEGORY; FK (brand_id) → BRAND.
+`status`: DRAFT,ACTIVE,INACTIVE,DISCONTINUED.
+Mặc định: `currency_code`=VND; `status`=DRAFT.
 
 ### 3.4 `PRODUCT_IMAGE`
 
-Mục đích: gallery ảnh sản phẩm.
+- `VARCHAR(40)`: `image_id`, `product_id`; `VARCHAR(1024)`: `image_url`; `VARCHAR(255)?`: `alt_text`.
+- `INT`: `display_order`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `image_id` | `VARCHAR(40)` | PK |
-| `product_id` | `VARCHAR(40)` | FK → `PRODUCT` |
-| `image_url` | `VARCHAR(1024)` | URL/object key |
-| `alt_text` | `VARCHAR(255)` nullable | Accessibility |
-| `display_order` | `INT` | Thứ tự; unique `(product_id, display_order)` |
+PK (image_id); UQ (product_id, display_order); FK (product_id) → PRODUCT.
 
 ## 4. Nhà cung cấp, nhập hàng và tồn kho
 
 ### 4.1 `WAREHOUSE`
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `warehouse_id` | `VARCHAR(40)` | PK |
-| `code` | `VARCHAR(40)` | Unique mã kho |
-| `name` | `VARCHAR(160)` | Tên kho |
-| `address_line` | `VARCHAR(500)` nullable | Địa chỉ |
-| `phone` | `VARCHAR(32)` nullable | Liên hệ |
-| `status` | `VARCHAR(24)` | `ACTIVE`, `INACTIVE` |
-| `created_at`, `updated_at` | `DATETIME(6)` | Audit |
+- `VARCHAR(40)`: `warehouse_id`, `code`; `VARCHAR(160)`: `name`; `VARCHAR(500)?`: `address_line`.
+- `VARCHAR(32)?`: `phone`; `VARCHAR(24)`: `status`; `DATETIME(6)`: `created_at`, `updated_at`.
+
+PK (warehouse_id); UQ (code).
+`status`: ACTIVE,INACTIVE.
+Mặc định: `status`=ACTIVE.
 
 ### 4.2 `SUPPLIER`
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `supplier_id` | `VARCHAR(40)` | PK |
-| `code` | `VARCHAR(40)` | Unique mã nhà cung cấp |
-| `name` | `VARCHAR(200)` | Tên pháp lý/hiển thị |
-| `tax_code` | `VARCHAR(40)` nullable | Mã số thuế |
-| `contact_name` | `VARCHAR(160)` nullable | Người liên hệ |
-| `phone`, `email` | `VARCHAR` nullable | Thông tin liên hệ; PII |
-| `address_line` | `VARCHAR(500)` nullable | Địa chỉ |
-| `status` | `VARCHAR(24)` | `ACTIVE`, `INACTIVE` |
-| `created_at`, `updated_at` | `DATETIME(6)` | Audit |
+- `VARCHAR(40)`: `supplier_id`, `code`; `VARCHAR(200)`: `name`; `VARCHAR(40)?`: `tax_code`.
+- `VARCHAR(160)?`: `contact_name`; `VARCHAR(32)?`: `phone`; `VARCHAR(254)?`: `email`.
+- `VARCHAR(500)?`: `address_line`; `VARCHAR(24)`: `status`; `DATETIME(6)`: `created_at`, `updated_at`.
+
+PK (supplier_id); UQ (code).
+`status`: ACTIVE,INACTIVE.
+Mặc định: `status`=ACTIVE.
 
 ### 4.3 `PURCHASE_ORDER`
 
-Mục đích: chứng từ đặt mua; chưa làm tăng tồn kho.
+- `VARCHAR(40)`: `purchase_order_id`, `supplier_id`, `warehouse_id`; `VARCHAR(60)`: `po_number`; `VARCHAR(32)`: `status`.
+- `DATETIME(6)?`: `ordered_at`, `expected_at`, `approved_at`; `CHAR(3)`: `currency_code`; `DECIMAL(19,2)`: `subtotal`, `tax_total`, `grand_total`.
+- `VARCHAR(1000)?`: `note`; `VARCHAR(40)?`: `created_by`, `approved_by`; `DATETIME(6)`: `created_at`, `updated_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `purchase_order_id` | `VARCHAR(40)` | PK |
-| `po_number` | `VARCHAR(60)` | Unique số PO |
-| `supplier_id` | `VARCHAR(40)` | FK → `SUPPLIER` |
-| `warehouse_id` | `VARCHAR(40)` | Kho dự kiến nhận |
-| `status` | `VARCHAR(32)` | `DRAFT`, `APPROVED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CANCELLED` |
-| `ordered_at`, `expected_at` | `DATETIME(6)` nullable | Ngày đặt/dự kiến nhận |
-| `currency_code` | `CHAR(3)` | Đồng tiền |
-| `subtotal`, `tax_total`, `grand_total` | `DECIMAL(19,2)` | Tổng đặt hàng; không âm |
-| `note` | `VARCHAR(1000)` nullable | Ghi chú |
-| `created_by`, `approved_by` | `VARCHAR(40)` nullable | FK → `USER_ACCOUNT` |
-| `created_at`, `approved_at`, `updated_at` | `DATETIME(6)` | Audit |
+PK (purchase_order_id); UQ (po_number); UQ (purchase_order_id, warehouse_id); FK (supplier_id) → SUPPLIER; FK (warehouse_id) → WAREHOUSE; FK (created_by) → USER_ACCOUNT(user_id); FK (approved_by) → USER_ACCOUNT(user_id).
+`status`: DRAFT,APPROVED,PARTIALLY_RECEIVED,RECEIVED,CANCELLED.
+Mặc định: `status`=DRAFT; `currency_code`=VND.
 
 ### 4.4 `PURCHASE_ORDER_ITEM`
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `purchase_order_item_id` | `BIGINT UNSIGNED` | PK |
-| `purchase_order_id` | `VARCHAR(40)` | FK → `PURCHASE_ORDER` |
-| `product_id` | `VARCHAR(40)` | FK → `PRODUCT`; unique/product trong PO |
-| `quantity_ordered` | `INT UNSIGNED` | Số lượng đặt, > 0 |
-| `quantity_received` | `INT UNSIGNED` | Counter từ receipt posted |
-| `unit_cost` | `DECIMAL(19,2)` | Giá vốn đặt mua |
-| `tax_rate` | `DECIMAL(7,4)` | Tỷ lệ thuế |
-| `line_total` | `DECIMAL(19,2)` | Tổng dòng theo policy tiền |
+- `BIGINT UNSIGNED`: `purchase_order_item_id`; `VARCHAR(40)`: `purchase_order_id`, `product_id`; `INT UNSIGNED`: `quantity_ordered`, `quantity_received`.
+- `DECIMAL(19,2)`: `unit_cost`, `line_total`; `DECIMAL(7,4)`: `tax_rate`.
+
+PK (purchase_order_item_id); UQ (purchase_order_id, product_id); FK (purchase_order_id) → PURCHASE_ORDER; FK (product_id) → PRODUCT.
 
 ### 4.5 `GOODS_RECEIPT`
 
-Mục đích: phiếu nhận hàng vào kho.
+- `VARCHAR(40)`: `goods_receipt_id`, `purchase_order_id`, `warehouse_id`; `VARCHAR(60)`: `receipt_number`; `VARCHAR(24)`: `status`.
+- `VARCHAR(100)?`: `supplier_invoice_number`; `DATETIME(6)?`: `received_at`, `posted_at`; `VARCHAR(1000)?`: `note`.
+- `VARCHAR(40)?`: `created_by`, `posted_by`; `DATETIME(6)`: `created_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `goods_receipt_id` | `VARCHAR(40)` | PK |
-| `receipt_number` | `VARCHAR(60)` | Unique số phiếu nhập |
-| `purchase_order_id` | `VARCHAR(40)` | FK → `PURCHASE_ORDER` |
-| `warehouse_id` | `VARCHAR(40)` | FK → `WAREHOUSE`; phải khớp PO hoặc policy chuyển kho |
-| `status` | `VARCHAR(24)` | `DRAFT`, `POSTED`, `CANCELLED` |
-| `supplier_invoice_number` | `VARCHAR(100)` nullable | Số hóa đơn NCC |
-| `received_at` | `DATETIME(6)` nullable | Thời điểm nhận |
-| `note` | `VARCHAR(1000)` nullable | Ghi chú |
-| `created_by`, `posted_by` | `VARCHAR(40)` nullable | FK → `USER_ACCOUNT` |
-| `created_at`, `posted_at` | `DATETIME(6)` | Audit |
+PK (goods_receipt_id); UQ (receipt_number); FK (purchase_order_id, warehouse_id) → PURCHASE_ORDER; FK (created_by) → USER_ACCOUNT(user_id); FK (posted_by) → USER_ACCOUNT(user_id).
+`status`: DRAFT,POSTED,CANCELLED.
+Mặc định: `status`=DRAFT.
 
 ### 4.6 `GOODS_RECEIPT_ITEM`
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `goods_receipt_item_id` | `BIGINT UNSIGNED` | PK |
-| `goods_receipt_id` | `VARCHAR(40)` | FK → `GOODS_RECEIPT` |
-| `purchase_order_item_id` | `BIGINT UNSIGNED` | FK → `PURCHASE_ORDER_ITEM` |
-| `product_id` | `VARCHAR(40)` | FK → `PRODUCT`; phải khớp PO item |
-| `quantity_received` | `INT UNSIGNED` | Số lượng nhận, > 0 |
-| `unit_cost` | `DECIMAL(19,2)` | Giá vốn thực nhận snapshot |
-| `line_total` | `DECIMAL(19,2)` | Tổng giá trị nhận |
+- `BIGINT UNSIGNED`: `goods_receipt_item_id`, `purchase_order_item_id`; `VARCHAR(40)`: `goods_receipt_id`, `product_id`; `INT UNSIGNED`: `quantity_received`.
+- `DECIMAL(19,2)`: `unit_cost`, `line_total`.
+
+PK (goods_receipt_item_id); UQ (goods_receipt_id, purchase_order_item_id); FK (goods_receipt_id) → GOODS_RECEIPT; FK (purchase_order_item_id, product_id) → PURCHASE_ORDER_ITEM.
 
 ### 4.7 `INVENTORY_BALANCE`
 
-Mục đích: số dư tồn hiện tại theo kho và SKU.
+- `VARCHAR(40)`: `warehouse_id`, `product_id`; `INT UNSIGNED`: `on_hand_quantity`, `reserved_quantity`; `BIGINT`: `version`.
+- `DATETIME(6)`: `updated_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `warehouse_id` | `VARCHAR(40)` | PK/FK → `WAREHOUSE` |
-| `product_id` | `VARCHAR(40)` | PK/FK → `PRODUCT` |
-| `on_hand_quantity` | `INT UNSIGNED` | Tồn vật lý |
-| `reserved_quantity` | `INT UNSIGNED` | Đang giữ cho checkout/order |
-| `version` | `BIGINT` | Lock chống oversell/lost update |
-| `updated_at` | `DATETIME(6)` | Audit |
-
-`available_quantity = on_hand_quantity - reserved_quantity` được tính, không lưu.
+PK (warehouse_id, product_id); FK (warehouse_id) → WAREHOUSE; FK (product_id) → PRODUCT.
 
 ### 4.8 `STOCK_MOVEMENT`
 
-Mục đích: sổ cái tồn kho append-only.
+- `BIGINT UNSIGNED`: `stock_movement_id`; `VARCHAR(40)`: `warehouse_id`, `product_id`, `reference_type`, `reference_id`; `VARCHAR(32)`: `movement_type`.
+- `INT`: `quantity_delta`; `DECIMAL(19,2)?`: `unit_cost`; `INT UNSIGNED`: `balance_after`.
+- `DATETIME(6)`: `occurred_at`; `VARCHAR(40)?`: `created_by`; `VARCHAR(1000)?`: `note`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `stock_movement_id` | `BIGINT UNSIGNED` | PK |
-| `warehouse_id` | `VARCHAR(40)` | FK → `WAREHOUSE` |
-| `product_id` | `VARCHAR(40)` | FK → `PRODUCT` |
-| `movement_type` | `VARCHAR(32)` | Receipt, sale issue, return hoặc adjustment |
-| `quantity_delta` | `INT` | Số dương nhập, số âm xuất |
-| `unit_cost` | `DECIMAL(19,2)` nullable | Giá vốn snapshot nếu có |
-| `balance_after` | `INT UNSIGNED` | On-hand sau movement để audit |
-| `reference_type` | `VARCHAR(40)` | Loại chứng từ nguồn |
-| `reference_id` | `VARCHAR(40)` | ID chứng từ nguồn; index cùng type |
-| `occurred_at` | `DATETIME(6)` | Thời điểm nghiệp vụ |
-| `created_by` | `VARCHAR(40)` nullable | FK → `USER_ACCOUNT`/system |
-| `note` | `VARCHAR(1000)` nullable | Lý do/ghi chú |
+PK (stock_movement_id); FK (warehouse_id) → WAREHOUSE; FK (product_id) → PRODUCT; FK (created_by) → USER_ACCOUNT(user_id).
+`movement_type`: PURCHASE_RECEIPT,SALE_ISSUE,CUSTOMER_RETURN,SUPPLIER_RETURN, ADJUSTMENT_IN,ADJUSTMENT_OUT.
 
 ### 4.9 `INVENTORY_SERIAL`
 
-Mục đích: quản lý serial của laptop/thiết bị `track_serial = true`.
+- `VARCHAR(40)`: `inventory_serial_id`, `product_id`, `warehouse_id`; `VARCHAR(160)`: `serial_number`; `BIGINT UNSIGNED`: `goods_receipt_item_id`.
+- `BIGINT UNSIGNED?`: `order_item_id`; `VARCHAR(24)`: `status`; `DATETIME(6)`: `created_at`, `updated_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `inventory_serial_id` | `VARCHAR(40)` | PK |
-| `product_id` | `VARCHAR(40)` | FK → `PRODUCT` |
-| `serial_number` | `VARCHAR(160)` | Unique serial |
-| `warehouse_id` | `VARCHAR(40)` | FK → kho hiện tại |
-| `goods_receipt_item_id` | `BIGINT UNSIGNED` | FK → nguồn nhập |
-| `order_item_id` | `BIGINT UNSIGNED` nullable | FK → dòng bán khi đã xuất |
-| `status` | `VARCHAR(24)` | `IN_STOCK`, `RESERVED`, `SOLD`, `RETURNED`, `DAMAGED` |
-| `created_at`, `updated_at` | `DATETIME(6)` | Audit |
+PK (inventory_serial_id); UQ (serial_number); FK (product_id) → PRODUCT; FK (warehouse_id) → WAREHOUSE; FK (goods_receipt_item_id, product_id) → GOODS_RECEIPT_ITEM; FK (order_item_id) → ORDER_ITEM.
+`status`: IN_STOCK,RESERVED,SOLD,RETURNED,DAMAGED.
 
 ## 5. Đơn hàng và snapshot thương mại
 
 ### 5.1 `ORDERS`
 
-Mục đích: đơn bán hàng và nguồn transaction cho mining sau khi `COMPLETED`.
+- `VARCHAR(40)`: `order_id`, `customer_id`, `source`; `VARCHAR(40)?`: `checkout_id`; `VARCHAR(60)`: `order_number`.
+- `DATETIME(6)`: `ordered_at`, `created_at`, `updated_at`; `DATETIME(6)?`: `completed_at`; `VARCHAR(32)`: `status`.
+- `CHAR(3)`: `currency_code`; `DECIMAL(19,2)`: `list_subtotal`, `combo_discount_total`, `other_discount_total`, `shipping_fee`, `tax_total`, `grand_total`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `order_id` | `VARCHAR(40)` | PK |
-| `checkout_id` | `VARCHAR(40)` nullable | Unique FK → `CHECKOUT_SESSION`; null với dữ liệu import |
-| `order_number` | `VARCHAR(60)` | Unique mã hiển thị |
-| `customer_id` | `VARCHAR(40)` | FK → `CUSTOMER`; bắt buộc để tạo sequence |
-| `ordered_at` | `DATETIME(6)` | Thời điểm đặt |
-| `completed_at` | `DATETIME(6)` nullable | Thời điểm hoàn tất, dùng sắp sequence |
-| `status` | `VARCHAR(32)` | `PENDING_PAYMENT`, `PAID`, `PROCESSING`, `COMPLETED`, `CANCELLED`, `EXPIRED`, `RETURNED`, `REFUNDED` |
-| `source` | `VARCHAR(40)` | `WEB`, `IMPORT`, `ADMIN`... |
-| `currency_code` | `CHAR(3)` | Đồng tiền hóa đơn |
-| `list_subtotal` | `DECIMAL(19,2)` | Tổng trước giảm/thuế/phí |
-| `combo_discount_total` | `DECIMAL(19,2)` | Tổng giảm từ combo |
-| `other_discount_total` | `DECIMAL(19,2)` | Giảm khác, tách khỏi combo |
-| `shipping_fee` | `DECIMAL(19,2)` | Phí vận chuyển |
-| `tax_total` | `DECIMAL(19,2)` | Thuế |
-| `grand_total` | `DECIMAL(19,2)` | Tổng phải trả |
-| `created_at`, `updated_at` | `DATETIME(6)` | Audit |
-
-Chỉ `COMPLETED` được chiếu sang dataset mining. Sau khi một snapshot dùng order,
-không được âm thầm sửa lịch sử order/item đó.
+PK (order_id); UQ (checkout_id); UQ (order_number); FK (customer_id) → CUSTOMER.
+`status`: PENDING_PAYMENT,PAID,PROCESSING,COMPLETED,CANCELLED, EXPIRED,RETURNED,REFUNDED.
+Mặc định: `currency_code`=VND.
 
 ### 5.2 `ORDER_ITEM`
 
-Mục đích: dòng sản phẩm và giá thực tế đóng băng của đơn.
+- `BIGINT UNSIGNED`: `order_item_id`; `VARCHAR(40)`: `order_id`, `product_id`; `VARCHAR(40)?`: `order_applied_combo_id`.
+- `INT UNSIGNED`: `quantity`; `DECIMAL(19,2)`: `list_unit_price`, `allocated_discount_amount`, `line_total`; `VARCHAR(80)`: `sku_snapshot`.
+- `VARCHAR(200)`: `product_name_snapshot`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `order_item_id` | `BIGINT UNSIGNED` | PK |
-| `order_id` | `VARCHAR(40)` | FK → `ORDERS` |
-| `product_id` | `VARCHAR(40)` | FK → `PRODUCT` |
-| `order_applied_combo_id` | `VARCHAR(40)` nullable | FK composite cùng `order_id` |
-| `quantity` | `INT UNSIGNED` | > 0 |
-| `list_unit_price` | `DECIMAL(19,2)` | Giá niêm yết snapshot lúc chốt |
-| `allocated_discount_amount` | `DECIMAL(19,2)` | Tổng discount phân bổ vào dòng |
-| `line_total` | `DECIMAL(19,2)` | `price * quantity - allocated discount` |
-| `sku_snapshot` | `VARCHAR(80)` | SKU lúc bán |
-| `product_name_snapshot` | `VARCHAR(200)` | Tên lúc bán |
+PK (order_item_id); FK (order_id) → ORDERS; FK (product_id) → PRODUCT.
 
 ### 5.3 `ORDER_APPLIED_COMBO`
 
-Mục đích: combo và chính sách giá thực sự áp dụng cho order.
+- `VARCHAR(40)`: `order_applied_combo_id`, `order_id`, `combo_id`; `VARCHAR(255)`: `combo_name_snapshot`; `VARCHAR(24)`: `discount_type_snapshot`.
+- `DECIMAL(19,4)?`: `discount_value_snapshot`; `CHAR(3)`: `currency_code`; `DECIMAL(19,2)`: `list_subtotal`, `discount_base_subtotal`, `discount_amount`, `final_subtotal`.
+- `DATETIME(6)`: `applied_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `order_applied_combo_id` | `VARCHAR(40)` | PK |
-| `order_id` | `VARCHAR(40)` | FK → `ORDERS`; unique cùng ID cho composite FK |
-| `combo_id` | `VARCHAR(40)` | FK → `COMBO`; combo không hard-delete |
-| `combo_name_snapshot` | `VARCHAR(255)` | Tên tại thời điểm mua |
-| `discount_type_snapshot` | `VARCHAR(24)` | Policy tại thời điểm mua |
-| `discount_value_snapshot` | `DECIMAL(19,4)` | % hoặc số tiền/giá cố định theo type |
-| `currency_code` | `CHAR(3)` | Đồng tiền |
-| `list_subtotal` | `DECIMAL(19,2)` | Tổng list của các item combo |
-| `discount_base_subtotal` | `DECIMAL(19,2)` | Phần đủ điều kiện giảm |
-| `discount_amount` | `DECIMAL(19,2)` | Số tiền giảm chính xác |
-| `final_subtotal` | `DECIMAL(19,2)` | Sau giảm |
-| `applied_at` | `DATETIME(6)` | Audit |
+PK (order_applied_combo_id); UQ (order_applied_combo_id, order_id); FK (order_id) → ORDERS; FK (combo_id) → COMBO.
 
 ### 5.4 `ORDER_ADDRESS`
 
-Mục đích: snapshot địa chỉ hóa đơn/giao hàng, độc lập `USER_ADDRESS`.
+- `VARCHAR(40)`: `order_address_id`, `order_id`; `VARCHAR(16)`: `address_type`; `VARCHAR(160)`: `recipient_name`, `ward_name`, `district_name`, `province_name`.
+- `VARCHAR(32)`: `phone`; `VARCHAR(500)`: `address_line`; `VARCHAR(32)?`: `ward_code`, `district_code`, `province_code`.
+- `VARCHAR(20)?`: `postal_code`; `CHAR(2)`: `country_code`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `order_address_id` | `VARCHAR(40)` | PK |
-| `order_id` | `VARCHAR(40)` | FK → `ORDERS` |
-| `address_type` | `VARCHAR(16)` | `SHIPPING`, `BILLING`; unique/order/type |
-| `recipient_name`, `phone` | `VARCHAR` | PII snapshot |
-| `address_line` | `VARCHAR(500)` | PII snapshot |
-| `ward_code/name`, `district_code/name`, `province_code/name` | `VARCHAR` | Snapshot hành chính |
-| `postal_code` | `VARCHAR(20)` nullable | Mã bưu chính |
-| `country_code` | `CHAR(2)` | Quốc gia |
+PK (order_address_id); UQ (order_id, address_type); FK (order_id) → ORDERS.
+`address_type`: SHIPPING,BILLING.
+Mặc định: `country_code`=VN.
 
 ### 5.5 `ORDER_STATUS_HISTORY`
 
-Mục đích: audit append-only các chuyển trạng thái đơn.
+- `BIGINT UNSIGNED`: `order_status_history_id`; `VARCHAR(40)`: `order_id`; `VARCHAR(32)?`: `from_status`.
+- `VARCHAR(32)`: `to_status`; `VARCHAR(1000)?`: `reason`; `VARCHAR(24)`: `changed_by_type`.
+- `VARCHAR(80)?`: `changed_by_id`; `DATETIME(6)`: `created_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `order_status_history_id` | `BIGINT UNSIGNED` | PK |
-| `order_id` | `VARCHAR(40)` | FK → `ORDERS` |
-| `from_status` | `VARCHAR(32)` nullable | Trạng thái trước |
-| `to_status` | `VARCHAR(32)` | Trạng thái sau |
-| `reason` | `VARCHAR(1000)` nullable | Lý do |
-| `changed_by_type` | `VARCHAR(24)` | `USER`, `SYSTEM`, `PROVIDER` |
-| `changed_by_id` | `VARCHAR(80)` nullable | User/provider reference |
-| `created_at` | `DATETIME(6)` | Thời điểm chuyển |
+PK (order_status_history_id); FK (order_id) → ORDERS.
+`changed_by_type`: USER,SYSTEM,PROVIDER.
 
 ## 6. Cart và checkout
 
 ### 6.1 `CART`
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `cart_id` | `VARCHAR(40)` | PK |
-| `customer_id` | `VARCHAR(40)` nullable | FK → `CUSTOMER` khi đăng nhập |
-| `guest_token_hash` | `VARCHAR(255)` nullable | Hash token guest; không lưu raw |
-| `status` | `VARCHAR(24)` | `ACTIVE`, `CONVERTED`, `ABANDONED`, `EXPIRED` |
-| `currency_code` | `CHAR(3)` | Một currency/cart |
-| `version` | `BIGINT` | Optimistic lock |
-| `expires_at` | `DATETIME(6)` nullable | Hết hạn guest/inactive cart |
-| `created_at`, `updated_at` | `DATETIME(6)` | Audit |
+- `VARCHAR(40)`: `cart_id`; `VARCHAR(40)?`: `customer_id`; `VARCHAR(255)?`: `guest_token_hash`.
+- `VARCHAR(24)`: `status`; `CHAR(3)`: `currency_code`; `BIGINT`: `version`.
+- `DATETIME(6)?`: `expires_at`; `DATETIME(6)`: `created_at`, `updated_at`.
 
-Cart thuộc customer hoặc guest token. Totals cart chỉ là estimate, không phải hóa đơn.
-Khi guest confirm checkout, backend tạo/ánh xạ một `CUSTOMER` giả danh trước khi
-tạo `ORDERS`, để mọi order hoàn tất luôn có sequence identity hợp lệ.
+PK (cart_id); UQ (guest_token_hash); FK (customer_id) → CUSTOMER.
+`status`: ACTIVE,CONVERTED,ABANDONED,EXPIRED.
+Mặc định: `status`=ACTIVE; `currency_code`=VND.
 
 ### 6.2 `CART_APPLIED_COMBO`
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `cart_applied_combo_id` | `VARCHAR(40)` | PK |
-| `cart_id` | `VARCHAR(40)` | FK → `CART`; unique cùng ID cho composite FK |
-| `combo_id` | `VARCHAR(40)` | FK → `COMBO` |
-| `status` | `VARCHAR(24)` | `SELECTED`, `INVALIDATED`, `REMOVED` |
-| `estimated_list_subtotal` | `DECIMAL(19,2)` | Estimate trước giảm |
-| `estimated_discount_amount` | `DECIMAL(19,2)` | Estimate giảm |
-| `estimated_final_subtotal` | `DECIMAL(19,2)` | Estimate sau giảm |
-| `calculated_at` | `DATETIME(6)` | Lúc tính estimate |
-| `invalid_reason` | `VARCHAR(500)` nullable | Giá/combo/item thay đổi |
+- `VARCHAR(40)`: `cart_applied_combo_id`, `cart_id`, `combo_id`; `VARCHAR(24)`: `status`; `DECIMAL(19,2)`: `estimated_list_subtotal`, `estimated_discount_amount`, `estimated_final_subtotal`.
+- `DATETIME(6)`: `calculated_at`; `VARCHAR(500)?`: `invalid_reason`.
+
+PK (cart_applied_combo_id); UQ (cart_applied_combo_id, cart_id); FK (cart_id) → CART; FK (combo_id) → COMBO.
+`status`: SELECTED,INVALIDATED,REMOVED.
+Mặc định: `status`=SELECTED.
 
 ### 6.3 `CART_ITEM`
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `cart_item_id` | `BIGINT UNSIGNED` | PK |
-| `cart_id` | `VARCHAR(40)` | FK → `CART` |
-| `product_id` | `VARCHAR(40)` | FK → `PRODUCT` |
-| `cart_applied_combo_id` | `VARCHAR(40)` nullable | Composite FK cùng cart |
-| `quantity` | `INT UNSIGNED` | > 0 |
-| `estimated_unit_price` | `DECIMAL(19,2)` | Cache UI, không tin khi checkout |
-| `created_at`, `updated_at` | `DATETIME(6)` | Audit |
+- `BIGINT UNSIGNED`: `cart_item_id`; `VARCHAR(40)`: `cart_id`, `product_id`; `VARCHAR(40)?`: `cart_applied_combo_id`.
+- `INT UNSIGNED`: `quantity`; `DECIMAL(19,2)`: `estimated_unit_price`; `DATETIME(6)`: `created_at`, `updated_at`.
+
+PK (cart_item_id); FK (cart_id) → CART; FK (product_id) → PRODUCT; FK (cart_applied_combo_id, cart_id) → CART_APPLIED_COMBO.
 
 ### 6.4 `CHECKOUT_SESSION`
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `checkout_id` | `VARCHAR(40)` | PK |
-| `cart_id` | `VARCHAR(40)` | FK → `CART` |
-| `customer_id` | `VARCHAR(40)` nullable | FK → `CUSTOMER` |
-| `idempotency_scope` | `VARCHAR(128)` | Server-derived customer/guest scope |
-| `idempotency_key` | `VARCHAR(128)` | Unique cùng scope |
-| `cart_version_snapshot` | `BIGINT` | Phát hiện cart đổi sau quote |
-| `status` | `VARCHAR(32)` | `CREATED`, `QUOTED`, `CONFIRMED`, `PAYMENT_PENDING`, `COMPLETED`, `FAILED`, `CANCELLED`, `EXPIRED` |
-| `currency_code` | `CHAR(3)` | Đồng tiền quote |
-| `list_subtotal` | `DECIMAL(19,2)` | Tổng list |
-| `combo_discount_total` | `DECIMAL(19,2)` | Giảm combo |
-| `other_discount_total` | `DECIMAL(19,2)` | Giảm khác |
-| `shipping_fee` | `DECIMAL(19,2)` | Phí vận chuyển |
-| `tax_total` | `DECIMAL(19,2)` | Thuế |
-| `grand_total` | `DECIMAL(19,2)` | Tổng quote |
-| `quote_expires_at` | `DATETIME(6)` | Hết hạn giá |
-| `version` | `BIGINT` | Optimistic lock |
-| `failure_code` | `VARCHAR(80)` nullable | Mã lỗi ổn định, không chứa secret |
-| `created_at`, `updated_at`, `completed_at` | `DATETIME(6)` | Audit |
+- `VARCHAR(40)`: `checkout_id`, `cart_id`; `VARCHAR(40)?`: `customer_id`; `VARCHAR(128)`: `idempotency_scope`, `idempotency_key`.
+- `BIGINT`: `cart_version_snapshot`, `version`; `VARCHAR(32)`: `status`; `CHAR(3)`: `currency_code`.
+- `DECIMAL(19,2)`: `list_subtotal`, `combo_discount_total`, `other_discount_total`, `shipping_fee`, `tax_total`, `grand_total`; `DATETIME(6)?`: `quote_expires_at`, `completed_at`; `VARCHAR(80)?`: `failure_code`.
+- `DATETIME(6)`: `created_at`, `updated_at`.
+
+PK (checkout_id); UQ (idempotency_scope, idempotency_key); FK (cart_id) → CART; FK (customer_id) → CUSTOMER.
+`status`: CREATED,QUOTED,CONFIRMED,PAYMENT_PENDING,COMPLETED, FAILED,CANCELLED,EXPIRED.
+Mặc định: `status`=CREATED; `currency_code`=VND.
 
 ### 6.5 `CHECKOUT_ADDRESS`
 
-Mục đích: địa chỉ đang dùng trong checkout, sẽ copy sang order.
+- `VARCHAR(40)`: `checkout_address_id`, `checkout_id`; `VARCHAR(16)`: `address_type`; `VARCHAR(160)`: `recipient_name`, `ward_name`, `district_name`, `province_name`.
+- `VARCHAR(32)`: `phone`; `VARCHAR(500)`: `address_line`; `VARCHAR(32)?`: `ward_code`, `district_code`, `province_code`.
+- `VARCHAR(20)?`: `postal_code`; `CHAR(2)`: `country_code`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `checkout_address_id` | `VARCHAR(40)` | PK |
-| `checkout_id` | `VARCHAR(40)` | FK → `CHECKOUT_SESSION` |
-| `address_type` | `VARCHAR(16)` | `SHIPPING`, `BILLING` |
-| `recipient_name`, `phone`, `address_line` | `VARCHAR` | PII |
-| `ward_code/name`, `district_code/name`, `province_code/name` | `VARCHAR` | Địa chỉ hành chính |
-| `postal_code` | `VARCHAR(20)` nullable | Mã bưu chính |
-| `country_code` | `CHAR(2)` | Quốc gia |
+PK (checkout_address_id); UQ (checkout_id, address_type); FK (checkout_id) → CHECKOUT_SESSION.
+`address_type`: SHIPPING,BILLING.
+Mặc định: `country_code`=VN.
 
 ### 6.6 `STOCK_RESERVATION`
 
-Mục đích: giữ tồn có thời hạn cho checkout.
+- `VARCHAR(40)`: `reservation_id`, `checkout_id`, `warehouse_id`, `product_id`; `INT UNSIGNED`: `quantity`; `VARCHAR(24)`: `status`.
+- `DATETIME(6)`: `expires_at`, `created_at`; `DATETIME(6)?`: `consumed_at`, `released_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `reservation_id` | `VARCHAR(40)` | PK |
-| `checkout_id` | `VARCHAR(40)` | FK → `CHECKOUT_SESSION` |
-| `warehouse_id` | `VARCHAR(40)` | FK → `WAREHOUSE` |
-| `product_id` | `VARCHAR(40)` | FK → `PRODUCT` |
-| `quantity` | `INT UNSIGNED` | > 0 |
-| `status` | `VARCHAR(24)` | `ACTIVE`, `CONSUMED`, `RELEASED`, `EXPIRED` |
-| `expires_at` | `DATETIME(6)` | Hạn giữ |
-| `created_at`, `consumed_at`, `released_at` | `DATETIME(6)` | Audit |
-
-Unique `(checkout_id, warehouse_id, product_id)`.
+PK (reservation_id); UQ (checkout_id, warehouse_id, product_id); FK (checkout_id) → CHECKOUT_SESSION; FK (warehouse_id) → WAREHOUSE; FK (product_id) → PRODUCT.
+`status`: ACTIVE,CONSUMED,RELEASED,EXPIRED.
+Mặc định: `status`=ACTIVE.
 
 ## 7. Thanh toán
 
 ### 7.1 `PAYMENT`
 
-Mục đích: trạng thái thanh toán tổng hợp của order.
+- `VARCHAR(40)`: `payment_id`, `order_id`; `VARCHAR(32)`: `method`, `status`; `CHAR(3)`: `currency_code`.
+- `DECIMAL(19,2)`: `amount`, `paid_amount`, `refunded_amount`; `DATETIME(6)`: `created_at`, `updated_at`; `DATETIME(6)?`: `paid_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `payment_id` | `VARCHAR(40)` | PK |
-| `order_id` | `VARCHAR(40)` | Unique FK → `ORDERS` |
-| `method` | `VARCHAR(32)` | `COD`, `BANK_TRANSFER`, `E_WALLET`, `CARD` |
-| `currency_code` | `CHAR(3)` | Phải khớp order |
-| `amount` | `DECIMAL(19,2)` | Số phải thanh toán |
-| `status` | `VARCHAR(32)` | `PENDING`, `AUTHORIZED`, `PAID`, `PARTIALLY_REFUNDED`, `REFUNDED`, `FAILED`, `CANCELLED` |
-| `paid_amount` | `DECIMAL(19,2)` | Tổng capture thành công |
-| `refunded_amount` | `DECIMAL(19,2)` | Tổng refund thành công |
-| `created_at`, `updated_at`, `paid_at` | `DATETIME(6)` | Audit |
+PK (payment_id); UQ (order_id); FK (order_id) → ORDERS.
+`method`: COD,BANK_TRANSFER,E_WALLET,CARD; `status`: PENDING,AUTHORIZED,PAID,PARTIALLY_REFUNDED,REFUNDED, FAILED,CANCELLED.
+Mặc định: `status`=PENDING.
 
 ### 7.2 `PAYMENT_ATTEMPT`
 
-Mục đích: từng lần thử thanh toán/provider redirect.
+- `VARCHAR(40)`: `payment_attempt_id`, `payment_id`, `provider`; `VARCHAR(32)`: `method`, `status`; `VARCHAR(128)`: `idempotency_key`.
+- `VARCHAR(160)?`: `provider_payment_id`; `DECIMAL(19,2)`: `amount`; `CHAR(3)`: `currency_code`.
+- `VARCHAR(2048)?`: `redirect_url`; `DATETIME(6)?`: `expires_at`; `VARCHAR(80)?`: `failure_code`.
+- `VARCHAR(1000)?`: `failure_message`; `DATETIME(6)`: `created_at`, `updated_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `payment_attempt_id` | `VARCHAR(40)` | PK |
-| `payment_id` | `VARCHAR(40)` | FK → `PAYMENT` |
-| `provider` | `VARCHAR(40)` | Gateway/COD handler |
-| `method` | `VARCHAR(32)` | Phương thức của attempt |
-| `idempotency_key` | `VARCHAR(128)` | Unique |
-| `provider_payment_id` | `VARCHAR(160)` nullable | Unique opaque provider reference |
-| `amount` | `DECIMAL(19,2)` | Số tiền attempt |
-| `currency_code` | `CHAR(3)` | Đồng tiền |
-| `status` | `VARCHAR(32)` | `CREATED`, `PENDING`, `AUTHORIZED`, `SUCCEEDED`, `FAILED`, `CANCELLED`, `EXPIRED` |
-| `redirect_url` | `VARCHAR(2048)` nullable | URL ngắn hạn, không chứa secret dài hạn |
-| `expires_at` | `DATETIME(6)` nullable | Hết hạn thanh toán |
-| `failure_code`, `failure_message` | `VARCHAR` nullable | Lỗi đã lọc dữ liệu nhạy cảm |
-| `created_at`, `updated_at` | `DATETIME(6)` | Audit |
+PK (payment_attempt_id); UQ (idempotency_key); UQ (provider, provider_payment_id); FK (payment_id) → PAYMENT.
+`method`: COD,BANK_TRANSFER,E_WALLET,CARD; `status`: CREATED,PENDING,AUTHORIZED,SUCCEEDED,FAILED,CANCELLED,EXPIRED.
+Mặc định: `status`=CREATED.
 
 ### 7.3 `PAYMENT_TRANSACTION`
 
-Mục đích: sổ giao dịch tiền với provider.
+- `VARCHAR(40)`: `payment_transaction_id`, `payment_id`, `provider`; `VARCHAR(40)?`: `payment_attempt_id`; `VARCHAR(24)`: `type`, `status`.
+- `VARCHAR(160)`: `provider_transaction_id`; `DECIMAL(19,2)`: `amount`; `CHAR(3)`: `currency_code`.
+- `DATETIME(6)?`: `processed_at`; `DATETIME(6)`: `created_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `payment_transaction_id` | `VARCHAR(40)` | PK |
-| `payment_id` | `VARCHAR(40)` | FK → `PAYMENT` |
-| `payment_attempt_id` | `VARCHAR(40)` nullable | FK → attempt |
-| `provider` | `VARCHAR(40)` | Provider/COD handler |
-| `type` | `VARCHAR(24)` | `AUTHORIZE`, `CAPTURE`, `REFUND`, `VOID` |
-| `provider_transaction_id` | `VARCHAR(160)` | Unique chống cộng tiền hai lần |
-| `amount` | `DECIMAL(19,2)` | Giá trị transaction |
-| `currency_code` | `CHAR(3)` | Đồng tiền |
-| `status` | `VARCHAR(24)` | `PENDING`, `SUCCEEDED`, `FAILED` |
-| `processed_at`, `created_at` | `DATETIME(6)` | Audit |
+PK (payment_transaction_id); UQ (provider, provider_transaction_id); FK (payment_id) → PAYMENT; FK (payment_attempt_id) → PAYMENT_ATTEMPT.
+`type`: AUTHORIZE,CAPTURE,REFUND,VOID; `status`: PENDING,SUCCEEDED,FAILED.
 
 ### 7.4 `PAYMENT_WEBHOOK_EVENT`
 
-Mục đích: inbox/audit webhook idempotent.
+- `BIGINT UNSIGNED`: `webhook_event_id`; `VARCHAR(40)`: `provider`; `VARCHAR(160)`: `provider_event_id`.
+- `VARCHAR(40)?`: `payment_attempt_id`; `VARCHAR(80)`: `event_type`; `VARCHAR(128)`: `payload_hash`.
+- `BOOLEAN`: `signature_valid`; `VARCHAR(24)`: `status`; `DATETIME(6)`: `received_at`.
+- `DATETIME(6)?`: `processed_at`; `VARCHAR(1000)?`: `error_message`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `webhook_event_id` | `BIGINT UNSIGNED` | PK |
-| `provider` | `VARCHAR(40)` | Provider |
-| `provider_event_id` | `VARCHAR(160)` | Unique cùng provider |
-| `payment_attempt_id` | `VARCHAR(40)` nullable | FK sau khi mapping được |
-| `event_type` | `VARCHAR(80)` | Loại event provider |
-| `payload_hash` | `VARCHAR(128)` | Hash payload phục vụ audit |
-| `signature_valid` | `BOOLEAN` | Kết quả xác minh chữ ký |
-| `status` | `VARCHAR(24)` | `RECEIVED`, `PROCESSED`, `IGNORED`, `FAILED` |
-| `received_at`, `processed_at` | `DATETIME(6)` | Audit |
-| `error_message` | `VARCHAR(1000)` nullable | Lỗi đã lọc secret/PII |
-
-Không lưu PAN, CVV, mật khẩu ngân hàng hoặc access token provider trong các bảng trên.
+PK (webhook_event_id); UQ (provider, provider_event_id); FK (payment_attempt_id) → PAYMENT_ATTEMPT.
+`status`: RECEIVED,PROCESSED,IGNORED,FAILED.
+Mặc định: `status`=RECEIVED.
 
 ## 8. Dataset, mining run và pattern
 
 ### 8.1 `ITEM_MAPPING`
 
-Mục đích: ánh xạ ổn định SKU sang item nguyên dương cho SPMF.
+- `VARCHAR(40)`: `product_id`; `INT UNSIGNED`: `item_id`; `DATETIME(6)`: `created_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `product_id` | `VARCHAR(40)` | PK/FK → `PRODUCT` |
-| `item_id` | `INT UNSIGNED` | Unique, > 0, không tái sử dụng |
-| `created_at` | `DATETIME(6)` | Audit |
-
-Mỗi snapshot vẫn xuất dictionary/checksum riêng; pattern cũ không phụ thuộc mù
-quáng vào trạng thái mapping hiện tại.
+PK (product_id); UQ (item_id); FK (product_id) → PRODUCT.
 
 ### 8.2 `DATASET_SNAPSHOT`
 
-Mục đích: artifact input bất biến và báo cáo chuyển dữ liệu DB/CSV sang sequence.
+- `VARCHAR(40)`: `snapshot_id`; `VARCHAR(32)`: `source_type`, `validation_status`; `VARCHAR(255)`: `source_name`.
+- `DATETIME(6)?`: `from_time`, `to_time`; `VARCHAR(1024)?`: `raw_file_path`, `sequence_file_path`, `mapping_file_path`; `CHAR(64)?`: `raw_sha256`, `sequence_sha256`, `mapping_sha256`.
+- `JSON`: `conversion_report_json`; `BIGINT UNSIGNED`: `sequence_count`; `BIGINT UNSIGNED?`: `single_itemset_sequence_count`, `multi_itemset_sequence_count`, `itemset_count`, `distinct_item_count`, `total_item_occurrences`.
+- `INT UNSIGNED?`: `min_sequence_length`, `max_sequence_length`; `DOUBLE?`: `average_sequence_length`; `DATETIME(6)`: `created_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `snapshot_id` | `VARCHAR(40)` | PK |
-| `source_type` | `VARCHAR(32)` | `DATABASE`, `CSV`, `BENCHMARK`... |
-| `source_name` | `VARCHAR(255)` | Tên/provenance nguồn |
-| `from_time`, `to_time` | `DATETIME(6)` nullable | Cửa sổ giao dịch |
-| `raw_file_path`, `sequence_file_path`, `mapping_file_path` | `VARCHAR(1024)` nullable | Artifact paths/object keys; legacy V1 có thể thiếu |
-| `raw_sha256`, `sequence_sha256`, `mapping_sha256` | `CHAR(64)` nullable | Checksum tái lập; bắt buộc với snapshot mới hợp lệ |
-| `validation_status` | `VARCHAR(32)` | `PENDING`, `VALID`, `INVALID`, `LEGACY_UNVERIFIED` |
-| `conversion_report_json` | `JSON` | Số dòng hợp lệ/bị loại và lý do |
-| `sequence_count` | `BIGINT UNSIGNED` | Số customer sequence |
-| `single_itemset_sequence_count` | `BIGINT UNSIGNED` | Sequence chỉ một itemset |
-| `multi_itemset_sequence_count` | `BIGINT UNSIGNED` | Sequence nhiều itemset |
-| `itemset_count` | `BIGINT UNSIGNED` | Tổng order/itemset |
-| `distinct_item_count` | `BIGINT UNSIGNED` | Số item khác nhau |
-| `total_item_occurrences` | `BIGINT UNSIGNED` | Tổng lần xuất hiện sau dedup/order |
-| `min_sequence_length`, `max_sequence_length` | `INT UNSIGNED` | Biên độ dài |
-| `average_sequence_length` | `DOUBLE` | Trung bình mô tả dataset |
-| `created_at` | `DATETIME(6)` | Audit |
-
-Snapshot bất biến sau khi có run tham chiếu.
+PK (snapshot_id).
+`validation_status`: PENDING,VALID,INVALID,LEGACY_UNVERIFIED.
 
 ### 8.3 `MINING_RUN`
 
-Mục đích: cấu hình, trạng thái, kết quả tổng và phép đo một lần chạy thuật toán.
+- `VARCHAR(40)`: `run_id`, `snapshot_id`; `VARCHAR(32)`: `algorithm`, `status`, `minsup_mode`; `VARCHAR(255)`: `dataset_source`.
+- `DOUBLE`: `minsup_configured`, `effective_threshold`, `mean_w`; `DOUBLE?`: `minsup_relative_fraction`, `max_w`, `min_w`; `BIGINT UNSIGNED?`: `pattern_count`, `candidate_count`, `dataset_io_ms`, `preprocessing_ms`, `dfs_mining_ms`, `complete_algorithm_ms`, `output_io_ms`, `total_execution_ms`, `peak_sampled_jvm_heap_bytes`.
+- `JSON?`: `legacy_metadata_json`; `VARCHAR(2000)?`: `error_message`; `DATETIME(6)`: `created_at`.
+- `DATETIME(6)?`: `started_at`, `finished_at`, `execution_lease_until`; `VARCHAR(40)?`: `execution_owner_id`, `execution_attempt_id`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `run_id` | `VARCHAR(40)` | PK |
-| `snapshot_id` | `VARCHAR(40)` | FK → `DATASET_SNAPSHOT` |
-| `algorithm` | `VARCHAR(32)` | `WSPM_PRETREE`, `WSPM_BITPRUNE` |
-| `status` | `VARCHAR(32)` | `QUEUED`, `RUNNING`, `SUCCEEDED`, `FAILED`, `LEGACY_UNVERIFIED` |
-| `dataset_source` | `VARCHAR(255)` | Nhãn nguồn để trình bày |
-| `minsup_mode` | `VARCHAR(24)` | Absolute/relative/percentage theo contract |
-| `minsup_configured` | `DOUBLE` | Giá trị người dùng nhập |
-| `minsup_relative_fraction` | `DOUBLE` nullable | Giá trị relative đã chuẩn hóa |
-| `effective_threshold` | `DOUBLE` | Ngưỡng nội bộ thực sự dùng |
-| `max_w`, `min_w`, `mean_w` | `DOUBLE` | Trọng số toàn cục của run |
-| `pattern_count` | `BIGINT UNSIGNED` nullable | Tổng pattern exact |
-| `candidate_count` | `BIGINT UNSIGNED` nullable | Counter ứng viên theo contract |
-| `dataset_io_ms` | `BIGINT UNSIGNED` nullable | Thời gian đọc dataset |
-| `preprocessing_ms` | `BIGINT UNSIGNED` nullable | Tiền xử lý |
-| `dfs_mining_ms` | `BIGINT UNSIGNED` nullable | DFS mining |
-| `complete_algorithm_ms` | `BIGINT UNSIGNED` nullable | Toàn thuật toán, không output I/O |
-| `output_io_ms` | `BIGINT UNSIGNED` nullable | Ghi output |
-| `total_execution_ms` | `BIGINT UNSIGNED` nullable | Tổng scope đã định nghĩa |
-| `peak_sampled_jvm_heap_bytes` | `BIGINT UNSIGNED` nullable | JVM heap sampling, không gọi là RAM chính xác |
-| `legacy_metadata_json` | `JSON` nullable | Chỉ giữ provenance V1 không ánh xạ được; run mới để null |
-| `error_message` | `VARCHAR(2000)` nullable | Lỗi đã lọc dữ liệu nhạy cảm |
-| `created_at`, `started_at`, `finished_at` | `DATETIME(6)` | Audit vòng đời |
-
-Không có `top_k`, `minWeight`, hệ số ranking hoặc ComboScore trong run.
+PK (run_id); FK (snapshot_id) → DATASET_SNAPSHOT.
+`algorithm`: WSPM_PRETREE,WSPM_BITPRUNE; `status`: QUEUED,RUNNING,SUCCEEDED,FAILED,LEGACY_UNVERIFIED.
 
 ### 8.4 `RUN_ITEM_STATISTIC`
 
-Mục đích: dictionary và bằng chứng item weight bất biến của đúng run.
+- `VARCHAR(40)`: `run_id`, `product_id`; `INT UNSIGNED`: `item_id`; `BIGINT UNSIGNED`: `occurrence_count`, `sequence_support`.
+- `DOUBLE?`: `item_weight`; `VARCHAR(200)`: `product_name_snapshot`; `VARCHAR(80)`: `sku_snapshot`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `run_id` | `VARCHAR(40)` | PK/FK → `MINING_RUN` |
-| `item_id` | `INT UNSIGNED` | PK; item trong dictionary run |
-| `product_id` | `VARCHAR(40)` | Unique/run, FK logic → product |
-| `occurrence_count` | `BIGINT UNSIGNED` | Số occurrence theo preprocessing contract |
-| `sequence_support` | `BIGINT UNSIGNED` | Số sequence chứa item |
-| `item_weight` | `DOUBLE` | Trọng số item dùng tính pattern weight |
-| `product_name_snapshot` | `VARCHAR(200)` | Tên lúc chạy |
-| `sku_snapshot` | `VARCHAR(80)` | SKU lúc chạy |
+PK (run_id, item_id); UQ (run_id, product_id); FK (run_id) → MINING_RUN; FK (product_id) → PRODUCT.
 
 ### 8.5 `PATTERN`
 
-Mục đích: complete output pattern của một run.
+- `BIGINT UNSIGNED`: `pattern_id`, `support_abs`; `VARCHAR(40)`: `run_id`; `TEXT`: `canonical_pattern`.
+- `CHAR(64)`: `canonical_pattern_hash`; `DOUBLE`: `support_ratio`, `weighted_support`, `pattern_weight`; `INT UNSIGNED`: `pattern_item_count`, `itemset_count`.
+- `VARCHAR(80)`: `pattern_weight_policy`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `pattern_id` | `BIGINT UNSIGNED` | PK |
-| `run_id` | `VARCHAR(40)` | FK → `MINING_RUN` |
-| `canonical_pattern` | `TEXT` | Chuỗi đầy đủ bảo toàn itemset boundaries |
-| `canonical_pattern_hash` | `CHAR(64)` | SHA-256, unique/run để index toàn pattern |
-| `support_abs` | `BIGINT UNSIGNED` | Exact sequence support |
-| `support_ratio` | `DOUBLE` | `support_abs / sequence_count` |
-| `weighted_support` | `DOUBLE` | `support_abs * mean_w` theo predicate hiện hành |
-| `pattern_item_count` | `INT UNSIGNED` | Tổng item occurrences trong pattern |
-| `itemset_count` | `INT UNSIGNED` | Số itemset |
-| `pattern_weight` | `DOUBLE` | Trọng số mẫu tầng ứng dụng |
-| `pattern_weight_policy` | `VARCHAR(80)` | Ví dụ `EQ2_EQ3_ARITHMETIC_MEAN_V1` |
-
-Không gộp `<(a b)>` với `<(a)(b)>`.
+PK (pattern_id); UQ (run_id, canonical_pattern_hash); FK (run_id) → MINING_RUN.
 
 ### 8.6 `PATTERN_ITEM`
 
-Mục đích: cấu trúc có thứ tự của pattern.
+- `BIGINT UNSIGNED`: `pattern_id`; `INT UNSIGNED`: `itemset_order`, `item_order`, `item_id`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `pattern_id` | `BIGINT UNSIGNED` | PK/FK → `PATTERN` |
-| `itemset_order` | `INT UNSIGNED` | PK; thứ tự itemset, bắt đầu 1 |
-| `item_order` | `INT UNSIGNED` | PK; thứ tự ổn định trong itemset |
-| `item_id` | `INT UNSIGNED` | Phải tồn tại trong dictionary cùng run |
+PK (pattern_id, itemset_order, item_order); FK (pattern_id) → PATTERN.
+
+### 8.7 `RUN_PROVENANCE` — V4
+
+- `VARCHAR(40)`: `run_id`; `VARCHAR(80)`: `provenance_version`; `JSON`: `provenance_json`.
+- `DATETIME(6)`: `captured_at`.
+
+PK (run_id); FK (run_id) → MINING_RUN.
+
+### 8.8 `RUN_RESULT_PUBLICATION` — V4
+
+- `VARCHAR(40)`: `run_id`; `VARCHAR(24)`: `publication_status`; `VARCHAR(80)?`: `manifest_version`, `pattern_weight_policy`.
+- `CHAR(64)?`: `result_sha256`; `BIGINT UNSIGNED?`: `pattern_count`, `pattern_item_count`, `run_item_count`, `publication_elapsed_ms`; `DATETIME(6)?`: `committed_at`.
+
+PK (run_id); FK (run_id) → MINING_RUN.
+Mặc định: `publication_status`=NOT_PUBLISHED.
 
 ## 9. Sinh, duyệt và công bố combo
 
 ### 9.1 `COMBO_BATCH`
 
-Mục đích: một lần biến pattern thành candidate/ranking mà không chạy lại mining.
+- `VARCHAR(40)`: `batch_id`, `run_id`; `VARCHAR(80)`: `ranking_policy`, `pattern_weight_policy`; `INT UNSIGNED`: `top_k`, `min_product_count`, `max_product_count`.
+- `BOOLEAN`: `category_filter_enabled`; `VARCHAR(24)`: `status`; `VARCHAR(40)?`: `created_by`, `activated_by`.
+- `DATETIME(6)`: `created_at`; `DATETIME(6)?`: `activated_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `batch_id` | `VARCHAR(40)` | PK |
-| `run_id` | `VARCHAR(40)` | FK → `MINING_RUN` |
-| `ranking_policy` | `VARCHAR(80)` | Chỉ `SUPPORT_THEN_PATTERN_WEIGHT_V1` |
-| `pattern_weight_policy` | `VARCHAR(80)` | Policy đã dùng |
-| `top_k` | `INT UNSIGNED` | Giới hạn công bố/truy vấn theo anchor |
-| `category_filter_enabled` | `BOOLEAN` | Bật business filter |
-| `min_product_count`, `max_product_count` | `INT UNSIGNED` | Kích thước combo hợp lệ |
-| `status` | `VARCHAR(24)` | `DRAFT`, `ACTIVE`, `ARCHIVED` |
-| `created_by`, `activated_by` | `VARCHAR(40)` nullable | FK → `USER_ACCOUNT` |
-| `created_at`, `activated_at` | `DATETIME(6)` | Audit |
-
-Trong demo chỉ một batch `ACTIVE`; activate batch mới archive batch cũ cùng transaction.
+PK (batch_id); FK (run_id) → MINING_RUN; FK (created_by) → USER_ACCOUNT(user_id); FK (activated_by) → USER_ACCOUNT(user_id).
+`status`: DRAFT,ACTIVE,ARCHIVED.
+Mặc định: `status`=DRAFT.
 
 ### 9.2 `COMBO`
 
-Mục đích: candidate thương mại có vòng đời riêng với pattern khoa học.
+- `VARCHAR(40)`: `combo_id`, `batch_id`, `combo_kind`; `VARCHAR(255)`: `name`; `VARCHAR(24)`: `status`, `discount_type`, `stacking_policy`.
+- `DECIMAL(19,4)?`: `discount_value`; `DECIMAL(19,2)?`: `max_discount_amount`; `CHAR(3)`: `currency_code`.
+- `DECIMAL(19,2)`: `reference_original_price`, `reference_sale_price`; `BIGINT UNSIGNED`: `support_abs`; `DOUBLE`: `support_ratio`, `pattern_weight`.
+- `VARCHAR(1000)`: `explanation`; `DATETIME(6)?`: `valid_from`, `valid_to`, `reviewed_at`, `published_at`; `DATETIME(6)`: `created_at`.
+- `VARCHAR(40)?`: `reviewed_by`; `VARCHAR(1000)?`: `review_note`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `combo_id` | `VARCHAR(40)` | PK |
-| `batch_id` | `VARCHAR(40)` | FK → `COMBO_BATCH` |
-| `name` | `VARCHAR(255)` | Tên hiển thị |
-| `combo_kind` | `VARCHAR(40)` | `SAME_ORDER_BUNDLE`, `SEQUENTIAL_CROSS_SELL`, `MIXED_SEQUENCE` |
-| `status` | `VARCHAR(24)` | `DRAFT`, `APPROVED`, `REJECTED`, `PUBLISHED`, `ARCHIVED` |
-| `discount_type` | `VARCHAR(24)` | `NONE`, `PERCENTAGE`, `FIXED_AMOUNT`, `FIXED_PRICE` |
-| `discount_value` | `DECIMAL(19,4)` nullable | % hoặc amount/target price theo type |
-| `max_discount_amount` | `DECIMAL(19,2)` nullable | Trần cho percentage |
-| `stacking_policy` | `VARCHAR(24)` | Mặc định `NON_STACKABLE` |
-| `currency_code` | `CHAR(3)` | Đồng tiền |
-| `reference_original_price` | `DECIMAL(19,2)` | Snapshot khi publish |
-| `reference_sale_price` | `DECIMAL(19,2)` | Snapshot sau discount khi publish |
-| `support_abs` | `BIGINT UNSIGNED` | Kế thừa primary pattern |
-| `support_ratio` | `DOUBLE` | Kế thừa primary pattern |
-| `pattern_weight` | `DOUBLE` | Kế thừa primary pattern |
-| `explanation` | `VARCHAR(1000)` | Lời giải thích không phóng đại cá nhân hóa |
-| `valid_from`, `valid_to` | `DATETIME(6)` nullable | Khoảng hiệu lực |
-| `created_at`, `reviewed_at`, `published_at` | `DATETIME(6)` | Audit |
-| `reviewed_by` | `VARCHAR(40)` nullable | FK → `USER_ACCOUNT` |
-| `review_note` | `VARCHAR(1000)` nullable | Lý do duyệt/từ chối |
-
-Không có `combo_score` hoặc `rank_position`. Rank được tính sau khi lọc product anchor.
+PK (combo_id); FK (batch_id) → COMBO_BATCH; FK (reviewed_by) → USER_ACCOUNT(user_id).
+`combo_kind`: SAME_ORDER_BUNDLE,SEQUENTIAL_CROSS_SELL,MIXED_SEQUENCE; `status`: DRAFT,APPROVED,REJECTED,PUBLISHED,ARCHIVED; `discount_type`: NONE,PERCENTAGE,FIXED_AMOUNT,FIXED_PRICE; `stacking_policy`: NON_STACKABLE.
+Mặc định: `status`=DRAFT; `discount_type`=NONE; `stacking_policy`=NON_STACKABLE; `currency_code`=VND.
 
 ### 9.3 `COMBO_ITEM`
 
-Mục đích: sản phẩm, vị trí temporal và quyền giảm giá trong combo.
+- `VARCHAR(40)`: `combo_id`, `product_id`; `INT UNSIGNED`: `itemset_order`, `item_order`, `quantity`; `DECIMAL(19,2)`: `unit_price_snapshot`.
+- `BOOLEAN`: `is_anchor_eligible`, `is_discount_eligible`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `combo_id` | `VARCHAR(40)` | PK/FK → `COMBO` |
-| `product_id` | `VARCHAR(40)` | FK → `PRODUCT` |
-| `itemset_order` | `INT UNSIGNED` | PK; bảo toàn temporal structure |
-| `item_order` | `INT UNSIGNED` | PK; thứ tự ổn định |
-| `quantity` | `INT UNSIGNED` | Số lượng bundle, mặc định 1 |
-| `unit_price_snapshot` | `DECIMAL(19,2)` | Giá khi sinh/duyệt combo |
-| `is_anchor_eligible` | `BOOLEAN` | Có được dùng làm product context |
-| `is_discount_eligible` | `BOOLEAN` | Có nằm trong discount base |
-
-Index `(product_id, is_anchor_eligible, combo_id)` phục vụ Top-K storefront.
+PK (combo_id, itemset_order, item_order); UQ (combo_id, product_id); FK (combo_id) → COMBO; FK (product_id) → PRODUCT.
 
 ### 9.4 `COMBO_SOURCE`
 
-Mục đích: provenance combo ↔ pattern.
+- `VARCHAR(40)`: `combo_id`; `BIGINT UNSIGNED`: `pattern_id`; `BOOLEAN`: `is_primary`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `combo_id` | `VARCHAR(40)` | PK/FK → `COMBO` |
-| `pattern_id` | `BIGINT UNSIGNED` | PK/FK → `PATTERN` |
-| `is_primary` | `BOOLEAN` | Đúng một primary source/combo |
-
-Tất cả metrics của combo phải đến từ cùng primary pattern; không ghép MAX độc lập.
+PK (combo_id, pattern_id); FK (combo_id) → COMBO; FK (pattern_id) → PATTERN.
 
 ### 9.5 `CATEGORY_EXCLUSION`
 
-Mục đích: business rule loại cặp danh mục không được tạo combo.
+- `VARCHAR(40)`: `category_id_low`, `category_id_high`; `VARCHAR(500)`: `reason`; `BOOLEAN`: `active`.
+- `DATETIME(6)`: `created_at`.
 
-| Trường | Kiểu đề xuất | Ý nghĩa/ràng buộc |
-|---|---|---|
-| `category_id_low` | `VARCHAR(40)` | PK/FK → `CATEGORY`; canonical smaller ID |
-| `category_id_high` | `VARCHAR(40)` | PK/FK → `CATEGORY`; canonical larger ID |
-| `reason` | `VARCHAR(500)` | Lý do loại |
-| `active` | `BOOLEAN` | Hiệu lực |
-| `created_at` | `DATETIME(6)` | Audit |
+PK (category_id_low, category_id_high); FK (category_id_low) → CATEGORY(category_id); FK (category_id_high) → CATEGORY(category_id).
 
-## 10. Danh sách đầy đủ và ranh giới dữ liệu
+## 10. Bất biến nghiệp vụ và mining
 
-Schema V2 có 45 bảng:
+### Identity, catalog, sales
 
-1. Identity: `USER_ACCOUNT`, `ROLE`, `USER_ROLE`, `USER_SESSION`, `USER_ADDRESS`,
-   `CUSTOMER`.
-2. Catalog: `CATEGORY`, `BRAND`, `PRODUCT`, `PRODUCT_IMAGE`.
-3. Inventory/purchasing: `WAREHOUSE`, `SUPPLIER`, `PURCHASE_ORDER`,
-   `PURCHASE_ORDER_ITEM`, `GOODS_RECEIPT`, `GOODS_RECEIPT_ITEM`,
-   `INVENTORY_BALANCE`, `STOCK_MOVEMENT`, `INVENTORY_SERIAL`.
-4. Sales: `ORDERS`, `ORDER_ITEM`, `ORDER_APPLIED_COMBO`, `ORDER_ADDRESS`,
-   `ORDER_STATUS_HISTORY`.
-5. Cart/checkout: `CART`, `CART_APPLIED_COMBO`, `CART_ITEM`, `CHECKOUT_SESSION`,
-   `CHECKOUT_ADDRESS`, `STOCK_RESERVATION`.
-6. Payment: `PAYMENT`, `PAYMENT_ATTEMPT`, `PAYMENT_TRANSACTION`,
-   `PAYMENT_WEBHOOK_EVENT`.
-7. Mining: `ITEM_MAPPING`, `DATASET_SNAPSHOT`, `MINING_RUN`,
-   `RUN_ITEM_STATISTIC`, `PATTERN`, `PATTERN_ITEM`.
-8. Combo: `COMBO_BATCH`, `COMBO`, `COMBO_ITEM`, `COMBO_SOURCE`,
-   `CATEGORY_EXCLUSION`.
+- USER_ACCOUNT có ít nhất một username/email/phone; normalized identity unique khi có.
+  Registration Auth hiện yêu cầu username/email theo contract riêng; không suy mọi lựa chọn
+  nullable trong schema đều được public API chấp nhận. Không serialize password_hash.
+- CUSTOMER là pseudonymous sequence identity, có thể không liên kết account.
+  USER_ADDRESS là địa chỉ lưu sẵn; CHECKOUT_ADDRESS/ORDER_ADDRESS là snapshot độc lập.
+  Tối đa một default address/user là application contract.
+- PRODUCT là một SKU/mining item; specifications_json chỉ render, không làm FK.
+  Tồn kho không nằm trên PRODUCT. ITEM_MAPPING.item_id dương, ổn định, không tái dùng;
+  mỗi snapshot/run giữ dictionary riêng.
+- ORDERS chỉ COMPLETED mới vào mining. Một customer → một sequence; một order → một
+  itemset, sort (completed_at, order_id), dedup SKU/order, không dùng quantity làm occurrence.
+  Không sửa âm thầm order/item đã được dùng bởi snapshot.
+- ORDER_ITEM phải tham chiếu applied combo cùng order; CART_ITEM tương tự cùng cart.
+  Order lưu SKU/name/giá/discount snapshots; không tính lại hóa đơn từ catalog hiện tại.
 
-### Bất biến xuyên bảng bắt buộc
+### Inventory, checkout và payment
 
-- `available = on_hand - reserved >= 0`.
-- Receipt `POSTED` cập nhật balance và movement trong cùng transaction.
-- Sale issue giảm reservation/on-hand và ghi movement trong cùng transaction.
-- Totals order bằng tổng line và các thành phần tiền đã khai báo.
-- Retry checkout/payment cùng idempotency key không tạo hiệu ứng thứ hai.
-- Webhook cùng `(provider, provider_event_id)` chỉ xử lý một lần.
-- Chỉ order `COMPLETED` và item dedup theo order được chiếu sang mining.
-- Pattern lưu đủ itemset boundaries và exact support.
-- Chỉ combo `PUBLISHED` thuộc batch `ACTIVE`, đúng thời hạn và anchor mới lên UI.
-- User/address/payment PII hoặc secret không được vào mining artifact/log.
+- available = on_hand_quantity - reserved_quantity >= 0; không lưu available riêng.
+  PO không tăng tồn; receipt POSTED cập nhật balance + append-only movement atomically.
+  Receipt item phải khớp PO/product/kho; không over-receipt khi chưa có policy.
+- Reservation chỉ đổi reserved; sale issue consume reservation, giảm on-hand và ghi movement
+  cùng transaction. Retry không double-post; serial không bán hai lần.
+- Cart totals chỉ estimate. Guest checkout phải có CUSTOMER giả danh trước tạo ORDERS.
+  Checkout idempotency dùng server-derived scope + key; cart version/quote expiry phải kiểm lại.
+  Unique reservation theo checkout/warehouse/product; không oversell khi cạnh tranh.
+- Payment amount/currency gắn order; attempt/transaction provider references unique theo
+  đúng tuple DDL (provider, reference), không coi reference là global unique.
+  Webhook unique (provider, provider_event_id), verify signature/state transition trước effects.
+  Không tin browser redirect là payment success; capture/refund không được cộng lặp hoặc vượt mức.
+- Không lưu PAN/CVV, raw token, credential provider hoặc PII payload vào mining/logs.
+  Chi tiết quote/rounding/discount allocation xem thiết kế hệ thống; đây chưa phải bằng chứng
+  checkout/payment implementation đã nghiệm thu.
 
-### Chưa nằm trong schema này
+### Run, temporal patterns và publication
 
-- Nhân sự/HR, chấm công, lương.
-- Vận đơn/carrier tracking đầy đủ.
-- Voucher engine và loyalty points.
-- Chat/notification center.
-- Kế toán tổng hợp, công nợ nhà cung cấp và giá vốn FIFO/average hoàn chỉnh.
-- Multi-provider payment production certification.
+- MINING_RUN giữ configured/resolved threshold, không có top_k/minWeight/ranking coefficients.
+  Web request hiện chỉ ABSOLUTE/PERCENT; không suy enum request từ phạm vi VARCHAR của schema.
+  R6 zero-effective threshold còn OPEN; không comparator/epsilon mới.
+- V3 ownership/attempt/lease phải cùng null hoặc cùng có giá trị; index (status, lease).
+  Recovery chỉ áp dụng owned QUEUED/RUNNING hết lease; không backfill/replay legacy.
+- Metrics giữ Dataset I/O/preprocessing/DFS/complete/output/total riêng; scope lồng nhau
+  không cộng tất cả. Worker total loại queue/admission/terminal DB commit; nanos→millis
+  chia nguyên, chưa đo để null; output_io_ms hiện null. JVM heap sampling không phải hardware RAM.
+- RUN_ITEM_STATISTIC gồm all verified input items, kể cả output rỗng; counts/weights từ core.
+  WDM-06.5 chụp PRODUCT.name/SKU với shared locks tại transaction statistics thành công đầu tiên,
+  không phải nhãn CSV hoặc thời điểm engine chạy. Retry giữ snapshots; rollback có thể capture lại.
+  Không có capture timestamp riêng, không suy từ RUN_PROVENANCE.captured_at.
+- PATTERN giữ full canonical + exact support; <(ab)> khác <(a)(b)>.
+  PATTERN_ITEM coordinates 1-based/contiguous, item IDs tăng trong itemset;
+  item lặp ở itemset khác vẫn giữ. Dictionary phải thuộc cùng run.
+- EQ2_EQ3_ARITHMETIC_MEAN_V1: mean item weights trong mỗi itemset rồi mean itemset means;
+  cộng Java double theo item ID tăng và temporal order, không làm tròn trước khi lưu.
+  pattern_weight khác global mean_w và weighted_support = support_abs * mean_w.
+  Đây là policy ứng dụng đã chọn, không thay mining predicate hoặc giải quyết bất nhất R1.
+- RUN_PROVENANCE_V1 insert-only, version JSON khớp cột; bind conversion/artifact refs,
+  hashes/stats/policies. captured_at sao chép run.created_at tại creation transaction,
+  không phải timestamp capture tên/SKU; không raw bytes/PII/name snapshots. Không legacy backfill.
+- RUN_RESULT_PUBLICATION mặc định NOT_PUBLISHED, completion fields toàn null.
+  COMMITTED phải đủ manifest/hash/counts/policy/timing; zero counts hợp lệ.
+  WDM-06.11 đã có writer/consumer publish full result + marker atomically, khác checkpoint 06.2.
+  Schema CHECK không tự chứng minh manifest hay row completeness.
+- Published reader verify WDM_RESULT_MANIFEST_V1 trước COMPLETE_VERIFIED.
+  SUCCEEDED không đồng nghĩa published. Legacy thiếu cả hai metadata rows là UNVERIFIED;
+  thiếu một hoặc malformed metadata reject. Empty published output export được,
+  không Combo eligible. Xem WDM contract cho budget, retry/ack và export/provider.
 
-Các phần này có thể mở rộng bằng module riêng; không nên thêm bảng giả chỉ để làm
-schema có vẻ lớn hơn khi không có nghiệp vụ, API và test tương ứng.
+### Combo và ranh giới
+
+- Top-K thuộc COMBO_BATCH; policy SUPPORT_THEN_PATTERN_WEIGHT_V1.
+  Demo có một ACTIVE batch, activate mới/archive cũ cùng transaction.
+- COMBO có lifecycle riêng, không combo_score hoặc rank_position lưu cứng.
+  Lọc batch ACTIVE + combo PUBLISHED + thời hạn + anchor rồi backend mới xếp rank.
+- COMBO_ITEM giữ temporal positions, quantity và anchor/discount eligibility riêng;
+  index (product_id, is_anchor_eligible, combo_id) phục vụ storefront.
+- COMBO_SOURCE phải có đúng một primary pattern; mọi metrics cùng nguồn,
+  không ghép MAX(support) và MAX(weight) từ hai pattern. Đây còn cần service/tests.
+- CATEGORY_EXCLUSION lưu canonical low/high pair để loại trừ đối xứng.
+- Ngoài core: HR, carrier tracking đầy đủ, voucher/loyalty, chat/notifications,
+  kế toán tổng hợp/công nợ/FIFO-average đầy đủ và multi-provider certification.
+
+## 11. Cách kiểm chứng
+
+Đây là tra cứu schema và application invariants, không phải báo cáo acceptance cho
+từng module. Khi thay đổi: đọc DDL + entity/repository/tests liên quan; ghi riêng
+static review, Flyway validate/migrate, Hibernate validate, integration/E2E và owner rollout.
+Tiêu chí thiếu bằng chứng ghi NOT VERIFIED; không seed pattern/combo giả để thay mining thật.

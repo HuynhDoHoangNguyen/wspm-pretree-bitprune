@@ -1,135 +1,142 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MantineProvider } from '@mantine/core';
-import { MemoryRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider, setLogger } from 'react-query';
-import { authSession } from 'auth/session';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import { useSharedAuth } from 'auth/session';
 import { runResultApi, WdmApiError } from 'api/admin/data-mining';
-import { listMiningRuns } from 'tv3/pages/mining-run/MiningRun.api';
+import { PatternPage } from 'api/admin/data-mining/run-results';
 import PatternsPage from './PatternsPage';
-
-jest.mock('api/admin/data-mining', () => ({ ...jest.requireActual('api/admin/data-mining'),
-  runResultApi: { patterns: jest.fn(), detail: jest.fn() } }));
-jest.mock('tv3/pages/mining-run/MiningRun.api', () => ({ listMiningRuns: jest.fn() }));
-const patterns = runResultApi.patterns as jest.MockedFunction<typeof runResultApi.patterns>;
-const detail = runResultApi.detail as jest.MockedFunction<typeof runResultApi.detail>;
-const list = listMiningRuns as jest.MockedFunction<typeof listMiningRuns>;
-const runId = '10000000-0000-4000-8000-000000000001';
-const otherRun = '20000000-0000-4000-8000-000000000002';
-const patternId = '18446744073709551615';
-const result = { runId, executionStatus: 'SUCCEEDED', publicationStatus: 'COMMITTED' as const,
-  manifestVersion: 'WDM_RESULT_MANIFEST_V1', resultSha256: 'a'.repeat(64), committedAt: '2026-11-09T10:00:00Z',
-  provenance: { version: 'RUN_PROVENANCE_V1' as const, conversionFormatVersion: 'CONVERSION_ARTIFACT_V1', snapshotId: runId,
-    attemptId: runId, validationSha256: 'b'.repeat(64), sequenceSha256: 'c'.repeat(64), mappingSha256: 'd'.repeat(64), sequenceCount: '100' },
-  storedPatternCount: '1', storedPatternItemCount: '2', storedRunItemCount: '2', completeness: 'COMPLETE_VERIFIED' as const,
-  stagingReadable: false, publishedReadable: true, eligibleForCombo: true };
-const pattern = { patternId, runId, canonicalPattern: '<(1)(2)>', canonicalPatternHash: 'e'.repeat(64), supportAbs: '53',
-  supportRatio: .53, weightedSupport: 2.5474406991260925, patternWeight: .375,
-  patternWeightPolicy: 'EQ2_EQ3_ARITHMETIC_MEAN_V1', itemsetCount: 2, patternItemCount: 2 };
-const page = { result, items: [pattern], page: 1, size: 20, total: '1' };
-const run = { runId, algorithm: 'WSPM_PRETREE' as const, status: 'SUCCEEDED' as const,
-  datasetSource: 'fixture.csv', snapshotId: runId, minsupMode: 'PERCENT', minsupConfigured: 2, effectiveThreshold: 2,
-  patternCount: 40, candidateCount: 1125, totalExecutionMs: 495, peakSampledJvmHeapBytes: null,
-  createdAt: '2026-11-09T10:00:00Z', startedAt: null, finishedAt: null };
-const clients: QueryClient[] = [];
-beforeAll(() => {
-  setLogger({ log: () => undefined, warn: () => undefined, error: () => undefined });
-  Object.defineProperty(window, 'matchMedia', { configurable: true, value: (query: string) => ({
-    matches: false, media: query, onchange: null, addListener: jest.fn(), removeListener: jest.fn(),
-    addEventListener: jest.fn(), removeEventListener: jest.fn(), dispatchEvent: jest.fn(),
-  }) });
-  Object.defineProperty(window, 'ResizeObserver', { configurable: true, value: class {
-    observe() { return undefined; } unobserve() { return undefined; } disconnect() { return undefined; }
-  } });
-});
-afterAll(() => setLogger(console));
-beforeEach(() => {
-  authSession.unauthorized();
-  authSession.useStore.setState({ status: 'authenticated', forbidden: false, error: null, accessToken: 'test-access',
-    user: { userId: 'admin', username: 'fixture', email: null, displayName: 'Admin', status: 'ACTIVE', roles: ['ADMIN'], emailVerified: false } });
-  list.mockReset(); patterns.mockReset(); detail.mockReset();
-  list.mockResolvedValue({ items: [run, { ...run, runId: otherRun, algorithm: 'WSPM_BITPRUNE' }], page: 0, size: 20, totalElements: 21, totalPages: 2 });
-  patterns.mockResolvedValue(page);
-  detail.mockResolvedValue({ result, pattern, itemsets: [1, 2].map(i => ({ itemsetOrder: i, items: [{
-    itemOrder: 1, itemId: i, productId: 'product-' + i, productNameSnapshot: 'Historical name ' + i,
-    skuSnapshot: 'Historical SKU ' + i, itemWeight: i * .25, occurrenceCount: '9007199254740993', sequenceSupport: '53',
-  }] })) });
-});
-afterEach(() => { clients.forEach(c => c.clear()); clients.length = 0; });
-function show(path = '/admin/patterns?runId=' + runId) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, cacheTime: 0 } } }); clients.push(client);
-  return { client, ...render(<QueryClientProvider client={client}><MantineProvider><MemoryRouter initialEntries={[path]}>
-    <PatternsPage/></MemoryRouter></MantineProvider></QueryClientProvider>) };
+jest.mock('auth/session', () => ({ useSharedAuth: jest.fn() }));
+const id = '10000000-0000-4000-8000-000000000001', other = id.replace(/1$/, '2');
+const identity = useSharedAuth as unknown as jest.Mock;
+function pageData(page = 1, total = '2', runId = id): PatternPage {
+  const n = Math.max(0, Math.min(20, Number(total) - (page - 1) * 20));
+  return { page, size: 20, total, result: { runId, executionStatus: 'SUCCEEDED', publicationStatus: 'NOT_PUBLISHED',
+    manifestVersion: null, resultSha256: null, committedAt: null,
+    provenance: { version: 'RUN_PROVENANCE_V1', conversionFormatVersion: 'CONVERSION_V1', snapshotId: id, attemptId: id,
+      validationSha256: 'a'.repeat(64), sequenceSha256: 'b'.repeat(64), mappingSha256: 'c'.repeat(64), sequenceCount: '4' }, storedPatternCount: total,
+    storedPatternItemCount: '4', storedRunItemCount: '2', completeness: 'UNVERIFIED', stagingReadable: true,
+    publishedReadable: false, eligibleForCombo: false }, items: Array.from({ length: n }, (_, i) => ({
+    patternId: i === 0 ? '18446744073709551615' : String(i), runId, canonicalPattern: i === 0 ? '<(1)(2)>' : '<(1 2)>',
+    canonicalPatternHash: 'a'.repeat(64), supportAbs: '3', supportRatio: 0.75, weightedSupport: 0.375,
+    patternWeight: 0.5, patternWeightPolicy: 'EQ2_EQ3_ARITHMETIC_MEAN_V1', itemsetCount: i === 0 ? 2 : 1, patternItemCount: 2 })) };
 }
-test('loads published results explicitly even when URL requests staging', async () => {
-  show('/admin/patterns?runId=' + runId + '&view=staging');
-  const table = await screen.findByRole('table', { name: 'Patterns đã công bố' });
-  expect(within(table).getByText('ID: ' + patternId)).toBeInTheDocument();
-  expect(within(table).getByText('2.5474406991260925')).toBeInTheDocument();
-  expect(patterns).toHaveBeenCalledWith(runId, 1, expect.anything(), 'published');
-  expect(list).toHaveBeenCalledWith({ page: 0, size: 20, status: 'SUCCEEDED', algorithm: '' }, expect.anything());
+function Controls() {
+  const location = useLocation(), navigate = useNavigate();
+  return <><output aria-label="URL">{location.pathname + location.search}</output>
+    <button onClick={() => navigate(-1)}>Browser Back</button>
+    <button onClick={() => navigate('/admin/patterns?runId=' + other)}>Other run</button>
+    <output aria-label="route state">{JSON.stringify(location.state)}</output></>;
+}
+function App({ entry = '/admin/patterns?runId=' + id }: { entry?: string }) {
+  return <MemoryRouter initialEntries={[{ pathname: entry.split('?')[0], search: entry.includes('?') ? '?' + entry.split('?')[1] : '',
+    state: { runReturnTo: { returnTo: '/admin/mining-runs?tab=history&page=3' } } }]}><Controls/><PatternsPage/></MemoryRouter>;
+}
+beforeEach(() => {
+  jest.spyOn(runResultApi, 'metadata').mockImplementation(async run => pageData(1, '2', run).result);
+  identity.mockReturnValue({ status: 'authenticated', accessToken: 'token', user: { userId: 'admin', roles: ['ADMIN'] }, forbidden: false });
+  Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+  Object.defineProperty(window, 'matchMedia', { configurable: true, value: jest.fn(() => ({ matches: false, addListener: jest.fn(), removeListener: jest.fn() })) });
 });
-test('renders loading while pattern read is pending', () => {
-  patterns.mockReturnValue(new Promise(() => undefined)); show();
-  expect(screen.getByText('Đang tải patterns đã công bố…')).toBeInTheDocument();
+afterEach(() => { jest.restoreAllMocks(); });
+test('auto view opens verified published results and preserves published paging', async () => {
+  const published = pageData(1, '21');
+  published.result = { ...published.result, publicationStatus: 'COMMITTED', completeness: 'COMPLETE_VERIFIED',
+    stagingReadable: false, publishedReadable: true, eligibleForCombo: true,
+    manifestVersion: 'WDM_RESULT_MANIFEST_V1', resultSha256: 'd'.repeat(64), committedAt: '2026-11-08T10:00:00Z' };
+  jest.mocked(runResultApi.metadata).mockResolvedValue(published.result);
+  const read = jest.spyOn(runResultApi, 'patterns').mockResolvedValue(published);
+  render(<App/>);
+  await screen.findByRole('table', { name: 'Pattern đã công bố' });
+  expect(read).toHaveBeenCalledWith(id, 1, expect.any(AbortSignal), 'published');
+  expect(read.mock.calls.some(call => call[3] === 'staging')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Trang sau' }));
+  expect(screen.getByLabelText('URL')).toHaveTextContent('view=published');
+  await screen.findByRole('table', { name: 'Pattern đã công bố' });
+  expect(read).toHaveBeenLastCalledWith(id, 2, expect.any(AbortSignal), 'published');
 });
-test('selects a RUN without creating one and starts pattern page one', async () => {
-  show('/admin/patterns');
-  await screen.findByRole('option', { name: 'WSPM_PRETREE · ' + runId });
-  expect(patterns).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByLabelText('Chọn RUN đã hoàn tất'), { target: { value: runId } });
-  await waitFor(() => expect(patterns).toHaveBeenCalledWith(runId, 1, expect.anything(), 'published'));
+test('metadata failure does not fall back to a staging request', async () => {
+  jest.mocked(runResultApi.metadata).mockRejectedValue(new WdmApiError('http', 409, 'CONFLICT', 'unavailable'));
+  const read = jest.spyOn(runResultApi, 'patterns');
+  render(<App/>);
+  await screen.findByRole('alert');
+  expect(read).not.toHaveBeenCalled();
 });
-test('keeps RUN and pattern pagination bases separate', async () => {
-  patterns.mockImplementation(async (id, p = 1) => ({ ...page, result: { ...result, runId: id, storedPatternCount: '40' }, page: p,
-    total: '40', items: Array.from({ length: 20 }, (_, i) => ({ ...pattern, patternId: String((p - 1) * 20 + i + 1) })) }));
-  show(); await screen.findByRole('table', { name: 'Patterns đã công bố' });
-  fireEvent.click(screen.getByRole('button', { name: 'Trang pattern sau' }));
-  await waitFor(() => expect(patterns).toHaveBeenCalledWith(runId, 2, expect.anything(), 'published'));
-  fireEvent.click(screen.getByRole('button', { name: 'Trang RUN sau' }));
-  await waitFor(() => expect(list).toHaveBeenCalledWith(expect.objectContaining({ page: 1 }), expect.anything()));
+test('renders canonical boundaries, exact ID, separate measures and staging warning', async () => {
+  const read = jest.spyOn(runResultApi, 'patterns').mockResolvedValue(pageData());
+  render(<App/>); expect(screen.getByText('Đang tải pattern…')).toBeVisible();
+  await screen.findByRole('table', { name: 'Pattern staging' });
+  expect(screen.getByText('<(1)(2)>')).toBeVisible(); expect(screen.getByText('<(1 2)>')).toBeVisible();
+  expect(screen.getByText('ID: 18446744073709551615')).toBeVisible();
+  expect(screen.getByText('2 itemset · 2 item')).toBeVisible();
+  expect(screen.getByText(/chưa đủ điều kiện bàn giao Combo/)).toBeVisible();
+  expect(read).toHaveBeenCalledWith(id, 1, expect.any(AbortSignal), 'staging');
+  expect(screen.getByRole('button', { name: 'Trang sau' })).toBeDisabled();
 });
-test('opens inline detail preserving itemset boundaries and large counts', async () => {
-  show(); fireEvent.click(await screen.findByRole('button', { name: 'Xem pattern ' + patternId }));
-  const table = await screen.findByRole('table', { name: 'Itemset 2' });
-  expect(within(table).getByText('Historical name 2')).toBeInTheDocument();
-  expect(within(table).getByText('9007199254740993')).toBeInTheDocument();
-  expect(screen.getByRole('table', { name: 'Itemset 1' })).toBeInTheDocument();
-  expect(detail).toHaveBeenCalledWith(runId, patternId, expect.anything(), 'published');
+test.each(['', '?runId=bad'])('missing or invalid run does not request; form validates then opens', async suffix => {
+  const read = jest.spyOn(runResultApi, 'patterns').mockResolvedValue(pageData());
+  render(<App entry={'/admin/patterns' + suffix}/>); expect(read).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Mở kết quả' })); expect(read).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Run ID'), { target: { value: id } });
+  fireEvent.click(screen.getByRole('button', { name: 'Mở kết quả' })); await screen.findByRole('table');
+  expect(screen.getByLabelText('URL')).toHaveTextContent('runId=' + id + '&page=1');
 });
-test('renders explicit published zero and empty RUN state', async () => {
-  list.mockResolvedValue({ items: [], page: 0, size: 20, totalElements: 0, totalPages: 0 });
-  patterns.mockResolvedValue({ ...page, items: [], total: '0', result: { ...result, storedPatternCount: '0', eligibleForCombo: false } });
-  show(); expect(await screen.findByText('Kết quả đã công bố có 0 pattern.')).toBeInTheDocument();
-  expect(screen.getByText('Chưa có RUN thành công trên trang này.')).toBeInTheDocument();
+test('server pagination, browser Back, out of range recovery and detail return state', async () => {
+  const read = jest.spyOn(runResultApi, 'patterns').mockImplementation(async (run, page) => pageData(page, '21', run));
+  render(<App/>); await screen.findByRole('table');
+  expect(screen.getByRole('link', { name: 'Lịch sử run' })).toHaveAttribute('href', '/admin/mining-runs?tab=history&page=3');
+  fireEvent.click(screen.getByRole('button', { name: 'Trang sau' })); await screen.findByText('Trang 2');
+  expect(read).toHaveBeenLastCalledWith(id, 2, expect.any(AbortSignal), 'staging');
+  expect(screen.getByLabelText('route state')).toHaveTextContent('page=3');
+  fireEvent.click(screen.getByText('Browser Back')); await screen.findByText('Trang 1');
+  fireEvent.click(screen.getByRole('link', { name: 'Chi tiết run' }));
+  expect(screen.getByLabelText('URL')).toHaveTextContent('/admin/mining-runs/' + id);
+  expect(screen.getByLabelText('route state')).toHaveTextContent('returnTo');
 });
-test('shows publication failure and request ID without staging fallback', async () => {
-  patterns.mockRejectedValue(new WdmApiError('http', 409, 'INVALID_RESOURCE_STATE', 'Unavailable', 'p3-request'));
-  show(); expect(await screen.findByText('Mã yêu cầu: p3-request')).toBeInTheDocument();
-  expect(screen.queryByRole('table')).not.toBeInTheDocument();
-  expect(patterns).toHaveBeenCalledTimes(1);
+test.each(['0', '-1', 'abc', '100001', '99999999999999999999'])('invalid page %s falls back to 1', async page => {
+  const read = jest.spyOn(runResultApi, 'patterns').mockResolvedValue(pageData());
+  render(<App entry={'/admin/patterns?runId=' + id + '&page=' + page}/>); await screen.findByRole('table');
+  expect(read).toHaveBeenCalledWith(id, 1, expect.any(AbortSignal), 'staging');
 });
-test('invalid URL page prevents pattern request', () => {
-  show('/admin/patterns?runId=' + runId + '&page=0');
-  expect(screen.getByText('Trang pattern phải từ 1 đến 100000.')).toBeInTheDocument();
-  expect(patterns).not.toHaveBeenCalled();
+test.each([1, 3])('empty page %s offers honest empty wording and recovery', async page => {
+  jest.spyOn(runResultApi, 'patterns').mockResolvedValue(pageData(page, '0'));
+  render(<App entry={'/admin/patterns?runId=' + id + '&page=' + page}/>);
+  await screen.findByText(page === 1 ? /Điều này không chứng minh engine/ : /Trang này không có pattern/);
+  if (page > 1) { fireEvent.click(screen.getByRole('button', { name: 'Trang đầu' })); await screen.findByText('Trang 1'); }
 });
-test.each(['anonymous', 'customer'] as const)('blocks %s before any protected read', state => {
-  if (state === 'anonymous') authSession.unauthorized();
-  else authSession.useStore.setState({ user: { ...authSession.useStore.getState().user!, roles: ['CUSTOMER'] } });
-  show(); expect(screen.getByRole('alert')).toBeInTheDocument();
-  expect(list).not.toHaveBeenCalled(); expect(patterns).not.toHaveBeenCalled();
+test.each([401, 403, 404, 409, 503, null])('error %s hides diagnostics and supports retry', async status => {
+  jest.spyOn(runResultApi, 'patterns').mockRejectedValueOnce(new WdmApiError(status ? 'http' : 'network', status, 'SAFE', 'SQL secret', 'req-patterns'))
+    .mockResolvedValueOnce(pageData());
+  render(<App/>); await screen.findByText('Mã yêu cầu: req-patterns');
+  expect(screen.queryByText(/SQL secret/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Thử lại' })); await screen.findByRole('table');
 });
-test('logout hides results and clears page caches', async () => {
-  const { client } = show(); await screen.findByRole('table', { name: 'Patterns đã công bố' });
-  act(() => authSession.unauthorized());
-  expect(screen.queryByRole('table')).not.toBeInTheDocument();
-  expect(client.getQueriesData(['pattern-reader'])).toHaveLength(0);
+test('refresh failure removes old rows', async () => {
+  jest.spyOn(runResultApi, 'patterns').mockResolvedValueOnce(pageData()).mockRejectedValueOnce(new WdmApiError('response', 200, 'INVALID', 'secret'));
+  render(<App/>); await screen.findByRole('table'); fireEvent.click(screen.getByText('Làm mới danh sách'));
+  await screen.findByText(/Phản hồi của máy chủ/); expect(screen.queryByRole('table')).not.toBeInTheDocument();
 });
-test('unmount aborts pending pattern read and removes its cache', async () => {
-  patterns.mockReturnValue(new Promise(() => undefined));
-  const { unmount, client } = show();
-  await waitFor(() => expect(patterns).toHaveBeenCalledTimes(1));
-  const signal = patterns.mock.calls[0][2]!; unmount();
-  expect(signal.aborted).toBe(true); expect(client.getQueriesData(['pattern-reader'])).toHaveLength(0);
+test('changing run aborts and ignores late response; form resets pagination', async () => {
+  let resolve!: (value: PatternPage) => void;
+  const read = jest.spyOn(runResultApi, 'patterns').mockImplementationOnce(() => new Promise(done => { resolve = done; }))
+    .mockResolvedValueOnce(pageData(1, '0', other));
+  render(<App entry={'/admin/patterns?runId=' + id + '&page=2'}/>);
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+  fireEvent.change(screen.getByLabelText('Run ID'), { target: { value: other } });
+  fireEvent.click(screen.getByText('Mở kết quả')); await screen.findByText(/Điều này không chứng minh engine/);
+  expect(read.mock.calls[0][2]?.aborted).toBe(true);
+  await act(async () => { resolve(pageData(2, '21')); }); expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  expect(read).toHaveBeenLastCalledWith(other, 1, expect.any(AbortSignal), 'staging');
+});
+test.each(['logout', 'forbidden', 'role', 'token'])('session %s clears rows and aborts request', async change => {
+  const read = jest.spyOn(runResultApi, 'patterns').mockResolvedValueOnce(pageData()).mockImplementation(() => new Promise(() => undefined));
+  const view = render(<App/>); await screen.findByRole('table');
+  identity.mockReturnValue(change === 'logout' ? { status: 'anonymous' } : { status: 'authenticated', accessToken: 'new-token',
+    user: { userId: 'admin', roles: change === 'role' ? ['CUSTOMER'] : ['ADMIN'] }, forbidden: change === 'forbidden' });
+  view.rerender(<App/>); expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  expect(read.mock.calls[0][2]?.aborted).toBe(true);
+});
+test('unmount aborts request', async () => {
+  const read = jest.spyOn(runResultApi, 'patterns').mockImplementation(() => new Promise(() => undefined));
+  const view = render(<App/>); await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+  view.unmount(); expect(read.mock.calls[0][2]?.aborted).toBe(true);
 });

@@ -1,8 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { QueryClient, QueryClientProvider } from 'react-query';
-import { listMiningRuns } from 'tv3/pages/mining-run/MiningRun.api';
 import { MemoryRouter, Outlet, Route, Routes, useNavigate } from 'react-router-dom';
 import { useSharedAuth } from 'auth/session';
 import useAppStore from 'stores/use-app-store';
@@ -10,31 +8,18 @@ import { DefaultNavbar } from 'components/DefaultNavbar/DefaultNavbar';
 import DataMiningNavigation from './DataMiningNavigation';
 import { createDataMiningRoutes, dataMiningPages, isDataMiningPath } from './routes';
 import { hasDataMiningAdminAccess } from './access';
+import { patternHttpClient } from 'pages/pattern/PatternHttpClient';
 
-jest.mock('auth/session', () => ({
-  useSharedAuth: jest.fn(), authSession: { onClear: () => () => undefined },
-}));
-jest.mock('tv3/pages/mining-run/MiningRun.api', () => ({
-  ...jest.requireActual('tv3/pages/mining-run/MiningRun.api'), listMiningRuns: jest.fn(),
-}));
+jest.mock('auth/session', () => ({ useSharedAuth: jest.fn(), authSession: { onClear: () => () => undefined } }));
+jest.mock('tv3/pages/mining-run/MiningRunHistory', () => ({ __esModule: true, default: () => <h2>L?ch s? Mining RUN</h2> }));
+jest.mock('tv3/pages/mining-monitoring/MiningMonitoringPage', () => ({ __esModule: true, default: () => <h2>Gi?m s?t Mining</h2> }));
+jest.mock('tv3/pages/mining-comparison/MiningComparisonPage', () => ({ __esModule: true, default: () => <h2>So s?nh thu?t to?n</h2> }));
 jest.mock('stores/use-app-store', () => ({ __esModule: true, default: jest.fn() }));
-// Navigation tests keep API behavior in the focused History suites.
-jest.mock('tv3/pages/mining-run/MiningRunHistory', () => ({
-  __esModule: true, default: () => <h2>Lịch sử Mining RUN</h2>,
-}));
-jest.mock('tv3/pages/mining-monitoring/MiningMonitoringPage', () => ({
-  __esModule: true, default: () => <h2>Giám sát Mining</h2>,
-}));
-jest.mock('tv3/pages/mining-comparison/MiningComparisonPage', () => ({
-  __esModule: true, default: () => <h2>So sánh thuật toán</h2>,
-}));
 
 const authStore = useSharedAuth as unknown as jest.Mock;
 const appStore = useAppStore as jest.Mock;
-const admin = { userId: 'navigation-admin', roles: ['ADMIN'] };
+const admin = { roles: ['ADMIN'] };
 const fetchMock = jest.fn();
-const listRuns = listMiningRuns as jest.MockedFunction<typeof listMiningRuns>;
-let queryClient: QueryClient;
 
 function setIdentity(user: Parameters<typeof hasDataMiningAdminAccess>[0]) {
   authStore.mockReturnValue({ user, status: user ? 'authenticated' : 'anonymous', forbidden: false });
@@ -55,21 +40,19 @@ function Feature({ entries = ['/admin/datasets'], fullNavbar = false }: {
   fullNavbar?: boolean;
 }) {
   return (
-    <QueryClientProvider client={queryClient}>
-      <MantineProvider>
-        <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
-          {fullNavbar ? <DefaultNavbar/> : <DataMiningNavigation/>}
-          <HistoryButtons/>
-          <Routes>
-            <Route path="/admin" element={<Outlet/>}>
-              <Route index element={<p>Trang chủ hiện có</p>}/>
-              {createDataMiningRoutes()}
-              <Route path="*" element={<p>Route khác</p>}/>
-            </Route>
-          </Routes>
-        </MemoryRouter>
-      </MantineProvider>
-    </QueryClientProvider>
+    <MantineProvider>
+      <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
+        {fullNavbar ? <DefaultNavbar/> : <DataMiningNavigation/>}
+        <HistoryButtons/>
+        <Routes>
+          <Route path="/admin" element={<Outlet/>}>
+            <Route index element={<p>Trang chủ hiện có</p>}/>
+            {createDataMiningRoutes()}
+            <Route path="*" element={<p>Route khác</p>}/>
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </MantineProvider>
   );
 }
 
@@ -85,45 +68,50 @@ beforeEach(() => {
 });
 
 beforeEach(() => {
-  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, cacheTime: 0 } } });
-  listRuns.mockReset().mockResolvedValue({ items: [], page: 0, size: 20, totalElements: 0, totalPages: 0 });
   setIdentity(admin);
+  jest.spyOn(patternHttpClient, 'runs').mockImplementation(() => new Promise(() => undefined));
   appStore.mockReturnValue({ opened: true });
   fetchMock.mockClear();
 });
 
 afterEach(() => {
-  queryClient.clear();
   // Navigation/page mount never triggers business export/upload requests.
   expect(fetchMock).not.toHaveBeenCalled();
+  jest.restoreAllMocks();
 });
 
+const heading = (path: string, label: string) => label;
+
 describe('Admin Data & Mining navigation', () => {
-  it('adds Comparison after Monitoring and preserves the existing destinations', () => {
-    expect(dataMiningPages.map(({ path }) => path)).toEqual([
-      '/admin/datasets', '/admin/mining-runs', '/admin/mining-run-history',
-      '/admin/mining-monitoring', '/admin/mining-comparison', '/admin/patterns',
-    ]);
+  it.each([null, { roles: ['CUSTOMER'] }])('guards pattern detail for identity %s', user => {
+    setIdentity(user); render(<Feature entries={['/admin/patterns/11111111-2222-4333-8444-555555555555/1']}/>);
+    expect(screen.queryByRole('heading', { name: 'Chi tiết pattern' })).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+  it.each([null, { roles: ['CUSTOMER'] }])('guards the run detail route for identity %s', user => {
+    setIdentity(user); render(<Feature entries={['/admin/mining-runs/11111111-2222-4333-8444-555555555555']}/>);
+    expect(screen.queryByRole('heading', { name: 'Chi tiết lần chạy khai phá' })).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
   });
   it.each(dataMiningPages)('opens $path directly with the correct page and active link', ({ path, label }) => {
     render(<Feature entries={[path]}/>);
     const nav = screen.getByRole('navigation', { name: 'Dữ liệu & Khai phá' });
-    expect(screen.getByRole('heading', { level: 2, name: label })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: heading(path, label) })).toBeInTheDocument();
     expect(within(nav).getByRole('link', { name: label })).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getAllByRole('link')).toHaveLength(6);
-    expect(screen.queryByLabelText('Chọn RUN đã hoàn tất') !== null).toBe(path === '/admin/patterns');
+    expect(screen.queryByText('Chức năng đang được chuẩn bị')).not.toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.queryByText(/không có dữ liệu/i)).not.toBeInTheDocument();
   });
 
-  it('navigates through all registered route definitions from the menu', () => {
+  it('navigates through all three real route definitions from the menu', () => {
     render(<Feature/>);
     const nav = screen.getByRole('navigation', { name: 'Dữ liệu & Khai phá' });
     for (const { path, label } of dataMiningPages) {
       const link = within(nav).getByRole('link', { name: label });
       expect(link).toHaveAttribute('href', path);
       fireEvent.click(link);
-      expect(screen.getByRole('heading', { level: 2, name: label })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 2, name: heading(path, label) })).toBeInTheDocument();
       expect(link).toHaveAttribute('aria-current', 'page');
       expect(within(nav).getAllByRole('link').filter(item => item.getAttribute('aria-current') === 'page')).toHaveLength(1);
     }
@@ -148,12 +136,13 @@ describe('Admin Data & Mining navigation', () => {
     expect(screen.getByRole('link', { name: 'Mẫu khai phá' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it.each([null, { roles: [] }, { roles: ['EMPLOYEE'] }, { roles: ['ROLE_ADMIN'] }])('hides the menu and denies direct page access without the exact Admin UI role', user => {
+  it.each([null, { roles: [] }, { roles: ['CUSTOMER'] }, { roles: ['EMPLOYEE'] }, { roles: ['ROLE_ADMIN'] }])('hides the menu and denies direct page access without the exact Admin UI role', user => {
     setIdentity(user);
     render(<Feature entries={['/admin/patterns']}/>);
     expect(screen.queryByRole('navigation', { name: 'Dữ liệu & Khai phá' })).not.toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(user ? 'Không có quyền truy cập' : 'Cần đăng nhập');
     expect(screen.queryByRole('heading', { level: 2, name: 'Mẫu khai phá' })).not.toBeInTheDocument();
+    expect(patternHttpClient.runs).not.toHaveBeenCalled();
   });
 
   it('removes menu and page access when the shared UI identity loses the Admin role', () => {

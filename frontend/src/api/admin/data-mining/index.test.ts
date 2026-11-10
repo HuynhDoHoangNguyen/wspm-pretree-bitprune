@@ -1,12 +1,21 @@
 /** @jest-environment node */
 import { runInThisContext } from 'vm';
-import { getBackendHealth, setWdmAuthAdapter, wdmApi } from './index';
+import { getBackendHealth, setWdmAuthAdapter, wdmApi, miningRunApi } from './index';
+import { acceptedRun, runInput } from './mining-run-test-data';
 
 Object.assign(globalThis, runInThisContext('({ fetch, Headers, Response, FormData, Blob })'));
 
 afterEach(() => {
   setWdmAuthAdapter(null);
   jest.restoreAllMocks();
+});
+it('wires execution through the same shared client and Auth adapter', async () => {
+  setWdmAuthAdapter({ getAccessToken: () => 'execution-token' });
+  const mock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ code: 'SUCCESS', message: 'Request completed successfully.',
+    data: acceptedRun(), requestId: 'test-id' }), { status: 202, headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'test-id' } }));
+  await expect(miningRunApi.create(runInput)).resolves.toEqual(acceptedRun());
+  expect(mock.mock.calls[0][0]).toBe('/api/v1/admin/mining-runs');
+  expect((mock.mock.calls[0][1]?.headers as Headers).get('Authorization')).toBe('Bearer execution-token');
 });
 
 it('checks the identity of the existing backend on the public health route', async () => {
