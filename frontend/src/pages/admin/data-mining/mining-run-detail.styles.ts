@@ -5,11 +5,11 @@ export default createStyles(theme => {
   return {
     navigation: { display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' },
     header: {
-      padding: 28, borderRadius: 16, border: `1px solid ${dark ? theme.colors.blue[8] : theme.colors.blue[2]}`,
+      padding: 16, borderRadius: 16, border: `1px solid ${dark ? theme.colors.blue[8] : theme.colors.blue[2]}`,
       background: dark ? theme.colors.dark[6] : 'linear-gradient(115deg, #eff6ff 0%, #f8fbff 58%, #f0fdfa 100%)',
-      '@media (max-width: 600px)': { padding: 20 },
+      '@media (max-width: 600px)': { padding: 12 },
     },
-    title: { fontSize: 28, lineHeight: 1.3, letterSpacing: '-0.6px', '@media (max-width: 600px)': { fontSize: 23 } },
+    title: { fontSize: 24, lineHeight: 1.3, letterSpacing: '-0.6px', '@media (max-width: 600px)': { fontSize: 23 } },
     metadata: { display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)', gap: 16,
       '@media (max-width: 760px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
     tile: {

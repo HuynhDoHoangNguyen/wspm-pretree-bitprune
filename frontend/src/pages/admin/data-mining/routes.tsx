@@ -8,9 +8,9 @@ import MiningRunsPage from './MiningRunsPage';
 import PatternExplorer from 'pages/pattern/PatternExplorer';
 import PatternsPage from './PatternsPage';
 import SnapshotDetailPage from './SnapshotDetailPage';
-import MiningRunHistory from 'tv3/pages/mining-run/MiningRunHistory';
-import MiningMonitoringPage from 'tv3/pages/mining-monitoring/MiningMonitoringPage';
-import MiningComparisonPage from 'tv3/pages/mining-comparison/MiningComparisonPage';
+import MiningRunHistory from 'pages/admin/data-mining/mining-run/MiningRunHistory';
+import MiningMonitoringPage from 'pages/admin/data-mining/mining-monitoring/MiningMonitoringPage';
+import MiningComparisonPage from 'pages/admin/data-mining/mining-comparison/MiningComparisonPage';
 import MiningRunDetailPage from './MiningRunDetailPage';
 import PatternDetailPage from './PatternDetailPage';
 

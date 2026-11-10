@@ -63,32 +63,22 @@ beforeEach(() => {
 });
 afterEach(() => { setWdmAuthAdapter(null); jest.restoreAllMocks(); });
 
-it('separates list/create tabs, preserves list filters and form input across switching/back', () => {
+it('switches list/create with compact actions and preserves filters, form input and back navigation', () => {
   function History() {
     const location = useLocation(), navigate = useNavigate();
     return <><output aria-label="Địa chỉ đang mở">{location.search}</output><button onClick={() => navigate(-1)}>Quay lại</button></>;
   }
   render(<MemoryRouter initialEntries={['/admin/datasets?search=orders&page=2']}><MantineProvider><History/><DatasetsPage/></MantineProvider></MemoryRouter>);
-  const list = screen.getByRole('tab', { name: 'Danh sách dữ liệu' });
-  const create = screen.getByRole('tab', { name: 'Tạo dữ liệu mới · Xuất đơn hàng hoặc upload CSV' });
-  expect(list).toHaveAttribute('aria-selected', 'true');
-  expect(screen.queryByRole('form', { name: 'Upload CSV' })).not.toBeInTheDocument();
-  fireEvent.click(create); expect(create).toHaveAttribute('aria-selected', 'true');
+  expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '+ Tạo dữ liệu mới', exact: true }));
   expect(screen.getByLabelText('Địa chỉ đang mở')).toHaveTextContent('search=orders&page=2&tab=create');
   expect(uploadForm()).toBeVisible();
   fireEvent.change(screen.getByLabelText(/Từ ngày/), { target: { value: '2026-11-01' } });
-  fireEvent.click(list); expect(screen.getByLabelText('Tìm tên file hoặc Snapshot ID')).toHaveValue('orders');
+  fireEvent.click(screen.getByRole('button', { name: 'Danh sách dữ liệu', exact: true }));
+  expect(screen.getByLabelText('Tìm tên file hoặc Snapshot ID')).toHaveValue('orders');
   fireEvent.click(screen.getByRole('button', { name: 'Quay lại', exact: true }));
-  expect(create).toHaveAttribute('aria-selected', 'true'); expect(screen.getByLabelText(/Từ ngày/)).toHaveValue('2026-11-01');
+  expect(screen.getByLabelText(/Từ ngày/)).toHaveValue('2026-11-01');
   expect(fetchMock).not.toHaveBeenCalled();
-});
-it('supports keyboard tab selection without submitting either form', () => {
-  render(page());
-  const create = screen.getByRole('tab', { name: 'Tạo dữ liệu mới · Xuất đơn hàng hoặc upload CSV' });
-  fireEvent.keyDown(create, { key: 'Home' });
-  expect(screen.getByRole('tab', { name: 'Danh sách dữ liệu' })).toHaveFocus();
-  fireEvent.keyDown(screen.getByRole('tab', { name: 'Danh sách dữ liệu' }), { key: 'ArrowRight' });
-  expect(create).toHaveFocus(); expect(uploadForm()).toBeVisible(); expect(fetchMock).not.toHaveBeenCalled();
 });
 
 it('renders real forms without unsolicited API calls or unsupported pipeline actions', () => {

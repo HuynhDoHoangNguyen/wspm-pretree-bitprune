@@ -74,6 +74,22 @@ public final class ComboGenerationService {
         if(nativeGeneration==null)throw new IllegalStateException("NATIVE_GENERATION_UNAVAILABLE");
         return nativeGeneration.preview(run,anchor,k,identity,actor,Objects.requireNonNull(selection));
     }
+    public NativeComboGeneration.Preview previewSelected(String run,String anchor,Integer k,String identity,vn.edu.wspm.backend.web.auth.AdminPrincipal actor,ProductSelection selection,Integer recommendationK){
+        if(nativeGeneration==null)throw new IllegalStateException("NATIVE_GENERATION_UNAVAILABLE");
+        return nativeGeneration.previewSelected(run,anchor,k,identity,actor,selection,recommendationK);
+    }
+    public NativeComboGeneration.Preview previewCategories(String run,String anchor,Integer k,String identity,vn.edu.wspm.backend.web.auth.AdminPrincipal actor,CategorySelection selection,Integer recommendationK){
+        if(nativeGeneration==null)throw new IllegalStateException("NATIVE_GENERATION_UNAVAILABLE");
+        return nativeGeneration.previewCategories(run,anchor,k,identity,actor,selection,recommendationK);
+    }
+    public NativeComboGeneration.Preview previewSelected(String run,String anchor,Integer k,String identity,vn.edu.wspm.backend.web.auth.AdminPrincipal actor,ProductSelection selection,Integer recommendationK,Integer draftLimit){
+        if(nativeGeneration==null)throw new IllegalStateException("NATIVE_GENERATION_UNAVAILABLE");
+        return nativeGeneration.previewSelected(run,anchor,k,identity,actor,selection,recommendationK,draftLimit);
+    }
+    public NativeComboGeneration.Preview previewCategories(String run,String anchor,Integer k,String identity,vn.edu.wspm.backend.web.auth.AdminPrincipal actor,CategorySelection selection,Integer recommendationK,Integer draftLimit){
+        if(nativeGeneration==null)throw new IllegalStateException("NATIVE_GENERATION_UNAVAILABLE");
+        return nativeGeneration.previewCategories(run,anchor,k,identity,actor,selection,recommendationK,draftLimit);
+    }
     public NativeComboGeneration.Options selectionOptions(String run,vn.edu.wspm.backend.web.auth.AdminPrincipal actor){
         if(nativeGeneration==null)throw new IllegalStateException("NATIVE_GENERATION_UNAVAILABLE");
         return nativeGeneration.options(run,actor);

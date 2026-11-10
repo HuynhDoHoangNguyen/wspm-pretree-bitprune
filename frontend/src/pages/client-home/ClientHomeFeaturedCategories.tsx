@@ -2,8 +2,8 @@ import React from 'react';
 import { Alert, Button, Grid, Group, Stack, Text, Title } from '@mantine/core';
 import { Backpack, Cpu, DeviceDesktop, DeviceGamepad, DeviceLaptop, DeviceSpeaker, Icon, Keyboard, List, Mouse } from 'tabler-icons-react';
 import { Link } from 'react-router-dom';
-import useCatalogCategories from 'tv3/hooks/useCatalogCategories';
-import CategoryCard from 'tv3/components/CategoryCard';
+import useCatalogCategories from 'hooks/catalog/useCatalogCategories';
+import CategoryCard from 'components/catalog/CategoryCard';
 
 export const categoryIcons: ReadonlyMap<string, Icon> = new Map([
   ['balo', Backpack], ['bàn phím', Keyboard], ['chuột', Mouse], ['cpu', Cpu],

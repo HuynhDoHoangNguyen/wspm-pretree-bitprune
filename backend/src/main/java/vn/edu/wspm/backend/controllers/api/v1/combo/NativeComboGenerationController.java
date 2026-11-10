@@ -12,14 +12,18 @@ public class NativeComboGenerationController {
     private final vn.edu.wspm.backend.services.combo.generation.ComboGenerationService service;private final AdminPrincipalResolver principals;
     private final tools.jackson.databind.ObjectMapper json;
     public NativeComboGenerationController(vn.edu.wspm.backend.services.combo.generation.ComboGenerationService service,AdminPrincipalResolver principals,tools.jackson.databind.ObjectMapper json){this.service=service;this.principals=principals;this.json=json;}
-    public record PreviewCommand(String runId,String anchorProductId,Integer k,String requestIdentity,vn.edu.wspm.backend.services.combo.generation.ProductSelection selection,vn.edu.wspm.backend.services.combo.generation.CategorySelection categorySelection){}
+    public record PreviewCommand(String runId,String anchorProductId,Integer k,Integer recommendationK,Integer draftLimit,String requestIdentity,vn.edu.wspm.backend.services.combo.generation.ProductSelection selection,vn.edu.wspm.backend.services.combo.generation.CategorySelection categorySelection){}
     public record SubmitCommand(String contextToken){}
     @PostMapping(value="/preview",consumes="application/json")
     public ApiResponse<NativeComboGeneration.Preview> preview(@RequestBody String body,HttpServletRequest request){
-        var actor=principals.require(request);var command=decode(body,request,PreviewCommand.class,java.util.Set.of("runId","anchorProductId","k","requestIdentity","selection","categorySelection"));
-        if(command.categorySelection()!=null)return ApiResponse.success(service.previewCategories(command.runId(),command.anchorProductId(),command.k(),command.requestIdentity(),actor,command.categorySelection()),RequestIdFilter.requestId(request));
+        var actor=principals.require(request);var command=decode(body,request,PreviewCommand.class,java.util.Set.of("runId","anchorProductId","k","recommendationK","draftLimit","requestIdentity","selection","categorySelection"));
+        if(command.draftLimit()!=null){
+            if(command.categorySelection()!=null)return ApiResponse.success(service.previewCategories(command.runId(),command.anchorProductId(),command.k(),command.requestIdentity(),actor,command.categorySelection(),command.recommendationK(),command.draftLimit()),RequestIdFilter.requestId(request));
+            return ApiResponse.success(service.previewSelected(command.runId(),command.anchorProductId(),command.k(),command.requestIdentity(),actor,command.selection(),command.recommendationK(),command.draftLimit()),RequestIdFilter.requestId(request));
+        }
+        if(command.categorySelection()!=null)return ApiResponse.success(service.previewCategories(command.runId(),command.anchorProductId(),command.k(),command.requestIdentity(),actor,command.categorySelection(),command.recommendationK()),RequestIdFilter.requestId(request));
         if(command.selection()==null)throw ApplicationException.invalid("selection","Select at least one run item and quantity.");
-        return ApiResponse.success(service.previewSelected(command.runId(),command.anchorProductId(),command.k(),command.requestIdentity(),actor,command.selection()),RequestIdFilter.requestId(request));
+        return ApiResponse.success(service.previewSelected(command.runId(),command.anchorProductId(),command.k(),command.requestIdentity(),actor,command.selection(),command.recommendationK()),RequestIdFilter.requestId(request));
     }
     @GetMapping("/category-options/{runId}")
     public ApiResponse<NativeComboGeneration.CategoryOptions> categoryOptions(@PathVariable("runId") String runId,HttpServletRequest request)throws java.io.IOException{
@@ -57,6 +61,10 @@ public class NativeComboGenerationController {
                     if(categories?!item.get(id).isString():!item.get(id).isIntegralNumber()||!item.get(id).canConvertToLong())throw new IllegalArgumentException();
                     if(!item.get("quantity").isIntegralNumber()||!item.get("quantity").canConvertToLong())throw new IllegalArgumentException();
                 }
+                var recommendation=tree.get("recommendationK");
+                var draft=tree.get("draftLimit");
+                if(draft!=null&&(draft.isNull()||!draft.isIntegralNumber()||!draft.canConvertToInt()||draft.intValue()<1||draft.intValue()>1000))throw new IllegalArgumentException();
+                if(recommendation!=null&&!recommendation.isNull()&&(!recommendation.isIntegralNumber()||!recommendation.canConvertToInt()||recommendation.intValue()<1||recommendation.intValue()>20))throw new IllegalArgumentException();
                 if(tree.get("k")!=null&&!tree.get("k").isNull()&&(!tree.get("k").isIntegralNumber()||!tree.get("k").canConvertToInt()))throw new IllegalArgumentException();
             }
             return json.readValue(body,type);

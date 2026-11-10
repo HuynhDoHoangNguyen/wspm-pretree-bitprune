@@ -9,6 +9,16 @@ let fetchMock: jest.Mock;
 const response=(data: unknown)=>new Response(JSON.stringify({ code:'SUCCESS',message:'Request completed successfully.',data,requestId:'request-1' }),{ status:200,headers:{ 'Content-Type':'application/json','X-Request-Id':'request-1' } });
 beforeEach(()=>{fetchMock=jest.fn();globalThis.fetch=fetchMock;setWdmAuthAdapter({ getAccessToken:()=> 'shared-token' });});
 afterEach(()=>setWdmAuthAdapter(null));
+test('draft limit is sent independently and an inconsistent planned count is rejected', async () => {
+  const categorySelection = { requiredCategories: [{ categoryId: 'C', quantity: 1 }], minDistinctProducts: 2, maxDistinctProducts: 3 };
+  const ready = { status: 'READY', issues: [], examined: 8, accepted: 8, rejected: 0, groups: 8, plannedGroups: 3, eligible: 8,
+    topPatternIds: [], anchors: [], reasonCounts: {}, referencePrices: {}, contextToken: 'signed', policyVersion: 'TV2_SELECTED_CATEGORIES_V3', proposals: [] };
+  fetchMock.mockResolvedValueOnce(response(ready));
+  expect((await comboGenerationApi.previewCategories(id, null, 1, 'id', undefined, categorySelection, 5, 3)).plannedGroups).toBe(3);
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ k: 1, recommendationK: 5, draftLimit: 3 });
+  fetchMock.mockResolvedValueOnce(response({ ...ready, plannedGroups: 8 }));
+  await expect(comboGenerationApi.previewCategories(id, null, 1, 'id', undefined, categorySelection, 5, 3)).rejects.toMatchObject({ code: 'INVALID_GENERATION_RESPONSE' });
+});
 test('both native clients use the shared bearer adapter, including command context only',async()=>{
   fetchMock.mockResolvedValueOnce(response({ runId:id,snapshotId:id,publicationDigest:'a'.repeat(64),patternCount:'2',dictionaryCount:'3',inputStatus:'VERIFIED_PUBLISHED_INPUT',generationStatus:'READY_FOR_PREVIEW',blockers:[] }));
   expect((await comboInputApi.read(id)).generationStatus).toBe('READY_FOR_PREVIEW');
@@ -33,7 +43,7 @@ test('loads exact run dictionary and sends only selection quantities and bounds'
   const options = await comboGenerationApi.options(id);
   expect(options.products[0].itemId).toBe(27);
   const selection = { requiredItems: [{ itemId: 27, quantity: 4294967295 }], minDistinctProducts: 2, maxDistinctProducts: 5 };
-  fetchMock.mockResolvedValueOnce(response({ status: 'EMPTY', issues: [], examined: 3, accepted: 0, rejected: 3, groups: 0, eligible: 0,
+  fetchMock.mockResolvedValueOnce(response({ status: 'EMPTY', issues: [], examined: 3, accepted: 0, rejected: 3, groups: 0, plannedGroups: 0, eligible: 0,
     topPatternIds: [], anchors: [], reasonCounts: {}, referencePrices: {}, contextToken: null, policyVersion: 'TV2_SELECTED_CATALOG_V2', proposals: [] }));
   await comboGenerationApi.preview(id, null, 5, 'identity', undefined, selection);
   expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ runId: id, anchorProductId: null, k: 5, requestIdentity: 'identity', selection });
@@ -45,9 +55,9 @@ test('category selection sends category identities without selecting concrete pr
     categories: [{ categoryId: 'laptops', name: 'Laptop', productCount: 4 }] }));
   expect((await comboGenerationApi.categoryOptions(id)).categories[0].productCount).toBe(4);
   const categorySelection = { requiredCategories: [{ categoryId: 'laptops', quantity: 2 }], minDistinctProducts: 2, maxDistinctProducts: 4 };
-  fetchMock.mockResolvedValueOnce(response({ status: 'EMPTY', issues: [], examined: 3, accepted: 0, rejected: 3, groups: 0, eligible: 0,
+  fetchMock.mockResolvedValueOnce(response({ status: 'EMPTY', issues: [], examined: 3, accepted: 0, rejected: 3, groups: 0, plannedGroups: 0, eligible: 0,
     topPatternIds: [], anchors: [], reasonCounts: {}, referencePrices: {}, contextToken: null, policyVersion: 'TV2_SELECTED_CATEGORIES_V3', proposals: [] }));
   await comboGenerationApi.previewCategories(id, null, 5, 'id', undefined, categorySelection);
   const body = JSON.parse(fetchMock.mock.calls[1][1].body);
-  expect(body.categorySelection).toEqual(categorySelection); expect(body).not.toHaveProperty('selection');
+  expect(body.categorySelection).toEqual(categorySelection); expect(body.recommendationK).toBe(5); expect(body.draftLimit).toBe(20); expect(body).not.toHaveProperty('selection');
 });

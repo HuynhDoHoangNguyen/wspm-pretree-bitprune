@@ -35,7 +35,7 @@ export interface ComboClient {
   detail(comboId: string, options?: { signal?: AbortSignal }): Promise<ComboDetail>;
   review(comboId: string, command: ReviewCommand, options?: { signal?: AbortSignal }): Promise<ReviewResult>;
 }
-export interface BatchSummary { batchId: string; runId: string; status: string; createdAt: string; comboCount: string; draftCount: string; approvedCount: string; rejectedCount: string }
+export interface BatchSummary { topK?: string; batchId: string; runId: string; status: string; createdAt: string; comboCount: string; draftCount: string; approvedCount: string; rejectedCount: string }
 export interface BatchPage { page: number; size: number; total: string; items: BatchSummary[] }
 export class ComboClientError extends Error {
   constructor(public readonly status: number, public readonly code: string, public readonly requestId?: string | null,

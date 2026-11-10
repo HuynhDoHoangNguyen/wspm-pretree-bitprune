@@ -4,6 +4,7 @@ import { Alert, Badge, Button, Group, Stack, Text, Title } from '@mantine/core';
 import { ArrowRight } from 'tabler-icons-react';
 import useTitle from 'hooks/use-title';
 import useWorkspaceStyles from './workspace.styles';
+import AdminPageHeader from './AdminPageHeader';
 
 const steps = [
   { title: 'Chuẩn bị CSV', description: 'Xuất lịch sử đơn hàng theo khoảng thời gian hoặc chuẩn bị CSV đúng định dạng.', result: 'Tệp CSV trên máy của bạn.' },
@@ -18,13 +19,9 @@ export default function AdminHomePage() {
   useTitle('Trang chủ Admin');
   const { classes } = useWorkspaceStyles();
   return <div className={classes.root}><Stack spacing="xl">
-    <div className={classes.hero}><Stack spacing="sm">
-      <Text color="blue" weight={700} size="sm">KHÔNG GIAN QUẢN TRỊ</Text>
-      <Title order={1}>Từ dữ liệu đơn hàng đến combo sản phẩm</Title>
-      <Text size="md">Bắt đầu từ dữ liệu gốc. Thực hiện từng bước, kiểm tra kết quả trước khi chuyển sang bước tiếp theo.</Text>
-      <Group mt="sm"><Button component={Link} to="/admin/datasets" rightIcon={<ArrowRight size={18}/>}>Bắt đầu với dữ liệu</Button>
-        <Button component={Link} to="/admin/account" variant="white">Thông tin tài khoản</Button></Group>
-    </Stack></div>
+    <AdminPageHeader order={1} title="Từ dữ liệu đơn hàng đến combo sản phẩm" description="Bắt đầu từ dữ liệu gốc và kiểm tra kết quả từng bước."
+      action={<Group spacing="xs"><Button component={Link} to="/admin/datasets" rightIcon={<ArrowRight size={18}/>}>Bắt đầu với dữ liệu</Button>
+        <Button component={Link} to="/admin/account" variant="default">Thông tin tài khoản</Button></Group>}/>
     <Alert color="blue" title="Bạn có thể chuẩn bị dữ liệu và chạy khai phá">
       Đã có thư viện snapshot, kiểm tra, chuyển đổi, chạy khai phá và lịch sử run. Pattern Explorer và quản lý Combo đọc kết quả đã lưu; công bố Pattern và tự sinh Combo từ lần chạy mới còn cần tích hợp.
       Preview/Validate không tự chuyển đổi snapshot chưa đủ điều kiện.

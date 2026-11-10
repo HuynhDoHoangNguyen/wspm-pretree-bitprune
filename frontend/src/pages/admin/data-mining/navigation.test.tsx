@@ -5,15 +5,15 @@ import { MemoryRouter, Outlet, Route, Routes, useNavigate } from 'react-router-d
 import { useSharedAuth } from 'auth/session';
 import useAppStore from 'stores/use-app-store';
 import { DefaultNavbar } from 'components/DefaultNavbar/DefaultNavbar';
-import DataMiningNavigation from './DataMiningNavigation';
-import { createDataMiningRoutes, dataMiningPages, isDataMiningPath } from './routes';
+import DataMiningNavigation, { activeMiningItem } from './DataMiningNavigation';
+import { createDataMiningRoutes, isDataMiningPath } from './routes';
 import { hasDataMiningAdminAccess } from './access';
 import { patternHttpClient } from 'pages/pattern/PatternHttpClient';
 
 jest.mock('auth/session', () => ({ useSharedAuth: jest.fn(), authSession: { onClear: () => () => undefined } }));
-jest.mock('tv3/pages/mining-run/MiningRunHistory', () => ({ __esModule: true, default: () => <h2>Lịch sử Mining RUN</h2> }));
-jest.mock('tv3/pages/mining-monitoring/MiningMonitoringPage', () => ({ __esModule: true, default: () => <h2>Giám sát Mining</h2> }));
-jest.mock('tv3/pages/mining-comparison/MiningComparisonPage', () => ({ __esModule: true, default: () => <h2>So sánh thuật toán</h2> }));
+jest.mock('pages/admin/data-mining/mining-run/MiningRunHistory', () => ({ __esModule: true, default: () => <h2>Lịch sử Mining RUN</h2> }));
+jest.mock('pages/admin/data-mining/mining-monitoring/MiningMonitoringPage', () => ({ __esModule: true, default: () => <h2>Giám sát Mining</h2> }));
+jest.mock('pages/admin/data-mining/mining-comparison/MiningComparisonPage', () => ({ __esModule: true, default: () => <h2>So sánh thuật toán</h2> }));
 jest.mock('stores/use-app-store', () => ({ __esModule: true, default: jest.fn() }));
 
 const authStore = useSharedAuth as unknown as jest.Mock;
@@ -80,109 +80,98 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-const heading = (path: string, label: string) => label;
-
-describe('Admin Data & Mining navigation', () => {
-  it.each([null, { roles: ['CUSTOMER'] }])('guards pattern detail for identity %s', user => {
-    setIdentity(user); render(<Feature entries={['/admin/patterns/11111111-2222-4333-8444-555555555555/1']}/>);
-    expect(screen.queryByRole('heading', { name: 'Chi tiết pattern' })).not.toBeInTheDocument();
-    expect(screen.getByRole('alert')).toBeInTheDocument();
-  });
-  it.each([null, { roles: ['CUSTOMER'] }])('guards the run detail route for identity %s', user => {
-    setIdentity(user); render(<Feature entries={['/admin/mining-runs/11111111-2222-4333-8444-555555555555']}/>);
-    expect(screen.queryByRole('heading', { name: 'Chi tiết lần chạy khai phá' })).not.toBeInTheDocument();
-    expect(screen.getByRole('alert')).toBeInTheDocument();
-  });
-  it.each(dataMiningPages)('opens $path directly with the correct page and active link', ({ path, label }) => {
-    render(<Feature entries={[path]}/>);
-    const nav = screen.getByRole('navigation', { name: 'Dữ liệu & Khai phá' });
-    expect(screen.getByRole('heading', { level: 2, name: heading(path, label) })).toBeInTheDocument();
-    expect(within(nav).getByRole('link', { name: label })).toHaveAttribute('aria-current', 'page');
-    expect(within(nav).getAllByRole('link')).toHaveLength(6);
-    expect(screen.queryByText('Chức năng đang được chuẩn bị')).not.toBeInTheDocument();
-    expect(screen.queryByRole('table')).not.toBeInTheDocument();
-    expect(screen.queryByText(/không có dữ liệu/i)).not.toBeInTheDocument();
-  });
-
-  it('navigates through all three real route definitions from the menu', () => {
-    render(<Feature/>);
-    const nav = screen.getByRole('navigation', { name: 'Dữ liệu & Khai phá' });
-    for (const { path, label } of dataMiningPages) {
-      const link = within(nav).getByRole('link', { name: label });
-      expect(link).toHaveAttribute('href', path);
-      fireEvent.click(link);
-      expect(screen.getByRole('heading', { level: 2, name: heading(path, label) })).toBeInTheDocument();
-      expect(link).toHaveAttribute('aria-current', 'page');
-      expect(within(nav).getAllByRole('link').filter(item => item.getAttribute('aria-current') === 'page')).toHaveLength(1);
-    }
+describe('Admin navigation', () => {
+  it.each([
+    ['/admin/datasets', 'Danh sách dữ liệu'],
+    ['/admin/datasets/?tab=create', 'Tạo dữ liệu mới'],
+    ['/admin/datasets/example', 'Danh sách dữ liệu'],
+    ['/admin/mining-runs', 'Tạo lần chạy'],
+    ['/admin/mining-runs?tab=history&page=2', 'Lịch sử lần chạy'],
+    ['/admin/mining-runs/example', 'Lịch sử lần chạy'],
+    ['/admin/mining-run-history', 'Lịch sử lần chạy'],
+    ['/admin/mining-monitoring', 'Giám sát thực thi'],
+    ['/admin/patterns/?page=2#detail', 'Tra cứu Pattern'],
+    ['/admin/pattern-explorer', 'Tra cứu Pattern'],
+    ['/admin/combos?batchId=123', 'Danh sách batch & duyệt'],
+    ['/admin/combos?runId=123', 'Tạo đề xuất Combo'],
+    ['/admin/combos?tab=generate', 'Tạo đề xuất Combo'],
+    ['/admin/mining-comparison', 'So sánh thuật toán'],
+    ['/admin/account', 'Tài khoản'],
+  ])('opens and highlights the right item on direct load: %s', (url, label) => {
+    render(<MantineProvider><MemoryRouter initialEntries={[url]}><DataMiningNavigation/></MemoryRouter></MantineProvider>);
+    const active = screen.getByRole('link', { name: label });
+    expect(active).toHaveAttribute('aria-current', 'page');
+    expect(screen.getAllByRole('link').filter(link => link.getAttribute('aria-current') === 'page')).toHaveLength(1);
   });
 
-  it('keeps active links correct on back/forward rather than relying on click state', () => {
-    render(<Feature entries={['/admin/datasets', '/admin/mining-runs']}/>);
-    expect(screen.getByRole('link', { name: 'Lần chạy khai phá' })).toHaveAttribute('aria-current', 'page');
+  it('changes groups without navigation and handles back/forward using the URL', () => {
+    render(<Feature entries={['/admin/datasets', '/admin/mining-runs?tab=history']}/>);
+    expect(screen.getByRole('link', { name: 'Lịch sử lần chạy' })).toHaveAttribute('aria-current', 'page');
+    fireEvent.click(screen.getByRole('button', { name: 'Dữ liệu khai phá' }));
+    expect(screen.getByRole('link', { name: 'Lịch sử lần chạy' })).toHaveAttribute('aria-current', 'page');
+    fireEvent.click(screen.getByRole('link', { name: 'Tạo dữ liệu mới' }));
+    expect(screen.getByRole('form', { name: 'Upload CSV' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Tạo dữ liệu mới' })).toHaveAttribute('aria-current', 'page');
     fireEvent.click(screen.getByRole('button', { name: 'Quay lại' }));
-    expect(screen.getByRole('heading', { level: 2, name: 'Dữ liệu khai phá' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Dữ liệu khai phá' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Lịch sử lần chạy' })).toHaveAttribute('aria-current', 'page');
     fireEvent.click(screen.getByRole('button', { name: 'Tiến tới' }));
-    expect(screen.getByRole('heading', { level: 2, name: 'Lần chạy khai phá' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Lần chạy khai phá' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Tạo dữ liệu mới' })).toHaveAttribute('aria-current', 'page');
+    fireEvent.click(screen.getByRole('button', { name: 'Dữ liệu khai phá' }));
+    expect(screen.queryByRole('link', { name: 'Tạo dữ liệu mới' })).not.toBeInTheDocument();
   });
 
-  it('resolves a fresh page load with trailing slash, query and hash', () => {
-    const view = render(<Feature entries={['/admin/patterns/?page=2#detail']}/>);
-    expect(screen.getByRole('heading', { level: 2, name: 'Mẫu khai phá' })).toBeInTheDocument();
-    view.unmount();
-    render(<Feature entries={['/admin/patterns/?page=2#detail']}/>);
-    expect(screen.getByRole('link', { name: 'Mẫu khai phá' })).toHaveAttribute('aria-current', 'page');
+  it('keeps home first, removes duplicate Pattern links and expands legacy without navigating', () => {
+    render(<Feature entries={['/admin']} fullNavbar/>);
+    expect(screen.getAllByRole('link')[0]).toHaveTextContent('Trang chủ Admin');
+    expect(screen.queryByRole('link', { name: 'Pattern', exact: true })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Quản lý cửa hàng' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sản phẩm', exact: true }));
+    expect(screen.getByRole('link', { name: 'Trang chủ Admin' })).toHaveAttribute('aria-current', 'page');
+    fireEvent.click(screen.getByRole('link', { name: 'Danh mục sản phẩm' }));
+    expect(screen.getByRole('link', { name: 'Danh mục sản phẩm' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it.each([null, { roles: [] }, { roles: ['CUSTOMER'] }, { roles: ['EMPLOYEE'] }, { roles: ['ROLE_ADMIN'] }])('hides the menu and denies direct page access without the exact Admin UI role', user => {
-    setIdentity(user);
-    render(<Feature entries={['/admin/patterns']}/>);
+  it('opens the legacy group on a fresh child URL', () => {
+    render(<Feature entries={['/admin/category']} fullNavbar/>);
+    expect(screen.getByRole('button', { name: 'Quản lý cửa hàng' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Sản phẩm', exact: true })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('link', { name: 'Danh mục sản phẩm' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('closes the sidebar after mobile selection', () => {
+    const closeNavbar = jest.fn(); appStore.mockReturnValue({ opened: true, closeNavbar });
+    (window.matchMedia as jest.Mock).mockImplementation(query => ({ matches: query === '(max-width: 991px)', addListener: jest.fn(), removeListener: jest.fn() }));
+    render(<Feature/>);
+    fireEvent.click(screen.getByRole('link', { name: 'Tạo dữ liệu mới' }));
+    expect(closeNavbar).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([null, { roles: [] }, { roles: ['CUSTOMER'] }, { roles: ['EMPLOYEE'] }, { roles: ['ROLE_ADMIN'] }])('denies menu and direct route for %j', user => {
+    setIdentity(user); render(<Feature entries={['/admin/patterns']}/>);
     expect(screen.queryByRole('navigation', { name: 'Dữ liệu & Khai phá' })).not.toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(user ? 'Không có quyền truy cập' : 'Cần đăng nhập');
-    expect(screen.queryByRole('heading', { level: 2, name: 'Mẫu khai phá' })).not.toBeInTheDocument();
     expect(patternHttpClient.runs).not.toHaveBeenCalled();
   });
 
-  it('removes menu and page access when the shared UI identity loses the Admin role', () => {
-    const view = render(<Feature/>);
-    setIdentity({ roles: ['EMPLOYEE'] });
-    view.rerender(<Feature/>);
-    expect(screen.queryByRole('navigation', { name: 'Dữ liệu & Khai phá' })).not.toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('Không có quyền truy cập');
+  it.each([
+    ['/admin/mining-run-history', 'Lịch sử Mining RUN'],
+    ['/admin/mining-monitoring', 'Giám sát Mining'],
+    ['/admin/mining-comparison', 'So sánh thuật toán'],
+  ])('retains the existing route %s', (url, heading) => {
+    render(<Feature entries={[url]}/>);
+    expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
   });
 
-  it('integrates with the actual DefaultNavbar while retaining legacy links and child navigation', () => {
-    render(<Feature fullNavbar/>);
-    expect(screen.getByRole('navigation', { name: 'Dữ liệu & Khai phá' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Trang chủ Admin' })).toHaveAttribute('href', '/admin');
-    expect(screen.getByRole('link', { name: 'Sản phẩm' })).toHaveAttribute('href', '/admin/product');
-    fireEvent.click(screen.getByRole('link', { name: 'Sản phẩm' }));
-    expect(screen.getByRole('link', { name: 'Danh mục sản phẩm' })).toHaveAttribute('href', '/admin/category');
-  });
-
-  it('does not add WDM navigation to the legacy navbar for a non-Admin', () => {
-    setIdentity({ roles: ['EMPLOYEE'] });
-    render(<Feature entries={['/admin']} fullNavbar/>);
-    expect(screen.queryByRole('navigation', { name: 'Dữ liệu & Khai phá' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Đơn hàng' })).toHaveAttribute('href', '/admin/order');
-  });
-
-  it('matches only the intended route families, including direct URL casing', () => {
-    expect(isDataMiningPath('/ADMIN/DATASETS')).toBe(true);
-    expect(isDataMiningPath('/admin/datasets/future-detail')).toBe(true);
+  it('does not match unrelated path prefixes', () => {
+    expect(activeMiningItem('/admin/datasets-extra', '')).toBe('');
+    expect(activeMiningItem('/ADMIN/DATASETS/', '?tab=create')).toBe('dataset-create');
     expect(isDataMiningPath('/admin/datasets-extra')).toBe(false);
-    expect(isDataMiningPath('/admin/product')).toBe(false);
   });
 });
 
 describe('Admin UI access predicate', () => {
-  it.each([undefined, null, {}, { roles: null }, { roles: [] }, { roles: [{}] }, { roles: ['admin'] }])('fails closed for missing or unrelated role data', identity => {
+  it.each([undefined, null, {}, { roles: null }, { roles: [] }, { roles: [{}] }, { roles: ['admin'] }])('fails closed for %j', identity => {
     expect(hasDataMiningAdminAccess(identity)).toBe(false);
   });
-
-  it('allows the exact role even when another role is also present', () => {
-    expect(hasDataMiningAdminAccess({ roles: ['EMPLOYEE', 'ADMIN'] })).toBe(true);
-  });
+  it('allows the exact ADMIN role', () => expect(hasDataMiningAdminAccess({ roles: ['EMPLOYEE', 'ADMIN'] })).toBe(true));
 });

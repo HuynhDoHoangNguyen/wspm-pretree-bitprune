@@ -50,7 +50,7 @@ class ComboReadControllerTest {
         var response = mvc.perform(get(URL).param("productId", "p")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("SUCCESS"))
                 .andExpect(jsonPath("$.message").value("Request completed successfully."))
-                .andExpect(jsonPath("$.data.requestedK").value(4))
+                .andExpect(jsonPath("$.data.requestedK").value(5))
                 .andExpect(jsonPath("$.data.effectiveK").value(0))
                 .andExpect(jsonPath("$.data.items").isEmpty()).andReturn().getResponse();
         assertEquals(response.getHeader("X-Request-Id"), JsonMapper.builder().build()

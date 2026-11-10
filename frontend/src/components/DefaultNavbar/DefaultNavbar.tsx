@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Center, Navbar, ScrollArea, Stack, useMantineTheme } from '@mantine/core';
+import React from 'react';
+import { Navbar, ScrollArea } from '@mantine/core';
 import {
   AddressBook,
   Award,
@@ -11,16 +11,19 @@ import {
   FileBarcode,
   Fingerprint,
   Home,
+  BuildingStore,
+  List,
   Icon,
   Message,
   Users
 } from 'tabler-icons-react';
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
+import AdminNavigationGroup, { AdminNavigationLink } from './AdminNavigationGroup';
 import useAppStore from 'stores/use-app-store';
 import useDefaultNavbarStyles from 'components/DefaultNavbar/DefaultNavbar.styles';
 import { useSharedAuth } from 'auth/session';
 import DataMiningNavigation from 'pages/admin/data-mining/DataMiningNavigation';
-import { isDataMiningPath } from 'pages/admin/data-mining/routes';
+
 
 interface NavbarLink {
   link: string;
@@ -36,8 +39,6 @@ interface NavbarChildLink {
 }
 
 const navbarLinks: NavbarLink[] = [
-  { link: '/admin/patterns', label: 'Pattern', icon: Box, disableForEmployee: true },
-  { link: '/admin/combos', label: 'Combo', icon: Box, disableForEmployee: true },
   {
     link: '/admin',
     label: 'Trang chủ Admin',
@@ -251,59 +252,32 @@ const navbarLinks: NavbarLink[] = [
 ];
 
 export function DefaultNavbar() {
-  const theme = useMantineTheme();
   const { opened } = useAppStore();
-  const { classes, cx } = useDefaultNavbarStyles();
-  const [active, setActive] = useState('Trang chủ');
-  const { pathname } = useLocation();
-  const onDataMiningPage = isDataMiningPath(pathname);
-
+  const { classes } = useDefaultNavbarStyles();
+  const location = useLocation();
+  const pathname = location.pathname.replace(/\/+$/, '').toLowerCase();
   const { user } = useSharedAuth();
-  const isOnlyEmployee = () => !!user && !user.roles.includes('ADMIN');
-
-  const navbarLinksFragment = navbarLinks.map(navbarLink => (
-    <Stack
-      key={navbarLink.label}
-      spacing={0}
-      sx={{ borderRadius: theme.radius.sm, overflow: 'hidden' }}
-    >
-      <Link
-        to={navbarLink.link}
-        className={cx(classes.link, {
-          [classes.linkActive]: navbarLink.link === '/admin' ? pathname.replace(/\/+$/, '') === '/admin' : !onDataMiningPage && navbarLink.label === active,
-          [classes.linkDisabled]: isOnlyEmployee() && navbarLink.disableForEmployee,
+  const legacy = navbarLinks.filter(item => item.link !== '/admin');
+  const legacyActive = legacy.some(item => pathname === item.link || pathname.startsWith(item.link + '/')
+    || item.childLinks?.some(child => pathname === child.link || pathname.startsWith(child.link + '/')));
+  return <Navbar p="sm" width={{ md: 250 }} hidden={!opened}>
+    <Navbar.Section grow component={ScrollArea}>
+      <AdminNavigationLink link="/admin" label="Trang chủ Admin" active={pathname.replace(/\/+$/, '') === '/admin'} icon={<Home className={classes.linkIcon}/>}/>
+      <DataMiningNavigation/>
+      <AdminNavigationGroup label="Quản lý cửa hàng" current={legacyActive} icon={<BuildingStore className={classes.linkIcon} size={22} aria-hidden/>}>
+        {legacy.map(item => {
+          const disabled = !!user && !user.roles.includes('ADMIN') && item.disableForEmployee;
+          const current = pathname === item.link || pathname.startsWith(item.link + '/')
+            || !!item.childLinks?.some(child => pathname === child.link || pathname.startsWith(child.link + '/'));
+          if (!item.childLinks?.length) return <AdminNavigationLink key={item.link} link={item.link} label={item.label} active={current} disabled={disabled} icon={<item.icon className={classes.linkIcon}/>}/>;
+          const childLinks = [{ link: item.link, label: 'Danh s\u00e1ch ' + item.label.toLowerCase() }, ...item.childLinks];
+          const selected = childLinks.filter(child => pathname === child.link || pathname.startsWith(child.link + '/')).sort((a, b) => b.link.length - a.link.length)[0]?.link;
+          return <AdminNavigationGroup key={item.link} label={item.label} current={current} disabled={disabled} icon={<item.icon className={classes.linkIcon}/>}>
+            {childLinks.map(child =>
+              <AdminNavigationLink key={child.link} {...child} active={selected === child.link} icon={<List className={classes.linkIcon} size={18} aria-hidden/>} disabled={disabled}/>)}
+          </AdminNavigationGroup>;
         })}
-        onClick={() => setActive(navbarLink.label)}
-      >
-        <navbarLink.icon className={classes.linkIcon}/>
-        <span>{navbarLink.label}</span>
-      </Link>
-      {!onDataMiningPage && navbarLink.label === active && (navbarLink.childLinks || []).map(childLink => (
-        <Link
-          key={childLink.label}
-          to={childLink.link}
-          className={cx(classes.link, { [classes.childLinkActive]: navbarLink.label === active })}
-        >
-          <Center sx={{ width: 24, marginRight: theme.spacing.sm }}>
-            <div className={classes.childLinkDot}/>
-          </Center>
-          <span>{childLink.label}</span>
-        </Link>
-      ))}
-    </Stack>
-  ));
-
-  return (
-    <Navbar
-      p="md"
-      width={{ md: 250 }}
-      hidden={!opened}
-    >
-      <Navbar.Section grow component={ScrollArea}>
-        {navbarLinksFragment[0]}
-        <DataMiningNavigation/>
-        {navbarLinksFragment.slice(1)}
-      </Navbar.Section>
-    </Navbar>
-  );
+      </AdminNavigationGroup>
+    </Navbar.Section>
+  </Navbar>;
 }

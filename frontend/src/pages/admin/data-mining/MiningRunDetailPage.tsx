@@ -1,7 +1,8 @@
+import BackButton from 'components/BackButton/BackButton';
 import React from 'react';
 import { Alert, Button, Group, Stack, Text, Title } from '@mantine/core';
 import { Link, useLocation, useParams } from 'react-router-dom';
-import { ArrowLeft, Clock, Database, History, Refresh, Settings } from 'tabler-icons-react';
+import { Clock, Database, History, Refresh, Settings } from 'tabler-icons-react';
 import ManagerPath from 'constants/ManagerPath';
 import useTitle from 'hooks/use-title';
 import { isRunId } from 'api/admin/data-mining/mining-run-response';
@@ -26,11 +27,11 @@ export default function MiningRunDetailPage() {
   const valid = isRunId(runId);
   return <Stack mb={30} spacing="lg" className={classes.root} aria-live="polite">
     <nav aria-label="Điều hướng lần chạy" className={detail.navigation}>
-      <Button component={Link} to={back?.startsWith('/admin/mining-runs?') ? back : ManagerPath.MINING_RUNS + '?tab=history'} variant="subtle" leftIcon={<ArrowLeft size={17}/>}>Lịch sử run</Button>
+      <BackButton to={back?.startsWith('/admin/mining-runs?') ? back : ManagerPath.MINING_RUNS + '?tab=history'}>Lịch sử run</BackButton>
       <Button component={Link} to={ManagerPath.MINING_RUNS} variant="default" leftIcon={<Settings size={17}/>}>Về cấu hình khai phá</Button>
     </nav>
     <section className={detail.header} aria-label="Tổng quan lần chạy"><Stack spacing="lg">
-      <div><Text color="blue" weight={700} style={{ fontSize: 12, letterSpacing: '1.3px', marginBottom: 10 }}>THEO DÕI KHAI PHÁ</Text>
+      <div>
         <Group position="apart" align="center"><Title order={2} className={detail.title}>Chi tiết lần chạy khai phá</Title>
           {operation.report && <StateBadge value={operation.report.status}/>}</Group>
         <Text color="dimmed" size="sm" mt={8}>Theo dõi trạng thái, cấu hình và các số đo của lần chạy trong cùng một nơi.</Text>

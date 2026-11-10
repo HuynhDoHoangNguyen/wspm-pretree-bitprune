@@ -38,16 +38,16 @@ class ComboManagementMySqlTest {
         assertEquals("APPLIED", service.review(combo, command("APPROVE", null, service.detail(combo).reviewToken()), principal()).outcome());
         return combo;
     }
-    @Test void publicationReadsAllKindsAndPersonalHistoryWithoutFlatteningOrCrossIdentity() {
+    @Test void publicBundlesAndPersonalTemporalHistoryWithoutFlatteningOrCrossIdentity() {
         for (String combo : fixture.jdbc.queryForList("SELECT combo_id FROM COMBO WHERE batch_id=?", String.class, fixture.batch))
             assertEquals("APPLIED", service.review(combo, command("APPROVE", null, service.detail(combo).reviewToken()), principal()).outcome());
         assertEquals(3, publications().publish(fixture.batch, principal()).publishedCount());
         var repository = new vn.edu.wspm.backend.repositories.recommendation.ComboReadRepository(fixture.jdbc);
         var reader = new vn.edu.wspm.backend.services.recommendation.ComboReadService(repository,
                 new vn.edu.wspm.backend.mappers.ComboReadMapper(), Clock.systemUTC());
-        assertEquals(Set.of("SAME_ORDER_BUNDLE","SEQUENTIAL_CROSS_SELL","MIXED_SEQUENCE"),
+        assertEquals(Set.of("SAME_ORDER_BUNDLE"),
                 repository.topK(fixture.batch,fixture.products.getFirst(),20,Instant.now()).stream().map(r -> r.kind()).collect(java.util.stream.Collectors.toSet()));
-        assertEquals(2, reader.latest().size());
+        assertEquals(1, reader.latest().size());
         String customer="C"+UUID.randomUUID().toString().replace("-","");
         fixture.jdbc.update("INSERT INTO CUSTOMER(customer_id,user_id,anonymous_code) VALUES(?,?,?)",customer,actor,customer);
         String order="O"+UUID.randomUUID().toString().replace("-","");
@@ -58,6 +58,10 @@ class ComboManagementMySqlTest {
         assertEquals("SEQUENTIAL_CROSS_SELL",personal.items().getFirst().combo().kind());
         assertEquals(List.of(fixture.products.get(2)),personal.items().getFirst().suggestedProductIds());
         assertTrue(reader.personalized("another-account").items().isEmpty());
+        String temporalId = personal.items().getFirst().combo().comboId();
+        assertThrows(vn.edu.wspm.backend.exception.ApplicationException.class, () -> reader.detail(temporalId));
+        assertEquals(personal.items().getFirst().suggestedProductIds(), reader.personalizedCombo(actor, temporalId).items().getFirst().suggestedProductIds());
+        assertThrows(vn.edu.wspm.backend.exception.ApplicationException.class, () -> reader.personalizedCombo("another-account", temporalId));
         // A later separate order containing the missing product cannot complete the mixed first itemset.
         String second="O"+UUID.randomUUID().toString().replace("-","");
         fixture.jdbc.update("INSERT INTO ORDERS(order_id,order_number,customer_id,ordered_at,status,source) VALUES(?,?,?,'2026-01-02','COMPLETED','TEST')",second,second,customer);

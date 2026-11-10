@@ -17,6 +17,13 @@ const useStyles = createStyles((theme) => ({
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: theme.spacing.xs,
+  },
+
+  logo: {
+    display: 'flex',
+    flexShrink: 0,
+    [theme.fn.smallerThan('sm')]: { '& svg': { width: 86 } },
   },
 
   links: {
@@ -105,20 +112,20 @@ export function DefaultHeader() {
   return (
     <Header height={56} className={classes.header}>
       <div className={classes.inner}>
-        <Group>
+        <Group spacing="xs" noWrap>
           <MediaQuery largerThan="md" styles={{ display: 'none' }}>
-            <Burger opened={opened} onClick={toggleOpened} size="sm"/>
+            <Burger opened={opened} onClick={toggleOpened} size="sm" aria-label={opened ? 'Đóng menu' : 'Mở menu'} aria-expanded={opened}/>
           </MediaQuery>
-          <Box component={Link} to="/admin">
+          <Box component={Link} to="/admin" className={classes.logo}>
             <ElectroLogo/>
           </Box>
         </Group>
 
-        <Group>
+        <Group spacing="xs" noWrap>
           <Group ml={50} spacing={5} className={classes.links}>
             {headerLinksFragment}
           </Group>
-          <Group spacing="xs">
+          <Group spacing={6} noWrap>
             <Button component={Link} to="/" variant="light" size="xs" leftIcon={<Browser size={16}/>}>Về cửa hàng</Button>
             <MediaQuery smallerThan="sm" styles={{ display: 'none' }}><ActionIcon
               variant="outline"

@@ -1,7 +1,7 @@
 import { WdmApiError } from './client';
 import { wdmApi as client } from './index';
 export interface GenerationPreview { status: string; issues: string[]; examined: number; accepted: number; rejected: number;
-  groups: number; eligible: number; topPatternIds: string[]; anchors: { productId: string; name: string }[];
+  groups: number; plannedGroups: number; eligible: number; topPatternIds: string[]; anchors: { productId: string; name: string }[];
   reasonCounts: Record<string, number>; referencePrices: Record<string, string>; contextToken: string | null;
   policyVersion?: string; proposals?: GenerationProposal[] }
 export interface ProductSelection { requiredItems: { itemId: number; quantity: number }[]; minDistinctProducts: number; maxDistinctProducts: number }
@@ -46,6 +46,7 @@ function categoryOptions(v: unknown, runId: string): CategoryOptions {
 function preview(v: unknown): GenerationPreview {
   if (!object(v) || !['READY', 'SELECT_ANCHOR', 'EMPTY', 'BLOCKED'].includes(String(v.status)) || !strings(v.issues)
     || !['examined', 'accepted', 'rejected', 'groups', 'eligible'].every(k => Number.isSafeInteger(v[k]) && Number(v[k]) >= 0 && Number(v[k]) <= 10000)
+    || !Number.isSafeInteger(v.plannedGroups) || Number(v.plannedGroups) < 0 || Number(v.plannedGroups) > Number(v.groups)
     || !strings(v.topPatternIds) || v.topPatternIds.length > 20 || v.topPatternIds.some(i => !/^[1-9][0-9]{0,19}$/.test(i))
     || !Array.isArray(v.anchors) || v.anchors.length > 10000 || v.anchors.some(a => !object(a) || typeof a.productId !== 'string' || typeof a.name !== 'string')
     || !object(v.reasonCounts) || Object.values(v.reasonCounts).some(n => !Number.isSafeInteger(n) || Number(n) < 0)
@@ -75,10 +76,10 @@ export const comboGenerationApi = {
     return client.get('/v1/admin/combo-generation/category-options/' + encodeURIComponent(runId),
       { signal, expectedStatus: 200, decodeResponse: value => categoryOptions(value, runId) }) as Promise<CategoryOptions>;
   },
-  previewCategories(runId: string, anchorProductId: string | null, k: number, requestIdentity: string, signal: AbortSignal | undefined, categorySelection: CategorySelection) {
-    return client.post('/v1/admin/combo-generation/preview', { runId, anchorProductId, k, requestIdentity, categorySelection },
+  previewCategories(runId: string, anchorProductId: string | null, k: number, requestIdentity: string, signal: AbortSignal | undefined, categorySelection: CategorySelection, recommendationK = 5, draftLimit = 20) {
+    return client.post('/v1/admin/combo-generation/preview', { runId, anchorProductId, k, recommendationK, draftLimit, requestIdentity, categorySelection },
       { signal, expectedStatus: 200, decodeResponse: value => {
-        const result = preview(value); if (result.policyVersion !== 'TV2_SELECTED_CATEGORIES_V3') return invalid(); return result;
+        const result = preview(value); if (result.policyVersion !== 'TV2_SELECTED_CATEGORIES_V3' || result.plannedGroups !== Math.min(result.groups, draftLimit)) return invalid(); return result;
       } }) as Promise<GenerationPreview>;
   },
   options(runId: string, signal?: AbortSignal) {

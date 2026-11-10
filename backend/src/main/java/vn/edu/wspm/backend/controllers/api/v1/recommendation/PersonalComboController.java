@@ -23,10 +23,16 @@ public class PersonalComboController {
             HttpServletRequest request, HttpServletResponse response) {
         response.setHeader("Cache-Control", "no-store");
         var identity = auth.authenticate(request);
-        if (parameters.keySet().stream().anyMatch(key -> !"productId".equals(key)))
-            throw ApplicationException.invalid("query", "UNKNOWN_FIELD", "Only productId is supported.");
+        if (parameters.keySet().stream().anyMatch(key -> !"productId".equals(key) && !"comboId".equals(key)))
+            throw ApplicationException.invalid("query", "UNKNOWN_FIELD", "Only productId or comboId is supported.");
         if (parameters.containsKey("productId") && parameters.get("productId").size() != 1)
             throw ApplicationException.invalid("productId", "DUPLICATE_VALUE", "Supply exactly one value.");
+        if (parameters.containsKey("comboId")) {
+            if (parameters.get("comboId").size() != 1 || parameters.containsKey("productId"))
+                throw ApplicationException.invalid("comboId", "INVALID_CONTEXT", "Supply one comboId without productId.");
+            return ApiResponse.success(service.personalizedCombo(identity.userId(), parameters.getFirst("comboId")),
+                    RequestIdFilter.requestId(request));
+        }
         String productId = parameters.getFirst("productId");
         return ApiResponse.success(productId == null ? service.personalized(identity.userId())
                 : service.personalized(identity.userId(), productId), RequestIdFilter.requestId(request));

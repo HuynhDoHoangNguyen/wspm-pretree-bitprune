@@ -24,6 +24,8 @@ export default function NativeGenerationPanel({ runId }: { runId: string }) {
   const [operation, setOperation] = useState<string | null>(null);
   const session = JSON.stringify([auth.status, auth.accessToken, auth.user?.userId, auth.user?.roles, auth.forbidden]);
   const [anchor, setAnchor] = useState(''); const [k, setK] = useState<number | undefined>(5);
+  const [recommendationK, setRecommendationK] = useState<number | undefined>(5);
+  const [draftLimit, setDraftLimit] = useState<number | undefined>(20);
   const [preview, setPreview] = useState<GenerationPreview | null>(null);
   const [outcome, setOutcome] = useState<GenerationOutcome | null>(null);
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
@@ -32,7 +34,7 @@ export default function NativeGenerationPanel({ runId }: { runId: string }) {
   const abortActive = useCallback(() => { epoch.current++; active.current?.abort(); }, []);
   useEffect(() => { abortActive(); pending.current = false; setBusy(false);
     setPreview(null); setOutcome(null); setUnknown(false); setError(''); id.current = crypto.randomUUID();
-    setSelected([]); setQuantities({}); setMinimum('2'); setMaximum('4'); setAnchor(''); setK(5); setOperation(null);
+    setSelected([]); setQuantities({}); setMinimum('2'); setMaximum('4'); setAnchor(''); setK(5); setRecommendationK(5); setDraftLimit(20); setOperation(null);
     return abortActive;
   }, [runId, session, abortActive]);
   const invalidate = () => { setPreview(p => p ? { ...p, contextToken: null } : null); setOutcome(null); setError(''); };
@@ -48,6 +50,8 @@ export default function NativeGenerationPanel({ runId }: { runId: string }) {
     if (pending.current || auth.status !== 'authenticated' || auth.forbidden) return;
     if (kind === 'preview' && selectionError) { setError(selectionError); return; }
     if (kind === 'preview' && (typeof k !== 'number' || !Number.isInteger(k) || k < 1 || k > 20)) { setError('Số đề xuất xem trước phải là số nguyên từ 1 đến 20.'); return; }
+    if (kind === 'preview' && (typeof recommendationK !== 'number' || !Number.isInteger(recommendationK) || recommendationK < 1 || recommendationK > 20)) { setError('Top-K gợi ý cho khách phải là số nguyên từ 1 đến 20.'); return; }
+    if (kind === 'preview' && (typeof draftLimit !== 'number' || !Number.isInteger(draftLimit) || draftLimit < 1 || draftLimit > 1000)) { setError('Số combo nháp muốn lưu phải là số nguyên từ 1 đến 1000.'); return; }
     const contextToken=preview?.contextToken;
     if (kind !== 'preview' && !contextToken) return;
     const generation = epoch.current; const controller = new AbortController(); active.current = controller;
@@ -57,7 +61,7 @@ export default function NativeGenerationPanel({ runId }: { runId: string }) {
         const p = await comboGenerationApi.previewCategories(runId, anchor || null, Number(k), id.current, controller.signal, {
           requiredCategories: selected.map(item => ({ categoryId: item, quantity: Number(quantities[item]) })),
           minDistinctProducts: Number(minimum), maxDistinctProducts: Number(maximum),
-        });
+        }, Number(recommendationK), Number(draftLimit));
         if (generation === epoch.current) {
           setPreview(p); setOutcome(null);
           if (anchor && !p.anchors.some(a => a.productId === anchor)) {
@@ -106,7 +110,10 @@ export default function NativeGenerationPanel({ runId }: { runId: string }) {
     <Text size="sm">Khoảng trên là số sản phẩm phân biệt, không phải số danh mục hay tổng số lượng. Quantity của danh mục áp dụng cho mỗi sản phẩm thuộc danh mục đó; sản phẩm ngoài các danh mục đã chọn có số lượng 1.
       {limits && ` Giới hạn: ${limits.maxDistinctProducts} sản phẩm/Combo; ${limits.maxBatchItems} dòng sản phẩm/batch; số lượng tối đa ${limits.maxQuantity}.`}</Text>
     {limits && selectionError && <Text color="red">{selectionError}</Text>}
-    <Text>Lưu toàn bộ nhóm hợp lệ. Sản phẩm neo và số đề xuất hiển thị chỉ lọc phần xem trước, không giới hạn số Combo được lưu.</Text>
+    <Text>Lưu tối đa số combo nháp đã nhập trên toàn batch: support giảm dần, bằng support thì weight giảm dần. Sản phẩm neo và số đề xuất xem trước chỉ lọc phần xem trước.</Text>
+    <NumberInput label="Số combo nháp muốn lưu" value={draftLimit} min={1} max={1000} precision={0}
+      disabled={busy || unknown || done} onChange={n => { setDraftLimit(n); id.current = crypto.randomUUID(); invalidate(); }}/>
+    {preview && <Text>Có {preview.groups} Combo hợp lệ; sẽ lưu {preview.plannedGroups} Combo nháp theo thứ hạng toàn batch.</Text>}
     {!preview && <Text>Bấm “Xem trước Combo” để tìm đề xuất. Thao tác này chưa lưu dữ liệu.</Text>}
     <NativeSelect label="Sản phẩm neo (chỉ lọc xem trước)" value={anchor} disabled={busy || unknown || done || !preview?.anchors.length}
       data={[{ value: '', label: !preview ? 'Cập nhật xem trước để tải sản phẩm neo' : !preview.anchors.length ? 'Chưa có sản phẩm neo phù hợp' : 'Tất cả đề xuất' }, ...(preview?.anchors || []).map(a => ({ value: a.productId, label: a.name + ' (' + a.productId + ')' }))]}
@@ -116,14 +123,18 @@ export default function NativeGenerationPanel({ runId }: { runId: string }) {
       ? 'Không có sản phẩm neo vì chưa có Combo hợp lệ theo cấu hình này. Kiểm tra danh mục bắt buộc và khoảng số sản phẩm; không phải mọi danh mục trong run đều cùng xuất hiện trong một Pattern.'
       : 'Chưa có danh sách sản phẩm neo được xác minh. Xem thông báo kết quả và thử cập nhật xem trước.'}</Alert>}
     <NumberInput label="Số đề xuất xem trước" value={k} min={1} max={20} disabled={busy || unknown || done} onChange={n => { setK(n); invalidate(); }}/>
+    <NumberInput label="Top-K gợi ý cho khách" description="Áp dụng riêng cho gợi ý mua cùng và gợi ý cá nhân sau khi lọc điều kiện."
+      value={recommendationK} min={1} max={20} precision={0} disabled={busy || unknown || done}
+      onChange={n => { setRecommendationK(n); id.current = crypto.randomUUID(); invalidate(); }}/>
+    <Text size="sm" color="dimmed">Mặc định 5, tối đa 20 gợi ý mỗi nhóm. Giới hạn này độc lập với số combo nháp muốn lưu. Muốn đổi Top-K sau khi lưu hoặc công bố, hãy tạo batch mới.</Text>
     {preview && <Text size="sm">Chọn bất kỳ sản phẩm nào có trong Combo để lọc đề xuất xem trước, kể cả sản phẩm ở itemset sau. Lựa chọn này không thay đổi thứ tự mua hoặc các Combo được lưu.</Text>}
     <Group><Button loading={operation === 'preview'} onClick={() => void invoke('preview')} disabled={busy || unknown || done || !!selectionError}>Xem trước Combo</Button>
-      {preview && <Button loading={operation === 'submit'} onClick={() => void invoke('submit')} disabled={busy || unknown || done || !preview.contextToken}>Lưu {preview.groups} Combo DRAFT</Button>}
+      {preview && <Button loading={operation === 'submit'} onClick={() => void invoke('submit')} disabled={busy || unknown || done || !preview.contextToken}>Lưu {preview.plannedGroups} Combo DRAFT</Button>}
       {unknown && <Button loading={operation === 'reconcile'} onClick={() => void invoke('reconcile')} disabled={busy}>Kiểm tra kết quả lưu</Button>}</Group>
-    {operation === 'submit' && <Text role="status">Đang lưu {preview?.groups} Combo và xác minh dữ liệu. Không gửi lại yêu cầu.</Text>}
+    {operation === 'submit' && <Text role="status">Đang lưu {preview?.plannedGroups} Combo và xác minh dữ liệu. Không gửi lại yêu cầu.</Text>}
     {preview && preview.status === 'READY' && !preview.contextToken && !preview.issues.length && <Text>Hãy cập nhật xem trước sau khi đổi lựa chọn. Chưa thể lưu đề xuất cũ.</Text>}
     {preview && <Text>Đã xét {preview.examined} Pattern; {preview.accepted} hợp lệ; {preview.rejected} bị loại; {preview.groups} nhóm Combo.
-      {` Đang xem ${preview.proposals?.length || 0} đề xuất; sẽ lưu ${preview.groups} Combo.`}</Text>}
+      {` Đang xem ${preview.proposals?.length || 0} đề xuất; sẽ lưu ${preview.plannedGroups} Combo. Top-K gợi ý cho khách: ${recommendationK ?? '—'}.`}</Text>}
     {preview?.contextToken && preview.proposals?.map(p => <Paper withBorder p="md" key={p.sourcePatternId}>
       <Text weight={600}>Pattern {p.sourcePatternId} · {p.comboKind} · Tổng {p.total} VND</Text><Text component="code">{p.canonicalPattern}</Text>
       {p.items.map(i => <Text key={i.itemsetOrder + ':' + i.itemOrder}>Itemset {i.itemsetOrder}, vị trí {i.itemOrder}: {i.name} · {i.sku} ·

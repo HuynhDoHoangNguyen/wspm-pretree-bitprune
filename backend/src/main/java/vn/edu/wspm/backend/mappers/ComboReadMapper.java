@@ -20,7 +20,7 @@ public class ComboReadMapper {
                 .thenComparingLong(ItemRow::itemOrder)).map(i -> new Item(i.itemsetOrder(),
                         i.itemOrder(), i.quantity(), i.anchorEligible(), i.discountEligible(),
                         money(i.unitPriceSnapshot()), new Product(i.productId(), i.name(), i.sku(),
-                                i.categoryId(), i.imageUrl(), money(i.currentPrice())))).toList();
+                                i.categoryId(), i.imageUrl(), money(i.currentPrice()),i.availableQuantity()))).toList();
         return new Detail(c.comboId(), c.name(), c.kind(), c.status(), c.explanation(),
                 c.validFrom(), c.validTo(), c.publishedAt(), at,
                 new Provenance(batch(b), c.primaryPatternId(), c.canonicalPattern()),

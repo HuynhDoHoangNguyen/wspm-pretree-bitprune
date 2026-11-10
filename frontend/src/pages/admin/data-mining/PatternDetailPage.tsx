@@ -1,6 +1,7 @@
+import BackButton from 'components/BackButton/BackButton';
 import React from 'react';
 import { Alert, Button, Group, Paper, Stack, Text, Title } from '@mantine/core';
-import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { runResultApi } from 'api/admin/data-mining';
 import { isPatternId } from 'api/admin/data-mining/run-results';
 import { isRunId } from 'api/admin/data-mining/mining-run-response';
@@ -24,9 +25,9 @@ export default function PatternDetailPage() {
   const p = data?.pattern, provenance = data?.result.provenance;
   return <Stack spacing="lg" mb={30}>
     <Title order={2}>Chi tiết pattern</Title>
-    <Group><Button component={Link} variant="subtle"
+    <Group><BackButton
       to={isRunId(runId) ? '/admin/patterns?runId=' + runId + '&page=' + returnPage + (view === 'published' ? '&view=published' : '') : '/admin/patterns'}
-      state={location.state}>Về Pattern Explorer</Button>
+      state={location.state}>Về Pattern Explorer</BackButton>
     <Button disabled={!valid || read.loading} onClick={read.refresh}>Làm mới chi tiết</Button></Group>
     {!valid && <Alert color="yellow" role="alert">Run ID hoặc Pattern ID chưa hợp lệ. Không thể đọc chi tiết.</Alert>}
     {valid && (view === 'published' ? <Alert color="teal">Kết quả đã công bố và kiểm chứng manifest.</Alert> :

@@ -67,7 +67,7 @@ export async function runDatasetCases({ browser, httpsOrigin: origin, sql, temp,
       await page.getByRole('heading', { name: 'Từ dữ liệu đơn hàng đến combo sản phẩm', exact: true }).waitFor();
       await page.getByRole('link', { name: 'Bắt đầu với dữ liệu', exact: true }).click();
       await page.getByRole('heading', { name: 'Dữ liệu khai phá', exact: true }).waitFor();
-      await page.getByRole('tab', { name: 'Tạo dữ liệu mới · Xuất đơn hàng hoặc upload CSV', exact: true }).click();
+      await page.getByRole('button', { name: '+ Tạo dữ liệu mới', exact: true }).click();
     }
     else await page.waitForURL(origin + '/');
     return { page, token: grant.accessToken };
@@ -794,7 +794,7 @@ export async function runDatasetCases({ browser, httpsOrigin: origin, sql, temp,
     assert.equal(await combo.getByRole('link').count(), 0);
     await page.screenshot({ path: path.join(logDirectory, 'ui-admin-home.png'), fullPage: true });
     await page.getByRole('link', { name: 'Bắt đầu với dữ liệu', exact: true }).click();
-    await page.getByRole('tab', { name: 'Tạo dữ liệu mới · Xuất đơn hàng hoặc upload CSV', exact: true }).click();
+    await page.getByRole('button', { name: '+ Tạo dữ liệu mới', exact: true }).click();
     const uploaded = page.waitForResponse(r => r.url() === origin + base && r.request().method() === 'POST');
     await page.getByLabel('Tệp CSV', { exact: true }).setInputFiles(path.join(root, 'backend/src/test/resources/wdm/csv-v1/round-trip.csv'));
     await page.getByRole('button', { name: 'Upload CSV', exact: true }).click();

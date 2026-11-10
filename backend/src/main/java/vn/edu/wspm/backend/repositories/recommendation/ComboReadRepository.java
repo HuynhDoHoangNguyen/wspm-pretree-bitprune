@@ -28,7 +28,12 @@ public class ComboReadRepository {
     public record ItemRow(String comboId, long itemsetOrder, long itemOrder, long quantity,
             boolean anchorEligible, boolean discountEligible, BigDecimal unitPriceSnapshot,
             String productId, String name, String sku, String categoryId, String imageUrl,
-            BigDecimal currentPrice) {}
+            BigDecimal currentPrice, String availableQuantity) {
+        public ItemRow(String comboId,long itemsetOrder,long itemOrder,long quantity,boolean anchorEligible,boolean discountEligible,BigDecimal unitPriceSnapshot,
+                String productId,String name,String sku,String categoryId,String imageUrl,BigDecimal currentPrice){
+            this(comboId,itemsetOrder,itemOrder,quantity,anchorEligible,discountEligible,unitPriceSnapshot,productId,name,sku,categoryId,imageUrl,currentPrice,null);
+        }
+    }
 
     static final String ACTIVE_BATCH_SQL = """
             SELECT b.batch_id, b.run_id, r.snapshot_id, r.algorithm, b.ranking_policy,
@@ -87,6 +92,7 @@ public class ComboReadRepository {
               AND EXISTS (SELECT 1 FROM COMBO_ITEM present WHERE present.combo_id = c.combo_id)
             """;
     static final String TOP_K_SQL = ELIGIBLE_SQL + """
+              AND CAST(c.combo_kind AS BINARY) = CAST('SAME_ORDER_BUNDLE' AS BINARY)
               AND EXISTS (SELECT 1 FROM COMBO_ITEM anchor
                   WHERE anchor.combo_id = c.combo_id
                     AND CAST(anchor.product_id AS BINARY) = CAST(? AS BINARY)
@@ -125,7 +131,7 @@ public class ComboReadRepository {
 
     public List<ComboRow> candidates(String batchId, Instant at, int offset, boolean latest) {
         return jdbc.query(ELIGIBLE_SQL + (latest
-                ? " ORDER BY c.published_at DESC, CAST(c.combo_id AS BINARY) ASC"
+                ? " AND CAST(c.combo_kind AS BINARY) = CAST('SAME_ORDER_BUNDLE' AS BINARY) ORDER BY c.published_at DESC, CAST(c.combo_id AS BINARY) ASC"
                 : " ORDER BY p.support_abs DESC,p.pattern_weight DESC,CAST(p.canonical_pattern AS BINARY),CAST(c.combo_id AS BINARY)")
                 + " LIMIT 20 OFFSET ?", statement -> {
                     statement.setString(1, batchId); statement.setObject(2, utc(at));
@@ -162,11 +168,19 @@ public class ComboReadRepository {
         String sql = """
                 SELECT i.combo_id, i.itemset_order, i.item_order, i.quantity,
                        i.is_anchor_eligible, i.is_discount_eligible, i.unit_price_snapshot,
-                       p.product_id, p.name, p.sku, p.category_id, p.current_price,
+                       p.product_id, p.name, p.sku, p.category_id, p.current_price, stock.available_quantity,
                        (SELECT image.image_url FROM PRODUCT_IMAGE image
                         WHERE image.product_id = p.product_id
                         ORDER BY image.display_order, CAST(image.image_id AS BINARY) LIMIT 1) AS image_url
                 FROM COMBO_ITEM i JOIN PRODUCT p ON p.product_id = i.product_id
+                LEFT JOIN (
+                    SELECT balance.product_id,
+                           CAST(SUM(CAST(balance.on_hand_quantity AS SIGNED) - CAST(balance.reserved_quantity AS SIGNED)) AS CHAR) AS available_quantity
+                    FROM INVENTORY_BALANCE balance
+                    JOIN WAREHOUSE warehouse ON warehouse.warehouse_id = balance.warehouse_id
+                    WHERE CAST(warehouse.status AS BINARY) = CAST('ACTIVE' AS BINARY)
+                    GROUP BY balance.product_id
+                ) stock ON stock.product_id = p.product_id
                 WHERE i.combo_id IN (
                 """ + placeholders + ") ORDER BY CAST(i.combo_id AS BINARY), i.itemset_order, i.item_order";
         return jdbc.query(sql, statement -> {
@@ -175,7 +189,7 @@ public class ComboReadRepository {
                 r.getLong("item_order"), r.getLong("quantity"), r.getBoolean("is_anchor_eligible"),
                 r.getBoolean("is_discount_eligible"), r.getBigDecimal("unit_price_snapshot"),
                 r.getString("product_id"), r.getString("name"), r.getString("sku"),
-                r.getString("category_id"), r.getString("image_url"), r.getBigDecimal("current_price")));
+                r.getString("category_id"), r.getString("image_url"), r.getBigDecimal("current_price"), r.getString("available_quantity")));
     }
 
     private static final RowMapper<ComboRow> COMBO_MAPPER = (r, n) -> new ComboRow(

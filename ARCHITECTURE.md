@@ -509,6 +509,31 @@ Manual recovery controls are replaced by sign-in/home links; automatic refresh
 and the session's token/cookie/cancellation/role enforcement remain unchanged.
 
 Admin Data & Mining pages live in `frontend/src/pages/admin/data-mining/`, with
+history, monitoring and comparison under their own functional subdirectories.
+The shared historical RUN API/types live in `frontend/src/api/admin/data-mining/history/`.
+Client catalog owns `api/catalog/`, `models/catalog/`, `hooks/catalog/`,
+`components/catalog/` and `pages/client-catalog/`; public/personal Combo reads own
+`api/recommendation/`, `models/recommendation/`, `components/recommendation/`
+and `pages/client-combo/`. `pages/client-catalog/routes.tsx` registers the existing
+client URLs. Source and colocated tests no longer use a contributor namespace.
+
+The Admin sidebar uses icons for both group headings and children. Legacy store screens
+are grouped under "Quản lý cửa hàng". Combo cards use a compact selectable modal;
+public discovery/latest/detail only exposes same-order bundles, while temporal
+details are verified through the identity-bound personalized read with `comboId`.
+The policy and HTTP boundary are documented in `docs/wdm/client-combo-contract.md`.
+
+The Admin sidebar derives selection from pathname and query, expands the current
+group, and closes on mobile link selection. Dataset list/create and run
+create/history retain their existing `tab` queries. `/admin/mining-runs?tab=history`
+and `/admin/patterns` are the main history/Pattern destinations; the distinct
+`/admin/mining-run-history` and `/admin/pattern-explorer` screens remain available
+at their existing URLs for compatibility. No historical API or result semantics
+were merged. Combo batch history keeps its zero-based page in `batchPage` when
+opening/returning from a batch. Shared compact headers replace duplicate primary
+navigation tabs; snapshot processing tabs remain local workflow controls.
+
+Admin Data & Mining initially introduced
 routes `/admin/datasets`, `/admin/mining-runs` and `/admin/patterns`. They reuse the
 existing Admin shell and have UI-only ADMIN role guards. The Dataset page now
 provides period CSV export and multipart snapshot acquisition using the real WDM

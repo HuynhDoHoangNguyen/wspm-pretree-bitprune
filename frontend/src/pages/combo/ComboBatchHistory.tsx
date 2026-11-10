@@ -9,9 +9,12 @@ const savedTime = (value: string) => {
     timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'medium',
   }).format(date);
 };
-export default function ComboBatchHistory({ client, openBatch }: { client: ComboClient; openBatch: (id: string) => void }) {
+export default function ComboBatchHistory({ client, openBatch, selectedPage, onPageChange }: {
+  client: ComboClient; openBatch: (id: string) => void; selectedPage?: number; onPageChange?: (page: number) => void;
+}) {
   const { classes } = useMiningAdminStyles();
-  const [page, setPage] = useState(0), [revision, setRevision] = useState(0);
+  const [localPage, setLocalPage] = useState(0), [revision, setRevision] = useState(0);
+  const page = selectedPage ?? localPage;
   const [data, setData] = useState<BatchPage | null>(null), [error, setError] = useState('');
   useEffect(() => {
     const controller = new AbortController(); let active = true;
@@ -21,11 +24,12 @@ export default function ComboBatchHistory({ client, openBatch }: { client: Combo
     fetch(page, 20, { signal: controller.signal }).then(result => {
       if (!active) return;
       const last = BigInt(result.total) === BigInt(0) ? 0 : Number((BigInt(result.total) - BigInt(1)) / BigInt(20));
-      if (page > last) { setPage(last); return; }
+      if (page > last) { if (onPageChange) onPageChange(last); else setLocalPage(last); return; }
       setData(result);
     }).catch(() => { if (active) setError('Không tải được lịch sử batch. Kiểm tra kết nối hoặc đăng nhập rồi thử lại.'); });
     return () => { active = false; controller.abort(); };
-  }, [client, page, revision]);
+  }, [client, page, revision, onPageChange]);
+  function movePage(next: number) { if (onPageChange) onPageChange(next); else setLocalPage(next); }
   return <Paper withBorder radius="md" p="xl"><Stack spacing="lg">
     <Group position="apart"><div><Title order={3}>Lịch sử lưu DRAFT</Title>
       <Text size="sm" color="dimmed" mt={4}>Mới nhất trước · 20 lần lưu mỗi trang · Thời gian UTC+07</Text></div>
@@ -38,7 +42,8 @@ export default function ComboBatchHistory({ client, openBatch }: { client: Combo
               <tbody>{data.items.map(batch => <tr key={batch.batchId}>
                 <td><Text weight={600}>{savedTime(batch.createdAt)}</Text>
                   <Text size="xs" color="dimmed" className={classes.wrap} mt={4}>{batch.batchId}</Text>
-                  <Text size="xs" color="dimmed" className={classes.wrap}>Run: {batch.runId}</Text></td>
+                  <Text size="xs" color="dimmed" className={classes.wrap}>Run: {batch.runId}</Text>
+                  <Text size="xs">Top-K gợi ý cho khách: {batch.topK ?? '—'}</Text></td>
                 <td><Text weight={700} size="lg">{batch.comboCount}</Text><Text size="xs" color="dimmed">Combo trong batch</Text></td>
                 <td><Stack spacing={5} align="flex-start"><Badge color="gray" variant="light">{batch.draftCount} bản nháp</Badge>
                   <Text size="xs" color="dimmed">{batch.approvedCount} đã duyệt · {batch.rejectedCount} từ chối</Text></Stack></td>
@@ -50,12 +55,13 @@ export default function ComboBatchHistory({ client, openBatch }: { client: Combo
               <Group position="apart"><Text weight={600}>{savedTime(batch.createdAt)}</Text><Badge>{batch.comboCount} Combo</Badge></Group>
               <Text size="xs" color="dimmed" mt="xs" className={classes.wrap}>{batch.batchId}</Text>
               <Text size="xs" color="dimmed" className={classes.wrap}>Run: {batch.runId}</Text>
+              <Text size="xs">Top-K gợi ý cho khách: {batch.topK ?? '—'}</Text>
               <Text size="sm" mt="sm">{batch.draftCount} bản nháp · {batch.approvedCount} đã duyệt · {batch.rejectedCount} từ chối</Text>
               <Button fullWidth variant="light" mt="md" onClick={() => openBatch(batch.batchId)} aria-label={'Mở batch ' + batch.batchId}>Xem đề xuất →</Button>
             </Paper>)}
           </Stack></MediaQuery></>}
     {data && <Group position="apart" className={classes.footer}><Text size="sm" color="dimmed">{data.total} batch · Trang {page + 1}</Text>
-      <Group spacing="xs"><Button variant="default" disabled={page === 0} onClick={() => setPage(p => p - 1)}>Trang trước</Button>
-        <Button variant="default" disabled={BigInt(page + 1) * BigInt(20) >= BigInt(data.total)} onClick={() => setPage(p => p + 1)}>Trang sau</Button></Group></Group>}
+      <Group spacing="xs"><Button variant="default" disabled={page === 0} onClick={() => movePage(page - 1)}>Trang trước</Button>
+        <Button variant="default" disabled={BigInt(page + 1) * BigInt(20) >= BigInt(data.total)} onClick={() => movePage(page + 1)}>Trang sau</Button></Group></Group>}
   </Stack></Paper>;
 }

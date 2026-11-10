@@ -31,10 +31,10 @@ export default createStyles(theme => {
         background: dark ? theme.colors.dark[8] : theme.colors.gray[0], maxHeight: 360, overflow: 'auto', fontSize: 14 },
     },
     hero: {
-      padding: '28px 30px', borderRadius: 12, border: `1px solid ${dark ? theme.colors.blue[8] : theme.colors.blue[2]}`,
+      padding: '14px 16px', borderRadius: 12, border: `1px solid ${dark ? theme.colors.blue[8] : theme.colors.blue[2]}`,
       background: dark ? theme.colors.dark[6] : 'linear-gradient(120deg, #eff6ff 0%, #f0fdfa 100%)',
-      '& h1, & h2': { letterSpacing: '-0.6px', lineHeight: 1.25 },
-      '@media (max-width: 600px)': { padding: 20 },
+      '& h1, & h2': { fontSize: 24, letterSpacing: '-0.4px', lineHeight: 1.3 },
+      '@media (max-width: 600px)': { padding: 12 },
     },
     grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 16 },
     step: {

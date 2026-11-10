@@ -6,7 +6,7 @@ import { comboGenerationApi, GenerationPreview } from 'api/admin/data-mining/com
 import NativeGenerationPanel from './NativeGenerationPanel';
 jest.mock('auth/session', () => ({ useSharedAuth: jest.fn() }));
 const run = '10000000-0000-4000-8000-000000000001';
-const ready = (): GenerationPreview => ({ status: 'READY', issues: [], examined: 20, accepted: 10, rejected: 10, groups: 8, eligible: 5,
+const ready = (): GenerationPreview => ({ status: 'READY', issues: [], examined: 20, accepted: 10, rejected: 10, groups: 8, plannedGroups: 8, eligible: 5,
   topPatternIds: ['1'], anchors: [{ productId: 'K', name: 'Keyboard' }], reasonCounts: {}, referencePrices: { '1': '400.00' }, contextToken: 'signed',
   policyVersion: 'TV2_SELECTED_CATEGORIES_V3', proposals: [{ sourcePatternId: '1', canonicalPattern: '<(12)(27)>', comboKind: 'SEQUENTIAL_CROSS_SELL', total: '400.00',
     items: [{ itemsetOrder: 1, itemOrder: 1, itemId: 12, productId: 'K', name: 'Keyboard', sku: 'KEY', quantity: 3, required: true, unitPrice: '100.00', lineTotal: '300.00' },
@@ -25,6 +25,35 @@ beforeEach(() => {
 });
 afterEach(() => jest.restoreAllMocks());
 const open = () => render(<MemoryRouter><NativeGenerationPanel runId={run}/></MemoryRouter>);
+test('draft limit is independent, uses confirmed planned count and changing it invalidates saving', async () => {
+  const preview = jest.spyOn(comboGenerationApi, 'previewCategories').mockResolvedValue({ ...ready(), plannedGroups: 3 });
+  open(); await choose();
+  fireEvent.change(screen.getByLabelText('Số combo nháp muốn lưu'), { target: { value: '3' } });
+  fireEvent.click(button('Xem trước Combo'));
+  await screen.findByText(/Có 8 Combo hợp lệ; sẽ lưu 3 Combo nháp/);
+  expect(preview).toHaveBeenLastCalledWith(run, null, 5, run, expect.any(AbortSignal), expect.any(Object), 5, 3);
+  expect(button('Lưu 3 Combo DRAFT')).toBeEnabled();
+  fireEvent.change(screen.getByLabelText('Số combo nháp muốn lưu'), { target: { value: '2' } });
+  expect(button('Lưu 3 Combo DRAFT')).toBeDisabled();
+  expect(screen.getByLabelText('Số đề xuất xem trước')).toHaveValue('5');
+  expect(screen.getByLabelText('Top-K gợi ý cho khách')).toHaveValue('5');
+});
+test('preview K and customer K are configured independently and changing either invalidates save', async () => {
+  const preview = jest.spyOn(comboGenerationApi, 'previewCategories').mockResolvedValue(ready());
+  open(); await choose();
+  fireEvent.change(screen.getByLabelText('Top-K gợi ý cho khách'), { target: { value: '2' } });
+  fireEvent.change(screen.getByLabelText('Số đề xuất xem trước'), { target: { value: '1' } });
+  fireEvent.click(button('Xem trước Combo'));
+  await screen.findByText(/Đã xét 20/);
+  expect(preview).toHaveBeenLastCalledWith(run, null, 1, run, expect.any(AbortSignal), expect.any(Object), 2, 20);
+  expect(button('Lưu 8 Combo DRAFT')).toBeEnabled();
+  fireEvent.change(screen.getByLabelText('Số đề xuất xem trước'), { target: { value: '10' } });
+  expect(button('Lưu 8 Combo DRAFT')).toBeDisabled();
+  fireEvent.click(button('Xem trước Combo'));
+  await waitFor(() => expect(preview).toHaveBeenLastCalledWith(run, null, 10, run, expect.any(AbortSignal), expect.any(Object), 2, 20));
+  fireEvent.change(screen.getByLabelText('Top-K gợi ý cho khách'), { target: { value: '5' } });
+  expect(button('Lưu 8 Combo DRAFT')).toBeDisabled();
+});
 function button(name: string): HTMLButtonElement {
   const cached = buttonCache.get(name);
   const element = cached?.isConnected ? cached : screen.getByRole('button', { name, exact: true });
@@ -49,7 +78,7 @@ test('run dictionary selection, quantities and bounds bind preview; extra produc
   expect(preview).not.toHaveBeenCalled(); expect(screen.getByLabelText('Sản phẩm neo (chỉ lọc xem trước)')).toBeDisabled();
   fireEvent.click(button('Xem trước Combo'));
   await screen.findByText(/Đang xem 1 đề xuất; sẽ lưu 8 Combo/);
-  expect(preview).toHaveBeenCalledWith(run, null, 5, run, expect.any(AbortSignal), { requiredCategories: [{ categoryId: 'keyboards', quantity: 3 }], minDistinctProducts: 2, maxDistinctProducts: 5 });
+  expect(preview).toHaveBeenCalledWith(run, null, 5, run, expect.any(AbortSignal), { requiredCategories: [{ categoryId: 'keyboards', quantity: 3 }], minDistinctProducts: 2, maxDistinctProducts: 5 }, 5, 20);
   expect(screen.getByText(/Bổ sung từ Pattern.*1 × 100.00 = 100.00/)).toBeVisible();
   expect(write).not.toHaveBeenCalled(); expect(button('Lưu 8 Combo DRAFT')).toBeEnabled();
   fireEvent.change(screen.getByLabelText('Số lượng mỗi sản phẩm · Keyboard'), { target: { value: '4' } });
@@ -78,7 +107,7 @@ test('anchor lists both products of a two-itemset Combo and accepts the later pr
   expect(select).toHaveTextContent('Keyboard (K)'); expect(select).toHaveTextContent('Bag (B)');
   fireEvent.change(select, { target: { value: 'B' } });
   fireEvent.click(button('Xem trước Combo'));
-  await waitFor(() => expect(preview).toHaveBeenLastCalledWith(run, 'B', 5, run, expect.any(AbortSignal), expect.any(Object)));
+  await waitFor(() => expect(preview).toHaveBeenLastCalledWith(run, 'B', 5, run, expect.any(AbortSignal), expect.any(Object), 5, 20));
 });
 test('anchor/K invalidate the viewing context, without modifying required products', async () => {
   const preview = jest.spyOn(comboGenerationApi, 'previewCategories').mockResolvedValue(ready()); open(); await choose();
@@ -86,7 +115,7 @@ test('anchor/K invalidate the viewing context, without modifying required produc
   fireEvent.change(screen.getByLabelText('Sản phẩm neo (chỉ lọc xem trước)'), { target: { value: 'K' } });
   expect(button('Lưu 8 Combo DRAFT')).toBeDisabled();
   fireEvent.click(button('Xem trước Combo'));
-  await waitFor(() => expect(preview).toHaveBeenLastCalledWith(run, 'K', 5, run, expect.any(AbortSignal), expect.objectContaining({ requiredCategories: [{ categoryId: 'keyboards', quantity: 1 }] })));
+  await waitFor(() => expect(preview).toHaveBeenLastCalledWith(run, 'K', 5, run, expect.any(AbortSignal), expect.objectContaining({ requiredCategories: [{ categoryId: 'keyboards', quantity: 1 }] }), 5, 20));
   await screen.findByRole('button', { name: 'Lưu 8 Combo DRAFT' });
 });
 test('adding Speaker to a two-product configuration keeps anchor visible and loads only fresh options', async () => {
@@ -106,7 +135,7 @@ test('adding Speaker to a two-product configuration keeps anchor visible and loa
   await waitFor(() => expect(anchor).toBeEnabled()); expect(anchor).toHaveTextContent('Loa mới (S)');
   expect(preview).toHaveBeenLastCalledWith(run, null, 5, run, expect.any(AbortSignal), {
     requiredCategories: [{ categoryId: 'keyboards', quantity: 1 }, { categoryId: 'speakers', quantity: 1 }], minDistinctProducts: 2, maxDistinctProducts: 2,
-  });
+  }, 5, 20);
 });
 test('three required categories with max two products explains conflict without requesting preview', async () => {
   const preview = jest.spyOn(comboGenerationApi, 'previewCategories'); open(); await choose();
@@ -133,7 +162,7 @@ test.each(['quantity', 'minimum', 'maximum', 'remove'])('changing %s clears old 
   expect(screen.queryByText('Lưu 8 Combo DRAFT', { exact: true })).not.toBeInTheDocument();
 });
 test('empty result retains the anchor field with a reason and can recover', async () => {
-  const preview = jest.spyOn(comboGenerationApi, 'previewCategories').mockResolvedValueOnce({ ...ready(), status: 'EMPTY', groups: 0, accepted: 0, anchors: [], proposals: [], referencePrices: {}, contextToken: null });
+  const preview = jest.spyOn(comboGenerationApi, 'previewCategories').mockResolvedValueOnce({ ...ready(), status: 'EMPTY', groups: 0, plannedGroups: 0, accepted: 0, anchors: [], proposals: [], referencePrices: {}, contextToken: null });
   open(); await choose(); fireEvent.click(button('Xem trước Combo'));
   expect(await screen.findByText(/Không có sản phẩm neo vì chưa có Combo hợp lệ/)).toBeVisible();
   expect(screen.getByLabelText('Sản phẩm neo (chỉ lọc xem trước)')).toBeDisabled();

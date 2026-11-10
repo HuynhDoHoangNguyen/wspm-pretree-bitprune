@@ -44,4 +44,17 @@ class PersonalComboControllerTest {
         assertThrows(ApplicationException.class,()->controller.read(params,request,response));
         verifyNoMoreInteractions(service);
     }
+    @Test void exactPopupUsesAuthenticatedIdentityAndRejectsAmbiguousContext() {
+        doReturn(new IdentityResponse("owner","u",null,null,"ACTIVE",List.of(),false)).when(auth).authenticate(request);
+        var params = new LinkedMultiValueMap<String,String>(); params.add("comboId","c");
+        when(service.personalizedCombo("owner","c")).thenReturn(new Personalized("HISTORY_PREFIX_V1",Instant.EPOCH,List.of()));
+        controller.read(params,request,response);
+        verify(service).personalizedCombo("owner","c");
+        assertEquals("no-store",response.getHeader("Cache-Control"));
+        params.add("productId","p");
+        assertThrows(ApplicationException.class,()->controller.read(params,request,response));
+        params.remove("productId"); params.add("comboId","other");
+        assertThrows(ApplicationException.class,()->controller.read(params,request,response));
+        verifyNoMoreInteractions(service);
+    }
 }

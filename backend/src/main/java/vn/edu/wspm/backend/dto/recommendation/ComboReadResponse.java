@@ -18,7 +18,11 @@ public final class ComboReadResponse {
             String referenceSalePrice, String discountType, String discountValue,
             String maxDiscountAmount, boolean isCheckoutQuote) {}
     public record Product(String productId, String name, String sku, String categoryId,
-            String imageUrl, String currentPrice) {}
+            String imageUrl, String currentPrice, String availableQuantity) {
+        public Product(String productId,String name,String sku,String categoryId,String imageUrl,String currentPrice){
+            this(productId,name,sku,categoryId,imageUrl,currentPrice,null);
+        }
+    }
     public record Item(long itemsetOrder, long itemOrder, long quantity,
             boolean anchorEligible, boolean discountEligible,
             String unitPriceSnapshot, Product product) {}

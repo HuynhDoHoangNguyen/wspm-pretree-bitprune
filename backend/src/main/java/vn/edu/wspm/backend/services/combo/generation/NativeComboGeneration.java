@@ -30,7 +30,15 @@ import static vn.edu.wspm.backend.services.combo.persistence.DraftBatchWrite.*;
 public class NativeComboGeneration {
     private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(NativeComboGeneration.class);
     public record Context(String version,String identity,String run,String actor,String anchor,int k,Instant at,
-            String publication,String policyBinding,Map<String,CatalogProduct> catalog,ProductSelection selection,CategorySelection categorySelection) {
+            String publication,String policyBinding,Map<String,CatalogProduct> catalog,ProductSelection selection,CategorySelection categorySelection,Integer recommendationK,Integer draftLimit) {
+        public Context(String version,String identity,String run,String actor,String anchor,int k,Instant at,String publication,String policyBinding,Map<String,CatalogProduct> catalog,ProductSelection selection,CategorySelection categorySelection,Integer recommendationK){
+            this(version,identity,run,actor,anchor,k,at,publication,policyBinding,catalog,selection,categorySelection,recommendationK,null);
+        }
+        public Context(String version,String identity,String run,String actor,String anchor,int k,Instant at,String publication,String policyBinding,Map<String,CatalogProduct> catalog,ProductSelection selection,CategorySelection categorySelection){
+            this(version,identity,run,actor,anchor,k,at,publication,policyBinding,catalog,selection,categorySelection,null);
+        }
+        /** Old signed contexts keep their original persisted cap (flexible=5, legacy=preview K). */
+        public int resolvedRecommendationK(){return recommendationK!=null?recommendationK:ProductSelection.flexiblePolicy(version)?5:k;}
         public Context(String version,String identity,String run,String actor,String anchor,int k,Instant at,String publication,String policyBinding,Map<String,CatalogProduct> catalog){this(version,identity,run,actor,anchor,k,at,publication,policyBinding,catalog,null,null);}
         public Context(String version,String identity,String run,String actor,String anchor,int k,Instant at,String publication,String policyBinding,Map<String,CatalogProduct> catalog,ProductSelection selection){this(version,identity,run,actor,anchor,k,at,publication,policyBinding,catalog,selection,null);}
         public Context{catalog=Map.copyOf(catalog);}
@@ -39,7 +47,8 @@ public class NativeComboGeneration {
     public record Anchor(String productId,String name){}
     public record Preview(String status,List<String> issues,int examined,int accepted,int rejected,int groups,
             int eligible,List<String> topPatternIds,List<Anchor> anchors,Map<String,Long> reasonCounts,Map<String,String> referencePrices,String contextToken,
-            String policyVersion,List<Proposal> proposals){
+            String policyVersion,List<Proposal> proposals,int plannedGroups){
+        public Preview(String status,List<String> issues,int examined,int accepted,int rejected,int groups,int eligible,List<String> top,List<Anchor> anchors,Map<String,Long> reasons,Map<String,String> prices,String token,String policyVersion,List<Proposal> proposals){this(status,issues,examined,accepted,rejected,groups,eligible,top,anchors,reasons,prices,token,policyVersion,proposals,groups);}
         public Preview(String status,List<String> issues,int examined,int accepted,int rejected,int groups,int eligible,List<String> top,List<Anchor> anchors,Map<String,Long> reasons,Map<String,String> prices,String token){this(status,issues,examined,accepted,rejected,groups,eligible,top,anchors,reasons,prices,token,NativeComboPolicy.VERSION,List.of());}
     }
     public record ProductOption(long itemId,String productId,String name,String sku){}
@@ -125,15 +134,32 @@ public class NativeComboGeneration {
         return preview(run,anchor,k,identity,principal,null);
     }
     public Preview preview(String run,String anchor,Integer k,String identity,AdminPrincipal principal,ProductSelection selection){
-        return preview(run,anchor,k,identity,principal,selection,null);
+        return preview(run,anchor,k,identity,principal,selection,null,null);
     }
     public Preview previewCategories(String run,String anchor,Integer k,String identity,AdminPrincipal principal,CategorySelection selection){
-        return preview(run,anchor,k,identity,principal,null,Objects.requireNonNull(selection));
+        return previewCategories(run,anchor,k,identity,principal,selection,null);
     }
-    private Preview preview(String run,String anchor,Integer k,String identity,AdminPrincipal principal,ProductSelection selection,CategorySelection categorySelection){
+    public Preview previewSelected(String run,String anchor,Integer k,String identity,AdminPrincipal principal,ProductSelection selection,Integer recommendationK){
+        return previewSelected(run,anchor,k,identity,principal,selection,recommendationK,null);
+    }
+    public Preview previewCategories(String run,String anchor,Integer k,String identity,AdminPrincipal principal,CategorySelection selection,Integer recommendationK){
+        return previewCategories(run,anchor,k,identity,principal,selection,recommendationK,null);
+    }
+    private Preview preview(String run,String anchor,Integer k,String identity,AdminPrincipal principal,ProductSelection selection,CategorySelection categorySelection,Integer recommendationK){
+        return preview(run,anchor,k,identity,principal,selection,categorySelection,recommendationK,null);
+    }
+    public Preview previewSelected(String run,String anchor,Integer k,String identity,AdminPrincipal principal,ProductSelection selection,Integer recommendationK,Integer draftLimit){
+        return preview(run,anchor,k,identity,principal,Objects.requireNonNull(selection),null,recommendationK,draftLimit);
+    }
+    public Preview previewCategories(String run,String anchor,Integer k,String identity,AdminPrincipal principal,CategorySelection selection,Integer recommendationK,Integer draftLimit){
+        return preview(run,anchor,k,identity,principal,null,Objects.requireNonNull(selection),recommendationK,draftLimit);
+    }
+    private Preview preview(String run,String anchor,Integer k,String identity,AdminPrincipal principal,ProductSelection selection,CategorySelection categorySelection,Integer recommendationK,Integer draftLimit){
         outsideTransaction();
         if(!configured())return new Preview("BLOCKED",List.of("CATEGORY_OR_SIGNING_CONFIG_MISSING"),0,0,0,0,0,List.of(),List.of(),Map.of(),Map.of(),null);
         validate(run,anchor,k,identity);
+        if(recommendationK!=null&&(recommendationK<1||recommendationK>20))throw invalid("INVALID_RECOMMENDATION_K");
+        if(draftLimit!=null&&(draftLimit<1||draftLimit>1000))throw invalid("INVALID_DRAFT_LIMIT");
         reads.execute(s->{actor(principal.userId(),false);return null;});
         var meta=results.metadata(run);
         if(meta.publishedReadable()&&"0".equals(meta.storedPatternCount()))return new Preview("EMPTY",List.of("NO_PATTERNS"),0,0,0,0,0,List.of(),List.of(),Map.of(),Map.of(),null);
@@ -142,15 +168,16 @@ public class NativeComboGeneration {
         if(!saved.isEmpty()){
             var bytes=saved.getFirst().get("context");if(!(bytes instanceof byte[] b))throw invalid("SAVED_GENERATION_CONTEXT_INVALID");
             var frozen=decode(new String(b,StandardCharsets.UTF_8));
-            if(!frozen.run.equals(run)||!frozen.actor.equals(principal.userId())||!ProductSelection.flexiblePolicy(frozen.version)&&(!Objects.equals(frozen.anchor,anchor)||frozen.k!=(k==null?5:k))||!Objects.equals(frozen.selection,selection)||!Objects.equals(frozen.categorySelection,categorySelection))throw invalid("WRITE_IDENTITY_CONTENT_CONFLICT");
-            var display=!ProductSelection.flexiblePolicy(frozen.version)?frozen:new Context(frozen.version,frozen.identity,frozen.run,frozen.actor,anchor,k==null?5:k,frozen.at,frozen.publication,frozen.policyBinding,frozen.catalog,frozen.selection,frozen.categorySelection);
+            if(!Objects.equals(frozen.draftLimit,draftLimit))throw invalid("WRITE_IDENTITY_CONTENT_CONFLICT");
+            if(!frozen.run.equals(run)||!frozen.actor.equals(principal.userId())||!ProductSelection.flexiblePolicy(frozen.version)&&(!Objects.equals(frozen.anchor,anchor)||frozen.k!=(k==null?5:k))||!Objects.equals(frozen.selection,selection)||!Objects.equals(frozen.categorySelection,categorySelection)||ProductSelection.flexiblePolicy(frozen.version)&&frozen.resolvedRecommendationK()!=(recommendationK==null?5:recommendationK))throw invalid("WRITE_IDENTITY_CONTENT_CONFLICT");
+            var display=!ProductSelection.flexiblePolicy(frozen.version)?frozen:new Context(frozen.version,frozen.identity,frozen.run,frozen.actor,anchor,k==null?5:k,frozen.at,frozen.publication,frozen.policyBinding,frozen.catalog,frozen.selection,frozen.categorySelection,frozen.recommendationK,frozen.draftLimit);
             var p=compile(prepared,display).preview;
-            return new Preview(p.status,p.issues,p.examined,p.accepted,p.rejected,p.groups,p.eligible,p.topPatternIds,p.anchors,p.reasonCounts,p.referencePrices,"READY".equals(p.status)?new String(b,StandardCharsets.UTF_8):null,p.policyVersion,p.proposals);
+            return new Preview(p.status,p.issues,p.examined,p.accepted,p.rejected,p.groups,p.eligible,p.topPatternIds,p.anchors,p.reasonCounts,p.referencePrices,"READY".equals(p.status)?new String(b,StandardCharsets.UTF_8):null,p.policyVersion,p.proposals,p.plannedGroups);
         }
         var catalog=reads.execute(s->{actor(principal.userId(),false);return catalog(prepared.dictionary().stream().map(DictionaryItem::productId).toList(),false);});
         String version=categorySelection!=null?CategorySelection.VERSION:selection==null?NativeComboPolicy.VERSION:ProductSelection.VERSION;
         var c=new Context(version,identity,run,principal.userId(),anchor,k==null?5:k,
-                Instant.now().truncatedTo(ChronoUnit.MICROS),prepared.metadata().resultSha256(),policyBinding(version),catalog,selection,categorySelection);
+                Instant.now().truncatedTo(ChronoUnit.MICROS),prepared.metadata().resultSha256(),policyBinding(version),catalog,selection,categorySelection,(selection!=null||categorySelection!=null)?(recommendationK==null?5:recommendationK):null,draftLimit);
         return compile(prepared,c).preview;
     }
     private Compiled compile(PublishedComboInputService.Prepared prepared,Context c){
@@ -211,17 +238,20 @@ public class NativeComboGeneration {
             fields.put(g.structureKey(),new Fields(stable("combo",c.identity+":"+g.structureKey().serialized()),truncate(names,255),
                     "Suggested "+g.comboKind()+" from Pattern "+g.primary().patternId()+"; observed sequence, not a causal claim.","VND",price,price,context.catalogSnapshotRef(),"NONE",values));
         }
-        // V2 anchor/K are presentation only; a stable full-group request is persisted.
-        var writeRanking=!flexible?ranked:new ComboPreviewRanker().preview(grouped,context,null,policy.ranking(5));
-        var request=new Request(grouped,context,writeRanking,c.identity,stable("batch",c.identity),c.actor,c.at,fields,
+        // Only the signed draft limit truncates persistence. Null preserves historical batches.
+        var selected=selectDraftGroups(grouped,c.draftLimit);
+        var writeFields=new HashMap<CandidateGrouping.StructureKey,Fields>();
+        selected.groups().forEach(g->writeFields.put(g.structureKey(),fields.get(g.structureKey())));
+        var writeRanking=!flexible?ranked:new ComboPreviewRanker().preview(selected,context,null,policy.ranking(c.resolvedRecommendationK()));
+        var request=new Request(selected,context,writeRanking,c.identity,stable("batch",c.identity),c.actor,c.at,writeFields,
                 !flexible?null:new Bounds(min,max));
         if("READY".equals(status)){
             var validation=new DraftBatchPlanner().plan(request);
             if(!validation.valid()){status="BLOCKED";issues=validation.errors();}
-            if(grouped.groups().size()>1000){status="BLOCKED";issues=List.of("GENERATION_RESOURCE_LIMIT_EXCEEDED");}
+            if(selected.groups().size()>1000){status="BLOCKED";issues=List.of("GENERATION_RESOURCE_LIMIT_EXCEEDED");}
             if(validation.valid()&&"READY".equals(status)) {
                 try {
-                    byte[] content=NativeComboContent.encode(grouped,validation.plan(),store.limits().maxContentBytes());
+                    byte[] content=NativeComboContent.encode(selected,validation.plan(),store.limits().maxContentBytes());
                     var auth=authorization(c,validation.plan(),hash(content),sign(c));
                     byte[] evidence=BatchCanonical.encode(Map.of("version","COMBO_DRAFT_EVIDENCE_V1","runId",c.run,
                             "miningReference",context.publishedEvidenceRef(),"authorization",auth),store.limits().maxEvidenceBytes());
@@ -236,7 +266,7 @@ public class NativeComboGeneration {
         for(var group:ranked.items())prices.put(group.group().primary().patternId(),fields.get(group.group().structureKey()).referenceOriginalPrice().toPlainString());
         String token="READY".equals(status)?sign(c):null;
         var proposals=new ArrayList<Proposal>();
-        if(flexible&&grouped.groups().size()<=store.limits().maxGroups()){
+        if(flexible&&selected.groups().size()<=store.limits().maxGroups()){
             int itemCount=0;
             for(var rankedGroup:ranked.items()){
                 var g=rankedGroup.group();var items=new ArrayList<ProposalItem>();
@@ -249,7 +279,13 @@ public class NativeComboGeneration {
             }
         }
         return new Compiled(new Preview(status,issues,session.examined(),session.accepted(),session.rejected(),grouped.groups().size(),
-                ranked.eligibleCount(),ranked.items().stream().map(i->i.group().primary().patternId()).toList(),anchors,Map.copyOf(reasons),Map.copyOf(prices),token,c.version,List.copyOf(proposals)),request,c);
+                ranked.eligibleCount(),ranked.items().stream().map(i->i.group().primary().patternId()).toList(),anchors,Map.copyOf(reasons),Map.copyOf(prices),token,c.version,List.copyOf(proposals),selected.groups().size()),request,c);
+    }
+    static CandidateGrouping.Result selectDraftGroups(CandidateGrouping.Result grouped,Integer limit){
+        if(limit==null)return grouped;
+        if(limit<1||limit>1000)throw invalid("INVALID_DRAFT_LIMIT");
+        return new CandidateGrouping.Result(grouped.completed(),grouped.errors(),grouped.groups().stream()
+                .sorted((a,b)->CandidateGrouper.primaryOrder().compare(a.primary(),b.primary())).limit(limit).toList());
     }
     public Outcome submit(String token,AdminPrincipal principal,boolean reconcile){
         outsideTransaction();
@@ -261,7 +297,7 @@ public class NativeComboGeneration {
         // Verify only new writes against current catalog. Retry/reconcile must retain the frozen original context.
         var writer=new DraftBatchWriter(store,(r,p,d)->new DraftBatchAuthority.Decision(List.of(),authorization(c,p,d,token)),Clock.fixed(c.at,ZoneOffset.UTC));
         var outcome=reconcile?writer.reconcile(compiled.request):writer.write(compiled.request);
-        log.info("Native Combo command completed: status={}, groups={}",outcome.status(),compiled.preview.groups);
+        log.info("Native Combo command completed: status={}, eligibleGroups={}, plannedGroups={}",outcome.status(),compiled.preview.groups,compiled.preview.plannedGroups);
         return new Outcome(outcome.status(),outcome.errors(),outcome.receipt()==null?null:outcome.receipt().batchId(),outcome.receipt()==null?0:outcome.receipt().comboIds().size());
     }
     public Context decode(String token){
@@ -271,7 +307,9 @@ public class NativeComboGeneration {
             if(!java.security.MessageDigest.isEqual(mac(bytes),Base64.getUrlDecoder().decode(parts[1])))throw invalid("INVALID_PREVIEW_CONTEXT");
             var c=json.readValue(bytes,Context.class);
             if(!(NativeComboPolicy.VERSION.equals(c.version)&&c.selection==null&&c.categorySelection==null||ProductSelection.VERSION.equals(c.version)&&c.selection!=null&&c.categorySelection==null||CategorySelection.VERSION.equals(c.version)&&c.categorySelection!=null&&c.selection==null)
-                    ||!policyBinding(c.version).equals(c.policyBinding)||c.catalog.size()>10000)throw invalid("POLICY_CONTEXT_CHANGED");
+                    ||!policyBinding(c.version).equals(c.policyBinding)||c.catalog.size()>10000
+                    ||c.resolvedRecommendationK()<1||c.resolvedRecommendationK()>20
+                    ||c.draftLimit!=null&&(c.draftLimit<1||c.draftLimit>1000||!ProductSelection.flexiblePolicy(c.version)))throw invalid("POLICY_CONTEXT_CHANGED");
             return c;
         }catch(RuntimeException invalid){throw invalid("INVALID_PREVIEW_CONTEXT");}
     }
@@ -314,7 +352,10 @@ public class NativeComboGeneration {
             return new vn.edu.wspm.backend.services.combo.review.ComboReviewAuthority.Check(confirmed,
                     new vn.edu.wspm.backend.services.combo.review.ComboReview.Evidence(true,true),
                     hash(BatchCanonical.encode(List.of(c.version,c.publication,hash(expectedContent),now),2097152)));
-        }catch(RuntimeException invalid){return new vn.edu.wspm.backend.services.combo.review.ComboReviewAuthority.Check(confirmed,
+        }catch(RuntimeException invalid){
+            log.warn("Native Combo review verification rejected: batch={}, reason={}",current.row().batchId(),
+                    invalid instanceof ApplicationException&&invalid.getMessage()!=null&&invalid.getMessage().matches("[A-Z_]{1,100}")?invalid.getMessage():invalid.getClass().getSimpleName());
+            return new vn.edu.wspm.backend.services.combo.review.ComboReviewAuthority.Check(confirmed,
                 vn.edu.wspm.backend.services.combo.review.ComboReview.Evidence.unverified(),
                 invalid instanceof ApplicationException&&"CATALOG_PRICE_OR_ELIGIBILITY_CHANGED".equals(invalid.getMessage())
                     ?"CATALOG_PRICE_OR_ELIGIBILITY_CHANGED":"NATIVE_GENERATION_OR_CURRENT_CATALOG_INVALID");}

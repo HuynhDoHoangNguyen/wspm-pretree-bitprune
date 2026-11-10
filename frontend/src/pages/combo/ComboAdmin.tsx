@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import BackButton from 'components/BackButton/BackButton';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Badge, Button, Group, NativeSelect, Paper, SimpleGrid, Skeleton, Stack, Table, Text, Textarea, TextInput, Title } from '@mantine/core';
 import { MiningEmptyState, useMiningAdminStyles } from '../admin/data-mining/MiningAdminUi';
 import { Audit, ComboClient, ComboClientError, ComboDetail, ComboFilters, ComboPage, Decision } from './ComboClient';
@@ -7,6 +8,7 @@ import PublishedComboInputPanel from './PublishedComboInputPanel';
 import ComboBatchHistory from './ComboBatchHistory';
 import ComboPublicationPanel from './ComboPublicationPanel';
 import { useInRouterContext, useSearchParams } from 'react-router-dom';
+import AdminPageHeader from '../admin/data-mining/AdminPageHeader';
 
 const statuses: Record<string, string> = { DRAFT: 'Bản nháp', APPROVED: 'Đã duyệt nội bộ', REJECTED: 'Đã từ chối', PUBLISHED: 'Đã công bố', ARCHIVED: 'Đã lưu trữ' };
 const kinds = ['SAME_ORDER_BUNDLE', 'SEQUENTIAL_CROSS_SELL', 'MIXED_SEQUENCE'];
@@ -54,18 +56,25 @@ function RoutedComboAdmin({ client }: { client: ComboClient }) {
   const [params,setParams]=useSearchParams(); const ids=params.getAll('batchId');
   const batch=ids.length===1 && ids[0].length<=40 ? ids[0] : undefined;
   const generation=params.get('tab')==='generate'||params.has('runId');
+  const rawPage = params.get('batchPage') || '0';
+  const batchPage = /^(0|[1-9][0-9]{0,4})$/.test(rawPage) ? Number(rawPage) : 0;
+  const changeBatchPage = useCallback((page: number) => {
+    const next = new URLSearchParams(params);
+    if (page) next.set('batchPage', String(page)); else next.delete('batchPage');
+    setParams(next);
+  }, [params, setParams]);
+  function showHistory() {
+    const next = new URLSearchParams(params); next.delete('batchId'); next.delete('tab'); next.delete('runId'); setParams(next);
+  }
   if(client.batches) return <Stack spacing="lg" style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 32 }}>
-    <Paper withBorder radius="md" p="xl" sx={theme=>({ backgroundColor: theme.colorScheme==='dark'?theme.colors.dark[6]:theme.colors.blue[0] })}>
-      <Text size="xs" weight={700} color="blue" transform="uppercase">Đề xuất từ dữ liệu khai phá</Text>
-      <Title order={2} mt={6}>Quản lý Combo</Title><Text color="dimmed" mt="xs">Mỗi lần lưu DRAFT được gom thành một batch. Mở batch để xem và duyệt từng đề xuất.</Text>
-      <Group mt="lg"><Button variant={!generation?'filled':'white'} onClick={()=>setParams({})}>Lịch sử lưu DRAFT</Button>
-        <Button variant={generation?'filled':'white'} onClick={()=>setParams({ tab: 'generate' })}>Tạo đề xuất Combo</Button></Group>
-    </Paper>
+    <AdminPageHeader title="Quản lý Combo" description="Tạo đề xuất theo batch, duyệt và công bố Combo."
+      action={<Button onClick={() => { if (generation) showHistory(); else { const next = new URLSearchParams(params); next.set('tab', 'generate'); next.delete('batchId'); setParams(next); } }}>{generation ? 'Lịch sử lưu DRAFT' : 'Tạo đề xuất Combo'}</Button>}/>
     {generation ? <PublishedComboInputPanel/> : batch ? <>
-      <Group position="apart"><Button variant="subtle" onClick={()=>setParams({})}>← Lịch sử batch</Button>
+      <Group position="apart"><BackButton onBack={showHistory}>Lịch sử batch</BackButton>
         <Text size="sm" color="dimmed" style={{ overflowWrap: 'anywhere' }}>Batch {batch}</Text></Group>
       <ComboAdminView key={batch} client={client} initialBatchId={batch} embedded/>
-    </> : <ComboBatchHistory client={client} openBatch={id=>setParams({ batchId: id })}/>}
+    </> : <ComboBatchHistory client={client} selectedPage={batchPage} onPageChange={changeBatchPage}
+      openBatch={id => { const next = new URLSearchParams(params); next.set('batchId', id); setParams(next); }}/>}
   </Stack>;
   return <ComboAdminView key={batch || ''} client={client} initialBatchId={batch}/>;
 }
@@ -227,6 +236,7 @@ function ComboAdminView({ client, initialBatchId, embedded = false }: { client: 
           <Badge variant="outline" className={classes.tag}>{batchLabel(detail.data.batchStatus)}</Badge>
           <Badge variant="light" className={classes.tag}>{kindLabel[detail.data.comboKind] ?? detail.data.comboKind}</Badge>
         </Group><Text color="dimmed" size="sm" className={classes.wrap}>Run: {detail.data.runId}</Text>
+        <Text size="sm">Top-K gợi ý cho khách: {detail.data.topK}</Text>
         <Text className={classes.wrap} mt="sm">{detail.data.explanation}</Text></div>
         <SimpleGrid cols={3} breakpoints={[{ maxWidth: 'md', cols: 2 }, { maxWidth: 'xs', cols: 1 }]} spacing="sm">
           <Text className={classes.wrap}>Support: {detail.data.metrics.supportAbs}; Weight: {detail.data.metrics.patternWeight ?? 'Không khả dụng'}</Text>

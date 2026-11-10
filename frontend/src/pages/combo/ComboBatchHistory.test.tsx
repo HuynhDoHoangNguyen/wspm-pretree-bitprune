@@ -18,7 +18,7 @@ test('loads only batch history first and opens one scoped batch lazily', async (
   await waitFor(() => expect(api.list).toHaveBeenCalledWith({ batchId: 'B1' }, 0, 20, expect.any(Object)));
   fireEvent.click(screen.getByRole('button', { name: 'Bỏ lọc' }));
   await waitFor(() => expect(api.list).toHaveBeenLastCalledWith({ batchId: 'B1' }, 0, 20, expect.any(Object)));
-  fireEvent.click(screen.getByRole('button', { name: '← Lịch sử batch' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Lịch sử batch' }));
   expect((await screen.findAllByText('218'))[0]).toBeInTheDocument();
 });
 test('pages batches on server and separates generation from history', async () => {

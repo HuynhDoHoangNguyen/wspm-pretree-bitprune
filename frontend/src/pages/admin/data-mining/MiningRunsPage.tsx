@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Button, Group, Paper, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Button, Group, Stack, TextInput } from '@mantine/core';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import ManagerPath from 'constants/ManagerPath';
 import { isRunId } from 'api/admin/data-mining/mining-run-response';
 import useTitle from 'hooks/use-title';
+import AdminPageHeader from './AdminPageHeader';
 import MiningConfigForm from './MiningConfigForm';
 import WorkspaceList from './WorkspaceList';
 import { CapacityPanel } from './WorkspacePanels';
@@ -20,12 +21,8 @@ export default function MiningRunsPage() {
   const snapshotId = values.length === 1 ? values[0] : '';
   return (
     <Stack mb={30} className={classes.root}>
-      <Paper p="lg" radius="md" className={classes.hero}><Text size="sm" weight={700} color="blue">KHÔNG GIAN KHAI PHÁ</Text><Title order={2}>Lần chạy khai phá</Title>
-        <Text mt="xs">Cấu hình một lần chạy mới hoặc tìm lại lịch sử và thông số đã lưu.</Text></Paper>
-      <div role="tablist" aria-label="Không gian khai phá" className={classes.tabs}>
-        {[['create', 'Tạo lần chạy'], ['history', 'Lịch sử']].map(([tab, label]) => <button key={tab} role="tab" aria-selected={history === (tab === 'history')} className={classes.tab}
-          onClick={() => { const next = new URLSearchParams(); next.set('tab', tab); if (snapshotId) next.set('snapshotId', snapshotId); setParams(next); }}>{label}</button>)}
-      </div>
+      <AdminPageHeader title="Lần chạy khai phá" description="Cấu hình lần chạy mới hoặc tra cứu lịch sử khai phá."
+        action={<Button onClick={() => { const next = new URLSearchParams(params); next.set('tab', history ? 'create' : 'history'); setParams(next); }}>{history ? 'Tạo lần chạy' : 'Lịch sử lần chạy'}</Button>}/>
       {history ? <WorkspaceList runs/> : <><CapacityPanel/>
         <MiningConfigForm key={params.toString()} initialSnapshotId={snapshotId} onAccepted={result => navigate(ManagerPath.MINING_RUNS + '/' + result.runId)}/>
         <details><summary>Mở trực tiếp bằng Run ID</summary>

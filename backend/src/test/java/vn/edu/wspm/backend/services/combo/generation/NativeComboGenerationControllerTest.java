@@ -7,6 +7,13 @@ import vn.edu.wspm.backend.controllers.api.v1.combo.NativeComboGenerationControl
 import vn.edu.wspm.backend.web.auth.*;
 import java.util.List;
 class NativeComboGenerationControllerTest {
+    @Test void draftLimitRejectsInvalidTypesAndBindsIndependently(){
+        var r=new MockHttpServletRequest();var actor=new AdminPrincipal("admin",List.of("ADMIN"));r.setUserPrincipal(actor);
+        String prefix="{\"runId\":\"run\",\"k\":1,\"recommendationK\":5,\"requestIdentity\":\"id\",\"categorySelection\":{\"requiredCategories\":[{\"categoryId\":\"C\",\"quantity\":1}],\"minDistinctProducts\":2,\"maxDistinctProducts\":4},\"draftLimit\":";
+        for(String value:List.of("0","1001","1.5","1.0","\"5\"","-1","null"))assertThrows(RuntimeException.class,()->controller.preview(prefix+value+"}",r));
+        verifyNoInteractions(service);controller.preview(prefix+"20}",r);
+        verify(service).previewCategories("run",null,1,"id",actor,new CategorySelection(List.of(new CategorySelection.RequiredCategory("C",1)),2,4),5,20);
+    }
     final ComboGenerationService service=mock(ComboGenerationService.class);
     final NativeComboGenerationController controller=new NativeComboGenerationController(service,new AdminPrincipalResolver(),new tools.jackson.databind.ObjectMapper());
     @Test void noClientActorApprovalPriceOrAnonymousCommandReachesGeneration(){
@@ -20,7 +27,7 @@ class NativeComboGenerationControllerTest {
     @Test void passesOnlyWhitelistedCommandAndCurrentPrincipal(){
         var r=new MockHttpServletRequest();var actor=new AdminPrincipal("admin",List.of("ADMIN"));r.setUserPrincipal(actor);
         controller.preview("{\"runId\":\"run\",\"anchorProductId\":\"laptop\",\"k\":5,\"requestIdentity\":\"id\",\"selection\":{\"requiredItems\":[{\"itemId\":12,\"quantity\":3}],\"minDistinctProducts\":2,\"maxDistinctProducts\":5}}",r);
-        verify(service).previewSelected("run","laptop",5,"id",actor,new ProductSelection(List.of(new ProductSelection.RequiredItem(12,3)),2,5));
+        verify(service).previewSelected("run","laptop",5,"id",actor,new ProductSelection(List.of(new ProductSelection.RequiredItem(12,3)),2,5),null);
         controller.reconcile("{\"contextToken\":\"signed\"}",r);verify(service).writePublished("signed",actor,true);
         verifyNoMoreInteractions(service);
     }
@@ -31,6 +38,14 @@ class NativeComboGenerationControllerTest {
             assertThrows(RuntimeException.class,()->controller.preview(body,r));
         }
         assertThrows(RuntimeException.class,()->controller.preview("{}",r));verifyNoInteractions(service);
+    }
+    @Test void recommendationKIsIndependentAndRejectsNonIntegerOrOutOfRangeValues(){
+        var r=new MockHttpServletRequest();var actor=new AdminPrincipal("admin",List.of("ADMIN"));r.setUserPrincipal(actor);
+        String prefix="{\"runId\":\"run\",\"k\":1,\"requestIdentity\":\"id\",\"categorySelection\":{\"requiredCategories\":[{\"categoryId\":\"C\",\"quantity\":1}],\"minDistinctProducts\":2,\"maxDistinctProducts\":4},\"recommendationK\":";
+        for(String value:List.of("0","21","1.5","1.0","\"5\"","-1"))assertThrows(RuntimeException.class,()->controller.preview(prefix+value+"}",r));
+        verifyNoInteractions(service);
+        controller.preview(prefix+"2}",r);
+        verify(service).previewCategories("run",null,1,"id",actor,new CategorySelection(List.of(new CategorySelection.RequiredCategory("C",1)),2,4),2);
     }
     @Test void optionsChecksCurrentAdminBeforeResolvingDictionary()throws Exception{
         var request=new MockHttpServletRequest();assertThrows(RuntimeException.class,()->controller.options("run",request));
@@ -52,7 +67,7 @@ class NativeComboGenerationControllerTest {
         var actor=new AdminPrincipal("admin",List.of("ADMIN"));var request=new MockHttpServletRequest();request.setUserPrincipal(actor);
         String body="{\"runId\":\"run\",\"requestIdentity\":\"category\",\"categorySelection\":{\"requiredCategories\":[{\"categoryId\":\"C\",\"quantity\":2}],\"minDistinctProducts\":2,\"maxDistinctProducts\":4}}";
         controller.preview(body,request);
-        verify(service).previewCategories("run",null,null,"category",actor,new CategorySelection(List.of(new CategorySelection.RequiredCategory("C",2)),2,4));
+        verify(service).previewCategories("run",null,null,"category",actor,new CategorySelection(List.of(new CategorySelection.RequiredCategory("C",2)),2,4),null);
         assertThrows(RuntimeException.class,()->controller.preview(body.replace("\"categorySelection\":","\"selection\":{},\"categorySelection\":"),request));
         assertThrows(RuntimeException.class,()->controller.preview(body.replace("\"quantity\":2","\"quantity\":1.5"),request));
         verifyNoMoreInteractions(service);

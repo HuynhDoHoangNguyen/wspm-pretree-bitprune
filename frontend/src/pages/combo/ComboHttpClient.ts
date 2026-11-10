@@ -22,7 +22,7 @@ const pageSchema = z.object({ page: z.number().int(), size: z.number().int(), sc
   appliedFilters: z.object({ batchId: nullable.optional(), status: nullable.optional(), comboKind: nullable.optional() }), items: z.array(summary) });
 const reviewSchema = z.object({ outcome: z.enum(['APPLIED', 'ALREADY_DECIDED', 'UNKNOWN']), currentStatus: nullable, storedAudit: audit.nullable(), issues: z.array(text) });
 const batchPageSchema = z.object({ page: z.number().int().min(0), size: z.number().int().min(1).max(100), total: count,
-  items: z.array(z.object({ batchId: text, runId: text, status: text, createdAt: text, comboCount: count, draftCount: count, approvedCount: count, rejectedCount: count })) });
+  items: z.array(z.object({ batchId: text, runId: text, status: text, createdAt: text, topK: count, comboCount: count, draftCount: count, approvedCount: count, rejectedCount: count })) });
 export function createComboHttpClient(transport = wdmApi): ComboClient {
   async function call<T>(operation: () => Promise<unknown>, valid: (v: unknown) => boolean): Promise<T> {
     try {

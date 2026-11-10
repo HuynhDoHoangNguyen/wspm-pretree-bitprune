@@ -56,7 +56,7 @@ public final class ComboManagementService {
             public Bundle detail(String id){return reader.detailCurrent(id);}
         }).list(batch,status,kind,page,size));
     }
-    public record BatchSummary(String batchId,String runId,String status,String createdAt,String comboCount,String draftCount,String approvedCount,String rejectedCount) {}
+    public record BatchSummary(String batchId,String runId,String status,String createdAt,String comboCount,String draftCount,String approvedCount,String rejectedCount,String topK) {}
     public record BatchPage(int page,int size,String total,List<BatchSummary> items) {}
     /** Lightweight history: page parents first, aggregate only their children; no review/evidence IO. */
     public BatchPage batches(Integer page,Integer size) {
@@ -65,17 +65,17 @@ public final class ComboManagementService {
         return reads.execute(tx->{
             String total=jdbc.queryForObject("SELECT CAST(COUNT(*) AS CHAR) FROM COMBO_BATCH",String.class);
             var items=jdbc.query("""
-                    SELECT b.batch_id,b.run_id,b.status,DATE_FORMAT(b.created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS created,
+                    SELECT b.batch_id,b.run_id,b.status,CAST(b.top_k AS CHAR) AS top_k,DATE_FORMAT(b.created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS created,
                       CAST(COUNT(c.combo_id) AS CHAR) AS total,
                       CAST(COALESCE(SUM(c.status='DRAFT'),0) AS CHAR) AS drafts,
                       CAST(COALESCE(SUM(c.status='APPROVED'),0) AS CHAR) AS approved,
                       CAST(COALESCE(SUM(c.status='REJECTED'),0) AS CHAR) AS rejected
-                    FROM (SELECT batch_id,run_id,status,created_at FROM COMBO_BATCH
+                    FROM (SELECT batch_id,run_id,status,created_at,top_k FROM COMBO_BATCH
                           ORDER BY created_at DESC,batch_id DESC LIMIT ? OFFSET ?) b
                     LEFT JOIN COMBO c ON c.batch_id=b.batch_id
-                    GROUP BY b.batch_id,b.run_id,b.status,b.created_at
+                    GROUP BY b.batch_id,b.run_id,b.status,b.created_at,b.top_k
                     ORDER BY b.created_at DESC,b.batch_id DESC
-                    """,(r,n)->new BatchSummary(r.getString("batch_id"),r.getString("run_id"),r.getString("status"),r.getString("created"),r.getString("total"),r.getString("drafts"),r.getString("approved"),r.getString("rejected")),s,(long)p*s);
+                    """,(r,n)->new BatchSummary(r.getString("batch_id"),r.getString("run_id"),r.getString("status"),r.getString("created"),r.getString("total"),r.getString("drafts"),r.getString("approved"),r.getString("rejected"),r.getString("top_k")),s,(long)p*s);
             log.debug("Combo batch history: page={}, rows={}",p,items.size());
             return new BatchPage(p,s,total,List.copyOf(items));
         });

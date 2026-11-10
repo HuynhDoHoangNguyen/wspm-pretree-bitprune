@@ -35,7 +35,7 @@ public class ComboReadController {
             HttpServletRequest request) {
         validateParameters(parameters, Set.of("productId", "k"));
         String productId = identifier(parameters.getFirst("productId"), "productId");
-        int k = ComboReadService.DEFAULT_K;
+        Integer k = null;
         if (parameters.containsKey("k")) {
             String value = parameters.getFirst("k");
             if (value == null || !value.matches("[0-9]+")) throw invalidK();

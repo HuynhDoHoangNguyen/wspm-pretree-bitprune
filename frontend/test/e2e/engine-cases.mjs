@@ -160,7 +160,7 @@ export async function runEngineCases({ browser, origin, sql, root, temp, logDire
     }
     const session = await login(), page = session.page;
     await page.goto(origin + '/admin/datasets');
-    await page.getByRole('tab', { name: 'Tạo dữ liệu mới · Xuất đơn hàng hoặc upload CSV', exact: true }).click();
+    await page.getByRole('button', { name: '+ Tạo dữ liệu mới', exact: true }).click();
     await page.getByLabel('Tệp CSV', { exact: true }).setInputFiles(path.join(resources, 'round-trip.csv'));
     const arrived = page.waitForResponse(r => r.url() === origin + datasets && r.request().method() === 'POST');
     await page.getByRole('button', { name: 'Upload CSV', exact: true }).click();

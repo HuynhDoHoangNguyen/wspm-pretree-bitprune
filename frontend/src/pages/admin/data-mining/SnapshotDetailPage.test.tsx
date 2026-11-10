@@ -106,7 +106,7 @@ it('opens the real deep route, renders honest metadata and refetches after remou
   const view = render(page());
   expect(screen.getByRole('status')).toHaveTextContent('Đang tải');
   await screen.findByText('original.csv');
-  expect(screen.getByRole('link', { name: 'Dữ liệu khai phá' })).toHaveAttribute('aria-current', 'page');
+  expect(screen.getByRole('link', { name: 'Danh sách dữ liệu' })).toHaveAttribute('aria-current', 'page');
   expect(field('Số sequence').getByText('Chưa xác định')).toBeInTheDocument();
   expect(field('Thống kê').getByText('Chưa tính')).toBeInTheDocument();
   expect(screen.getByText('9007199254740993 byte')).toBeInTheDocument();

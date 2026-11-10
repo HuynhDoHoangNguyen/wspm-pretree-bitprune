@@ -22,7 +22,7 @@ import vn.edu.wspm.backend.repositories.recommendation.ComboReadRepository.*;
 @Service
 @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 public class ComboReadService {
-    public static final int DEFAULT_K = 4;
+    public static final int DEFAULT_K = 5;
     public static final int MAX_K = 20;
     public static final String RANKING_POLICY = "SUPPORT_THEN_PATTERN_WEIGHT_V1";
     private static final Logger log = LoggerFactory.getLogger(ComboReadService.class);
@@ -45,10 +45,11 @@ public class ComboReadService {
             Instant at = clock.instant().truncatedTo(ChronoUnit.MICROS);
             BatchRow batch = activeBatch();
             if (batch == null) return new TopK(productId, requested, 0, at, null, List.of());
+            if(k==null) requested=(int)Math.min(MAX_K,batch.topK());
             int limit = (int) Math.min(requested, batch.topK());
             var combos = repository.topK(batch.batchId(), productId, limit, at);
             // Defense in depth; SQL applies these filters before ORDER BY/LIMIT.
-            combos = combos.stream().filter(c -> publiclyReadable(c, at)).toList();
+            combos = combos.stream().filter(c -> publiclyReadable(c, at) && "SAME_ORDER_BUNDLE".equals(c.kind())).toList();
             if (combos.isEmpty()) return new TopK(productId, requested, limit, at, mapper.batch(batch), List.of());
             var items = repository.items(combos.stream().map(ComboRow::comboId).toList()).stream()
                     .collect(Collectors.groupingBy(ItemRow::comboId));
@@ -68,7 +69,8 @@ public class ComboReadService {
             BatchRow batch = activeBatch();
             if (batch == null) throw notFound();
             var rows = repository.detail(batch.batchId(), comboId, at);
-            if (rows.size() != 1 || !publiclyReadable(rows.getFirst(), at)) throw notFound();
+            if (rows.size() != 1 || !publiclyReadable(rows.getFirst(), at)
+                    || !"SAME_ORDER_BUNDLE".equals(rows.getFirst().kind())) throw notFound();
             var items = repository.items(List.of(comboId));
             if (items.isEmpty()) throw notFound();
             return mapper.detail(rows.getFirst(), batch, items, at);
@@ -81,7 +83,7 @@ public class ComboReadService {
             var batch = activeBatch();
             if (batch == null) return List.of();
             var rows = repository.candidates(batch.batchId(), at, 0, true).stream()
-                    .filter(c -> publiclyReadable(c, at)).limit(2).toList();
+                    .filter(c -> publiclyReadable(c, at) && "SAME_ORDER_BUNDLE".equals(c.kind())).limit(5).toList();
             if (rows.isEmpty()) return List.of();
             var items = repository.items(rows.stream().map(ComboRow::comboId).toList()).stream()
                     .collect(Collectors.groupingBy(ItemRow::comboId));
@@ -106,7 +108,7 @@ public class ComboReadService {
             if (batch == null) return new Personalized(HistoryPrefixMatcher.POLICY, at, results);
             var history = repository.history(authenticatedUserId);
             if (history.isEmpty()) return new Personalized(HistoryPrefixMatcher.POLICY, at, results);
-            int cap = (int) Math.min(DEFAULT_K, batch.topK());
+            int cap = (int) Math.min(MAX_K, batch.topK());
             var matcher = new HistoryPrefixMatcher();
             for (int offset = 0; results.size() < cap; offset += 20) {
                 var rows = repository.candidates(batch.batchId(), at, offset, false);
@@ -121,6 +123,9 @@ public class ComboReadService {
                     var match = matcher.match(contents, history);
                     if (match.isPresent()) {
                         var m = match.get();
+                        // A product detail must not recommend its own current product as the next purchase.
+                        // Suppress the whole step instead of breaking a mixed same-order itemset.
+                        if (productId != null && m.suggestedProductIds().contains(productId)) continue;
                         results.add(new PersonalRecommendation(results.size() + 1, m.matchedItemsets(),
                                 m.nextItemsetOrder(), m.suggestedProductIds(), mapper.detail(row, batch, contents, at)));
                     }
@@ -130,6 +135,28 @@ public class ComboReadService {
             log.debug("Personal combo read completed: resultCount={}", results.size());
             return new Personalized(HistoryPrefixMatcher.POLICY, at, results);
         } catch (DataAccessException failure) { throw unavailable("personalized", failure); }
+    }
+
+    /** Exact popup lookup, independently verified against this identity's completed history. */
+    public Personalized personalizedCombo(String authenticatedUserId, String comboId) {
+        validateId(authenticatedUserId, "identity");
+        validateId(comboId, "comboId");
+        try {
+            Instant at = clock.instant().truncatedTo(ChronoUnit.MICROS);
+            var batch = activeBatch();
+            if (batch == null) throw notFound();
+            var rows = repository.detail(batch.batchId(), comboId, at);
+            if (rows.size() != 1 || !publiclyReadable(rows.getFirst(), at)
+                    || "SAME_ORDER_BUNDLE".equals(rows.getFirst().kind())) throw notFound();
+            var contents = repository.items(List.of(comboId));
+            var match = new HistoryPrefixMatcher().match(contents, repository.history(authenticatedUserId));
+            if (match.isEmpty()) throw notFound();
+            var m = match.get();
+            var recommendation = new PersonalRecommendation(1, m.matchedItemsets(), m.nextItemsetOrder(),
+                    m.suggestedProductIds(), mapper.detail(rows.getFirst(), batch, contents, at));
+            log.debug("Personal combo popup read completed");
+            return new Personalized(HistoryPrefixMatcher.POLICY, at, List.of(recommendation));
+        } catch (DataAccessException failure) { throw unavailable("personal-detail", failure); }
     }
 
     private BatchRow activeBatch() {

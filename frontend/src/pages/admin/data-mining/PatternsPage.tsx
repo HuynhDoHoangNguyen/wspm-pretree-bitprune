@@ -1,5 +1,6 @@
+import BackButton from 'components/BackButton/BackButton';
 import React, { useEffect, useState } from 'react';
-import { Alert, Button, Group, Paper, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Button, Group, Paper, Stack, Table, Text, TextInput } from '@mantine/core';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { runResultApi } from 'api/admin/data-mining';
 import { isRunId } from 'api/admin/data-mining/mining-run-response';
@@ -7,6 +8,7 @@ import useTitle from 'hooks/use-title';
 import { useWorkspaceRead } from './useWorkspaceRead';
 import { ReadError } from './WorkspacePanels';
 import RunResultExportButton from './RunResultExportButton';
+import AdminPageHeader from './AdminPageHeader';
 
 export default function PatternsPage() {
   useTitle('Mẫu khai phá');
@@ -38,10 +40,9 @@ export default function PatternsPage() {
   const nextStart = String(page * 20);
   const hasNext = !!result && (result.total.length > nextStart.length || (result.total.length === nextStart.length && result.total > nextStart));
   return <Stack spacing="lg" mb={30}>
-    <Title order={2}>Mẫu khai phá</Title>
-    <Text color="dimmed">Duyệt các mẫu đã lưu theo từng lần chạy khai phá.</Text>
+    <AdminPageHeader title="Mẫu khai phá" description="Duyệt các mẫu đã lưu theo từng lần chạy khai phá."/>
     <Group>
-      <Button component={Link} to={history} variant="subtle">Lịch sử run</Button>
+      <BackButton to={history}>Lịch sử run</BackButton>
       {valid && <Button component={Link} to={'/admin/mining-runs/' + runId}
         state={origin} variant="light">Chi tiết run</Button>}
     </Group>

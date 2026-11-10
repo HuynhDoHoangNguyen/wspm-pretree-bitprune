@@ -52,6 +52,22 @@ class ComboReadRepositoryTest {
         assertTrue(ComboReadRepository.ACTIVE_BATCH_SQL.contains("LIMIT 2"));
     }
 
+    @Test void publicKindFilterPrecedesLimitAndPersonalScanKeepsTemporalCandidates() {
+        var jdbc = mock(JdbcTemplate.class);
+        var sql = new AtomicReference<String>();
+        when(jdbc.query(anyString(), any(PreparedStatementSetter.class), any(RowMapper.class)))
+                .thenAnswer(call -> { sql.set(call.getArgument(0)); return List.of(); });
+        var repository = new ComboReadRepository(jdbc);
+        String filter = "AND CAST(c.combo_kind AS BINARY) = CAST('SAME_ORDER_BUNDLE' AS BINARY)";
+        repository.candidates("b", Instant.EPOCH, 0, true);
+        assertTrue(sql.get().indexOf(filter) < sql.get().indexOf("ORDER BY c.published_at"));
+        assertTrue(sql.get().contains(filter));
+        repository.candidates("b", Instant.EPOCH, 0, false);
+        assertFalse(sql.get().contains(filter));
+        assertTrue(ComboReadRepository.TOP_K_SQL.contains(filter));
+        assertTrue(ComboReadRepository.TOP_K_SQL.indexOf(filter) < ComboReadRepository.TOP_K_SQL.indexOf("LIMIT ?"));
+    }
+
     @Test void itemsAreOneBoundBatchQueryWithOrderedPositionsAndSinglePrimaryImage() {
         var jdbc = mock(JdbcTemplate.class);
         var sql = new AtomicReference<String>();

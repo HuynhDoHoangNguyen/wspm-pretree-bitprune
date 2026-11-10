@@ -1,3 +1,4 @@
+import BackButton from 'components/BackButton/BackButton';
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { Alert, Anchor, Badge, Button, Group, Paper, Stack, Text, Title } from '@mantine/core';
@@ -114,7 +115,7 @@ export default function SnapshotDetailPage() {
     : detail?.conversionStatus === 'SUCCEEDED' ? 'Xem kết quả chuyển đổi' : detail?.conversionStatus === 'RUNNING' ? 'Theo dõi chuyển đổi'
       : detail?.conversionStatus === 'FAILED' ? 'Xem lỗi chuyển đổi' : 'Mở bước chuyển đổi';
   return <div className={classes.root}><Stack spacing="lg">
-    <Anchor component={Link} to={back?.startsWith('/admin/datasets?') ? back : '/admin/datasets'}>Về trang dữ liệu</Anchor>
+    <BackButton to={back?.startsWith('/admin/datasets?') ? back : '/admin/datasets'}>Về trang dữ liệu</BackButton>
     <div className={classes.hero}><Stack spacing="sm">
       <Group position="apart"><Title order={2}>Chi tiết snapshot</Title><Group spacing="xs">
         {detail && <Badge color={detail.conversionStatus === 'SUCCEEDED' ? 'teal' : detail.validationStatus === 'INVALID' || detail.conversionStatus === 'FAILED' ? 'red' : 'blue'}>

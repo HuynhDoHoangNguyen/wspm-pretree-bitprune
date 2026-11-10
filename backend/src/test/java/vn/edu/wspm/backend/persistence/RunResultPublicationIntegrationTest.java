@@ -68,6 +68,8 @@ class RunResultPublicationIntegrationTest {
     @Autowired vn.edu.wspm.backend.services.combo.generation.PublishedComboInputService comboInput;
     @Autowired vn.edu.wspm.backend.services.combo.generation.NativeComboGeneration nativeCombos;
     @Autowired vn.edu.wspm.backend.services.combo.review.ComboManagementService reviews;
+    @Autowired vn.edu.wspm.backend.services.combo.review.ComboPublicationService comboPublication;
+    @Autowired vn.edu.wspm.backend.services.recommendation.ComboReadService customerCombos;
     @Autowired javax.sql.DataSource comboDataSource;
     @Autowired tools.jackson.databind.ObjectMapper comboJson;
     @Autowired org.springframework.core.env.Environment comboEnvironment;
@@ -271,7 +273,7 @@ class RunResultPublicationIntegrationTest {
         assertEquals(5,jdbc.queryForObject("SELECT max_product_count FROM COMBO_BATCH WHERE batch_id=?",Integer.class,inserted.batchId()));
         assertEquals(4294967295L,jdbc.queryForObject("SELECT MAX(i.quantity) FROM COMBO_ITEM i JOIN COMBO c ON c.combo_id=i.combo_id WHERE c.batch_id=?",Long.class,inserted.batchId()));
         String combo=jdbc.queryForObject("SELECT combo_id FROM COMBO WHERE batch_id=?",String.class,inserted.batchId());
-        assertTrue(reviews.detail(combo).assessment().allowedActions().contains("APPROVE"));
+        var detail=reviews.detail(combo);assertTrue(detail.assessment().allowedActions().contains("APPROVE"),detail.assessment().blockingIssues().toString());
         jdbc.update("UPDATE PRODUCT SET current_price=101,version=version+1 WHERE product_id='selection-0'");
         assertTrue(reviews.detail(combo).assessment().allowedActions().isEmpty());
     }
@@ -329,6 +331,58 @@ class RunResultPublicationIntegrationTest {
         String combo=jdbc.queryForObject("SELECT c.combo_id FROM COMBO c WHERE c.batch_id=? AND NOT EXISTS(SELECT 1 FROM COMBO_ITEM i WHERE i.combo_id=c.combo_id AND i.product_id='native-laptop') LIMIT 1",String.class,inserted.batchId());
         var detail=reviews.detail(combo);assertTrue(detail.assessment().allowedActions().contains("APPROVE"),detail.assessment().blockingIssues().toString());
         assertEquals("APPLIED",reviews.review(combo,new vn.edu.wspm.backend.services.combo.review.ComboReview.Command("APPROVE",null,detail.reviewToken()),actor).outcome());
+    }
+    @Test void customerTopKPersistsIndependentlyOfPreviewAndBindsRetryIdentity() throws Exception {
+        var actor=nativeActor();var run=nativeRun(MiningAlgorithm.WSPM_PRETREE);
+        var selection=new vn.edu.wspm.backend.services.combo.generation.CategorySelection(List.of(new vn.edu.wspm.backend.services.combo.generation.CategorySelection.RequiredCategory("temporal-cat",1)),2,4);
+        jdbc.update("INSERT INTO CUSTOMER(customer_id,user_id,anonymous_code) VALUES('topk-customer','native-owner','topk-customer')");
+        jdbc.update("INSERT INTO ORDERS(order_id,order_number,customer_id,ordered_at,status,source) VALUES('topk-order','topk-order','topk-customer','2026-01-01','COMPLETED','TEST')");
+        jdbc.update("INSERT INTO ORDER_ITEM(order_id,product_id,quantity,list_unit_price,line_total,sku_snapshot,product_name_snapshot) VALUES('topk-order','native-laptop',1,100,100,'TEST','TEST')");
+        for(int k:List.of(2,5)){
+            String identity="customer-k-"+k;
+            var preview=nativeCombos.previewCategories(run.runId(),null,1,identity,actor,selection,k);
+            assertEquals("READY",preview.status(),preview.issues().toString());assertEquals(1,preview.proposals().size());assertTrue(preview.groups()>k);
+            assertEquals(k,nativeCombos.decode(preview.contextToken()).resolvedRecommendationK());
+            var stored=nativeCombos.submit(preview.contextToken(),actor,false);
+            assertEquals("INSERTED",stored.status(),stored.issues().toString());assertEquals(preview.groups(),stored.storedGroups());
+            assertEquals(k,jdbc.queryForObject("SELECT top_k FROM COMBO_BATCH WHERE batch_id=?",Integer.class,stored.batchId()));
+            var changedPreview=nativeCombos.previewCategories(run.runId(),null,20,identity,actor,selection,k);
+            assertEquals(preview.contextToken(),changedPreview.contextToken());assertEquals(preview.groups(),changedPreview.groups());
+            assertEquals("NO_OP",nativeCombos.submit(changedPreview.contextToken(),actor,true).status());
+            assertThrows(ApplicationException.class,()->nativeCombos.previewCategories(run.runId(),null,1,identity,actor,selection,k==2?5:2));
+            var combo=jdbc.queryForObject("SELECT combo_id FROM COMBO WHERE batch_id=? LIMIT 1",String.class,stored.batchId());
+            var detail=reviews.detail(combo);assertTrue(detail.assessment().allowedActions().contains("APPROVE"),detail.assessment().blockingIssues().toString());
+            assertEquals(Integer.toString(k),reviews.batches(0,100).items().stream().filter(b->b.batchId().equals(stored.batchId())).findFirst().orElseThrow().topK());
+            for(String id:jdbc.queryForList("SELECT combo_id FROM COMBO WHERE batch_id=?",String.class,stored.batchId())){
+                var d=reviews.detail(id);
+                assertEquals("APPLIED",reviews.review(id,new vn.edu.wspm.backend.services.combo.review.ComboReview.Command("APPROVE",null,d.reviewToken()),actor).outcome());
+            }
+            comboPublication.publish(stored.batchId(),actor);
+            assertEquals(k,customerCombos.topK("native-keyboard",null).items().size());
+            assertEquals(k,customerCombos.personalized(actor.userId()).items().size());
+            assertEquals(1,customerCombos.topK("native-keyboard",1).items().size());
+            assertTrue(customerCombos.latest().size()<=2);
+
+        }
+    }
+    @Test void signedContextIssuedBeforeCustomerKStillSubmitsAndReviewsWithOriginalFive() throws Exception {
+        var actor=nativeActor();var run=nativeRun(MiningAlgorithm.WSPM_PRETREE);
+        var selection=new vn.edu.wspm.backend.services.combo.generation.CategorySelection(List.of(new vn.edu.wspm.backend.services.combo.generation.CategorySelection.RequiredCategory("temporal-cat",1)),2,4);
+        var preview=nativeCombos.previewCategories(run.runId(),null,1,"old-customer-k",actor,selection);
+        String currentJson=new String(Base64.getUrlDecoder().decode(preview.contextToken().split("\\.")[0]),java.nio.charset.StandardCharsets.UTF_8);
+        // Preserve numeric lexemes/BigDecimal scale from the original signed payload.
+        String oldJson=currentJson.replace(",\"recommendationK\":5","");assertNotEquals(currentJson,oldJson);
+        byte[] bytes=oldJson.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        var mac=javax.crypto.Mac.getInstance("HmacSHA256");
+        mac.init(new javax.crypto.spec.SecretKeySpec(comboEnvironment.getProperty("auth.jwt.secret").getBytes(java.nio.charset.StandardCharsets.UTF_8),"HmacSHA256"));
+        mac.update("TV2_NATIVE_COMBO_CONTEXT_V1\0".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String oldToken=Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)+"."+Base64.getUrlEncoder().withoutPadding().encodeToString(mac.doFinal(bytes));
+        assertEquals(5,nativeCombos.decode(oldToken).resolvedRecommendationK());
+        var stored=nativeCombos.submit(oldToken,actor,false);assertEquals("INSERTED",stored.status(),stored.issues().toString());
+        assertEquals(5,jdbc.queryForObject("SELECT top_k FROM COMBO_BATCH WHERE batch_id=?",Integer.class,stored.batchId()));
+        assertEquals("NO_OP",nativeCombos.submit(oldToken,actor,true).status());
+        String combo=jdbc.queryForObject("SELECT combo_id FROM COMBO WHERE batch_id=? LIMIT 1",String.class,stored.batchId());
+        var detail=reviews.detail(combo);assertTrue(detail.assessment().allowedActions().contains("APPROVE"),detail.assessment().blockingIssues().toString());
     }
     private vn.edu.wspm.backend.web.auth.AdminPrincipal nativeActor(){
         jdbc.update("INSERT IGNORE INTO USER_ACCOUNT(user_id,username,password_hash,display_name,status) VALUES('native-owner','native-owner','fixture-not-login','Owner','ACTIVE')");

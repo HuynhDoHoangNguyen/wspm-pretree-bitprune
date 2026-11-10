@@ -5,11 +5,11 @@ import { Backpack, Cpu, DeviceDesktop, DeviceGamepad, DeviceLaptop, DeviceSpeake
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { Grid } from '@mantine/core';
-import useCatalogCategories from 'tv3/hooks/useCatalogCategories';
-import CategoryCard from 'tv3/components/CategoryCard';
+import useCatalogCategories from 'hooks/catalog/useCatalogCategories';
+import CategoryCard from 'components/catalog/CategoryCard';
 import ClientHomeFeaturedCategories from './ClientHomeFeaturedCategories';
 
-jest.mock('tv3/hooks/useCatalogCategories', () => ({ __esModule: true, default: jest.fn() }));
+jest.mock('hooks/catalog/useCatalogCategories', () => ({ __esModule: true, default: jest.fn() }));
 jest.mock('@mantine/core', () => {
   const actual = jest.requireActual('@mantine/core');
   const Col = actual.Grid.Col;

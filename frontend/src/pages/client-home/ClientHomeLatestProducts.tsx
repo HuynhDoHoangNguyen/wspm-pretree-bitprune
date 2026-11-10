@@ -2,8 +2,8 @@ import React from 'react';
 import { Button, Grid, Group, Skeleton, Stack, Text, Title, useMantineTheme } from '@mantine/core';
 import { AlertTriangle, List, Marquee } from 'tabler-icons-react';
 import { Link } from 'react-router-dom';
-import useLatestProducts from 'tv3/hooks/useLatestProducts';
-import ProductCard from 'tv3/components/ProductCard';
+import useLatestProducts from 'hooks/catalog/useLatestProducts';
+import ProductCard from 'components/catalog/ProductCard';
 
 function ClientHomeLatestProducts() {
   const theme = useMantineTheme();

@@ -1,5 +1,31 @@
 # Browser E2E gates
 
+## Compact Combo popup smoke
+
+After a production build into a fresh `BUILD_PATH`, set `WDM_E2E_BUILD_DIR`
+to that directory and run `node frontend/test/e2e/combo-popup-smoke.mjs` from
+the repository root. `WDM_COMBO_EVIDENCE_DIR` optionally selects a fresh evidence
+directory. Headless Edge serves the actual build with mocked HTTP: public
+same-order discovery, personal sequential/mixed next-step selection, guest
+denial, exact totals, Back/Escape, preserved product-list query, 1440/390px,
+absence of checkout controls, unsolicited business writes and browser errors.
+Screenshots and `result.json` remain under the evidence directory. This is UI
+evidence; real repository/history behavior is separately covered by
+`ComboManagementMySqlTest` using owned disposable MySQL, not the owner's database.
+
+## Frontend navigation refactor smoke
+
+Build the frontend into a fresh `BUILD_PATH`, then point `WDM_E2E_BUILD_DIR`
+at that directory and run `node frontend/test/e2e/frontend-navigation-smoke.mjs`
+from the repository root. Optional `WDM_NAV_EVIDENCE_DIR` selects a new evidence
+directory. The runner serves the actual production build on an allocated local
+port, uses headless Edge, and mocks HTTP including shared Auth. It verifies
+desktop/mobile menu selection, direct URLs/reload, dataset list/create and
+detail return context, compact headings, retained historical routes, and absence
+of unsolicited business writes or uncaught browser errors. Screenshots and a
+JSON result remain in the evidence directory. This is UI verification, not an
+engine/API/database acceptance gate.
+
 The client-combo extension of the Native gate verifies explicit approval/publication
 of supported kinds, anonymous detail/latest reads, protected HISTORY_PREFIX_V1
 recommendations using synthetic COMPLETED orders linked to real registered users,

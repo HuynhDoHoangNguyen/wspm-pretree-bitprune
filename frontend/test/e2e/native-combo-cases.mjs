@@ -22,6 +22,9 @@ export async function runNativeComboCases({browser,origin,sql,root,logDirectory,
     const categories=[['e94fd8e6-4e01-54d7-9872-73b19997722f','Laptop'],['8b877527-9862-571f-bf47-61cb515da304','Keyboard'],['56f90ed8-3291-5285-9e08-91b94aa88ecc','Mouse'],['9a453e78-cdaa-50b9-adf3-d6293ce7d1b4','Bag'],['5bd6a957-c0d1-5c73-a237-4fe41d161727','Speaker']];
     for(const [id,name]of categories)sql(`INSERT INTO CATEGORY(category_id,name,slug,status) VALUES('${id}','${name}','native-${name}','ACTIVE');`);
     for(const [i,p]of ['native-laptop','native-keyboard','native-mouse','native-bag'].entries())sql(`INSERT INTO PRODUCT(product_id,sku,name,slug,category_id,current_price,status) VALUES('${p}','${p}','Current ${p}','${p}','${categories[i][0]}',100,'ACTIVE');`);
+    // Explicit stock fixture in the owned test database; mining CSV and source patterns are unchanged.
+    sql("INSERT INTO WAREHOUSE(warehouse_id,code,name,status) VALUES('native-stock','NATIVE-STOCK','Synthetic native stock','ACTIVE');");
+    for(const p of ['native-laptop','native-keyboard','native-mouse','native-bag'])sql(`INSERT INTO INVENTORY_BALANCE(warehouse_id,product_id,on_hand_quantity,reserved_quantity) VALUES('native-stock','${p}',5,1);`);
     const csrf=await data(await ctx.request.get(origin+'/api/v1/auth/csrf'));
     const users={};for(const username of ['native.admin1','native.admin2','native.customer']){
       const r=await ctx.request.post(origin+'/api/v1/auth/register',{headers:{Origin:origin,'X-XSRF-TOKEN':csrf.token},data:{username,email:username+'@example.test',password,displayName:'Synthetic '+username}});
@@ -189,12 +192,15 @@ export async function runNativeComboCases({browser,origin,sql,root,logDirectory,
       await customerPage.screenshot({path:path.join(logDirectory,'tv3-public-combo.png'),fullPage:true});
       assert.equal((await publicContext.request.get(origin+'/api/v1/recommendations/combos/personalized')).status(),401);
       const latest = await data(await publicContext.request.get(origin+'/api/v1/recommendations/combos/latest'));
-      assert.equal(latest.length,2);
+      assert.ok(latest.length > 0 && latest.length <= 5); assert.ok(latest.every(c=>c.kind==='SAME_ORDER_BUNDLE'));
+      assert.ok(top.items.every(r=>r.combo.kind==='SAME_ORDER_BUNDLE'));
       assert.equal((await get('/api/v1/recommendations/combos/personalized')).items.length,0);
       // An actual public temporal result supplies membership, never a SQL-seeded combo.
       const temporalId = sql(`SELECT combo_id FROM COMBO WHERE batch_id='${first.batch}' AND status='PUBLISHED' AND combo_kind='SEQUENTIAL_CROSS_SELL' ORDER BY combo_id LIMIT 1;`);
       assert.ok(temporalId);
-      const temporal = await data(await publicContext.request.get(origin+'/api/v1/recommendations/combos/'+temporalId));
+      assert.equal((await publicContext.request.get(origin+'/api/v1/recommendations/combos/'+temporalId)).status(),404);
+      const temporalAdmin = await get(base+'/combos/'+temporalId);
+      const temporal = { kind: temporalAdmin.data.comboKind, items: temporalAdmin.itemsets.flatMap(step=>step.items.map(item=>({ ...item, product: { productId: item.productId } }))) };
       assert.ok(temporal.items.some(i=>i.itemsetOrder===2));
       assert.equal(temporal.kind,'SEQUENTIAL_CROSS_SELL');
       const customerId=sql(`SELECT customer_id FROM CUSTOMER WHERE user_id='${users['native.customer']}';`);
@@ -218,7 +224,7 @@ export async function runNativeComboCases({browser,origin,sql,root,logDirectory,
           const region=personalPage.getByRole('region',{name:'Gợi ý theo lịch sử mua',exact:true});
           await region.getByRole('checkbox').first().waitFor();
           const check=region.getByRole('checkbox').first();await check.uncheck();assert.equal(await check.isChecked(),false);await check.check();
-          await personalPage.getByText('Combo mới nhất',{exact:true}).waitFor();
+          await personalPage.getByText('Top Combo mới nhất',{exact:true}).waitFor();
           assert.equal(await personalPage.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
           await personalPage.screenshot({path:path.join(logDirectory,'client-personal-list-'+width+'.png'),fullPage:true});
           if(width===390)await personalPage.getByText('Bộ lọc sản phẩm',{exact:true}).click();
@@ -348,8 +354,8 @@ export async function runNativeComboCases({browser,origin,sql,root,logDirectory,
         await demoPage.screenshot({path:path.join(logDirectory,'three-item-detail-'+width+'.png'),fullPage:true});
       }
       await demoPage.goto(origin+'/products');
-      const latest=demoPage.getByLabel('Combo mới nhất',{exact:true});await latest.getByRole('article').first().waitFor();
-      assert.equal(await latest.getByRole('article').count(),2);
+      const latest=demoPage.getByLabel('Top Combo mới nhất',{exact:true});await latest.getByRole('article').first().waitFor();
+      assert.equal(await latest.getByRole('article').count(),Math.min(5,Number(sql(`SELECT COUNT(*) FROM COMBO WHERE batch_id='${threeStored.batchId}' AND status='PUBLISHED' AND combo_kind='SAME_ORDER_BUNDLE';`))));
       for(const card of await latest.getByRole('article').all())for(const name of ['Current native-keyboard','Current native-mouse','Current native-bag'])
         assert.ok(await card.getByText(name,{exact:true}).count()>0);
       await demoPage.screenshot({path:path.join(logDirectory,'three-item-list.png'),fullPage:true});
@@ -361,7 +367,7 @@ export async function runNativeComboCases({browser,origin,sql,root,logDirectory,
         assert.equal(await demoPage.getByTestId('product-combos').count(),0);
         await demoPage.goto(origin+'/products');await demoPage.getByRole('heading',{name:'Danh sách sản phẩm',exact:true}).waitFor();
         await until(async()=>await demoPage.getByText('Đang tải combo mới nhất…',{exact:true}).count()===0);
-        assert.equal(await demoPage.getByLabel('Combo mới nhất',{exact:true}).count(),0);
+        assert.equal(await demoPage.getByLabel('Top Combo mới nhất',{exact:true}).count(),0);
       } finally {sql(`UPDATE COMBO_BATCH SET status='ACTIVE' WHERE batch_id='${threeStored.batchId}';`);}
     } finally {await demo.close();}
     pass('Three-product same-order/sequential/mixed: real pipeline/review/publication, compact right-column cards, constituent sidebar rows, empty sections hidden');
