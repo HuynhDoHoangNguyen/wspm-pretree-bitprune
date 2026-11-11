@@ -617,6 +617,8 @@ public final class BitPruneMiner {
             ResolvedMinimumSupport minimumSupport,
             BitPruneStatisticsAccumulator accumulator) {
 
+        // Immutable parent state is shared by all siblings: validate once per node.
+        BitPruneCandidateEvaluator.validateParentInclusion(parentBitmap, parentVerif);
         accumulator.recordExpandedNode();
 
         int lastItemId = parentPattern.lastItem().orElseThrow().id();
@@ -657,7 +659,7 @@ public final class BitPruneMiner {
             case S_EXTENSION -> accumulator.recordGeneratedSExtension();
         }
 
-        BitPruneHotEvaluation evaluation = candidateEvaluator.evaluatePreparedExtension(
+        BitPruneHotEvaluation evaluation = candidateEvaluator.evaluateValidatedParentExtension(
                 parentPattern, extensionType, extensionItem, parentBitmap,
                 singletonBitmaps.get(extensionItem.id()), parentVerif,
                 cmapI, cmapS, occurrenceIndex, globalMeanWeight, minimumSupport);

@@ -1,5 +1,6 @@
 package vn.edu.wspm.bitprune.cmap;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -123,15 +124,20 @@ class CmapSTest {
         f1.add(A);
         f1.add(B);
 
-        Set<Long> relations = new HashSet<>();
-        relations.add(CmapS.pairKey(A, B));
+        java.util.Map<Long, Integer> relations = new java.util.HashMap<>();
+        relations.put(CmapS.pairKey(A, B), 2);
 
         CmapS cmap = new CmapS(f1, relations);
         assertTrue(cmap.contains(A, B));
 
+        assertEquals(2, cmap.supportCount(A, B));
+
         // Mutate original sets
         f1.add(C);
-        relations.add(CmapS.pairKey(B, A));
+        relations.put(CmapS.pairKey(B, A), 1);
+
+        relations.put(CmapS.pairKey(A, B), 99);
+        assertEquals(2, cmap.supportCount(A, B));
 
         // CmapS must remain unchanged
         assertFalse(cmap.contains(B, A));

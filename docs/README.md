@@ -75,6 +75,11 @@ Mining contracts are unchanged.
 
 ### BitPrune contracts and acceptance
 
+Đặc tả mở rộng sau Phase C: [CMAP đếm distinct SID — hợp đồng và tiêu chí kiểm
+chứng](research/wspm-bitprune-cmap-distinct-sid-contract.md). Đã triển khai và
+kiểm chứng module (1,197 tests); chưa có independent research acceptance riêng.
+Đây là mở rộng có chủ đích so với CMAP boolean, không sửa hồi tố nghiệm thu cũ.
+
 | File | Vai trò |
 |---|---|
 | `wspm-bitprune-c01-1-semantic-contract.md` | Ngữ nghĩa canonical |

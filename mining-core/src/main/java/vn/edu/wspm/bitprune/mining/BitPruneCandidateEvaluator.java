@@ -22,7 +22,7 @@ import vn.edu.wspm.tree.ExtensionType;
  * Stateless coordinator that routes one structural candidate extension through
  * the three-tier pruning architecture in WSPM_BitPrune:
  * <ol>
- * <li>CMAP necessary-condition check;</li>
+ * <li>CMAP distinct-SID weighted pair-support upper-bound check;</li>
  * <li>Candidate bitmap intersection and upper-bound filter;</li>
  * <li>Exact temporal verification and weighted support acceptance.</li>
  * </ol>
@@ -45,8 +45,8 @@ public final class BitPruneCandidateEvaluator {
      * @param extensionItemBitmap   the bitmap of the extension item
      * @param parentVerification    the exact verification result of the parent
      *                              pattern
-     * @param cmapI                 the CMAP-I co-occurrence relation
-     * @param cmapS                 the CMAP-S sequence co-occurrence relation
+     * @param cmapI                 the CMAP-I distinct-SID pair supports
+     * @param cmapS                 the CMAP-S distinct-SID pair supports
      * @param occurrenceIndex       the vertical occurrence index
      * @param globalMeanWeight      the finite non-negative global MeanW
      * @param minimumSupport        the resolved minimum support threshold
@@ -158,14 +158,13 @@ public final class BitPruneCandidateEvaluator {
         Item parentLastItem = parent.lastItem().orElseThrow();
         double effectiveThreshold = minimumSupport.effectiveThreshold();
 
-        // Tier 1: CMAP necessary-condition check (bypassed when effectiveThreshold ==
-        // 0.0)
+        // Tier 1: weighted pair-support upper bound; bypassed at zero threshold (R6).
         if (effectiveThreshold > 0.0) {
-            boolean cmapPass = switch (extensionType) {
-                case I_EXTENSION -> cmapI.contains(parentLastItem, extensionItem);
-                case S_EXTENSION -> cmapS.contains(parentLastItem, extensionItem);
+            int pairSupport = switch (extensionType) {
+                case I_EXTENSION -> cmapI.supportCount(parentLastItem, extensionItem);
+                case S_EXTENSION -> cmapS.supportCount(parentLastItem, extensionItem);
             };
-            if (!cmapPass) {
+            if (!minimumSupport.meetsThreshold(pairSupport, globalMeanWeight)) {
                 return BitPruneCandidateEvaluation.cmapRejected(candidate);
             }
         }
@@ -239,6 +238,60 @@ public final class BitPruneCandidateEvaluator {
             VerticalOccurrenceIndex occurrenceIndex,
             double globalMeanWeight,
             ResolvedMinimumSupport minimumSupport) {
+        return evaluatePreparedExtensionInternal(parent, extensionType, extensionItem, parentCandidateBitmap,
+                extensionItemBitmap, parentVerification, cmapI, cmapS, occurrenceIndex,
+                globalMeanWeight, minimumSupport, false);
+    }
+
+    /**
+     * DFS-only entry after validateParentInclusion at node entry. Parent bitmap and
+     * verification are immutable and must be exactly those validated by the caller.
+     * Other structural, universe and numeric validation remains per candidate.
+     */
+    BitPruneHotEvaluation evaluateValidatedParentExtension(
+            Pattern parent,
+            ExtensionType extensionType,
+            Item extensionItem,
+            SidBitmap parentCandidateBitmap,
+            SidBitmap extensionItemBitmap,
+            VerificationResult parentVerification,
+            CmapI cmapI,
+            CmapS cmapS,
+            VerticalOccurrenceIndex occurrenceIndex,
+            double globalMeanWeight,
+            ResolvedMinimumSupport minimumSupport) {
+        return evaluatePreparedExtensionInternal(parent, extensionType, extensionItem, parentCandidateBitmap,
+                extensionItemBitmap, parentVerification, cmapI, cmapS, occurrenceIndex,
+                globalMeanWeight, minimumSupport, true);
+    }
+
+    /** Checks the invariant once for a parent shared by all its sibling candidates. */
+    static void validateParentInclusion(SidBitmap parentBitmap, VerificationResult parentVerification) {
+        Objects.requireNonNull(parentBitmap, "parent bitmap must not be null");
+        Objects.requireNonNull(parentVerification, "parent verification must not be null");
+        SidMapping mapping = parentBitmap.mapping();
+        for (PatternEndpoints ep : parentVerification.endpointStates()) {
+            int bitIndex = mapping.sidToIndex(ep.actualSid());
+            if (!parentBitmap.isSet(bitIndex)) {
+                throw new IllegalArgumentException(
+                        "parent verification SID is absent from parent candidate bitmap");
+            }
+        }
+    }
+
+    private BitPruneHotEvaluation evaluatePreparedExtensionInternal(
+            Pattern parent,
+            ExtensionType extensionType,
+            Item extensionItem,
+            SidBitmap parentCandidateBitmap,
+            SidBitmap extensionItemBitmap,
+            VerificationResult parentVerification,
+            CmapI cmapI,
+            CmapS cmapS,
+            VerticalOccurrenceIndex occurrenceIndex,
+            double globalMeanWeight,
+            ResolvedMinimumSupport minimumSupport,
+            boolean parentAlreadyValidated) {
         Objects.requireNonNull(parent, "parent pattern must not be null");
         Objects.requireNonNull(extensionType, "extension type must not be null");
         Objects.requireNonNull(extensionItem, "extension item must not be null");
@@ -273,21 +326,16 @@ public final class BitPruneCandidateEvaluator {
                     "bitmap universe size must equal minimum-support sequence count");
         }
 
-        SidMapping mapping = parentCandidateBitmap.mapping();
-        for (PatternEndpoints ep : parentVerification.endpointStates()) {
-            int bitIndex = mapping.sidToIndex(ep.actualSid());
-            if (!parentCandidateBitmap.isSet(bitIndex)) {
-                throw new IllegalArgumentException(
-                        "parent verification SID is absent from parent candidate bitmap");
-            }
+        if (!parentAlreadyValidated) {
+            validateParentInclusion(parentCandidateBitmap, parentVerification);
         }
 
         if (minimumSupport.effectiveThreshold() > 0.0) {
-            boolean cmapPass = switch (extensionType) {
-                case I_EXTENSION -> cmapI.contains(parentLastItem, extensionItem);
-                case S_EXTENSION -> cmapS.contains(parentLastItem, extensionItem);
+            int pairSupport = switch (extensionType) {
+                case I_EXTENSION -> cmapI.supportCount(parentLastItem, extensionItem);
+                case S_EXTENSION -> cmapS.supportCount(parentLastItem, extensionItem);
             };
-            if (!cmapPass) {
+            if (!minimumSupport.meetsThreshold(pairSupport, globalMeanWeight)) {
                 return BitPruneHotEvaluation.cmapRejected();
             }
         }

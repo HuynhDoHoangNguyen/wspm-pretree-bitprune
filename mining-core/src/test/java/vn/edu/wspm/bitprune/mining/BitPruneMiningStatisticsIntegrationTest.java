@@ -387,32 +387,10 @@ class BitPruneMiningStatisticsIntegrationTest {
     }
 
     @Test
-    @DisplayName("10. BITMAP_REJECTED witness exact oracle")
-    void test10_bitmapRejectedWitness() {
-        // Independent Candidate Lifecycle Derivation:
-        // Prepared inputs on 4 sequences (mapping universe size 4):
-        //   Item 1 bitmap = {1, 2} (card 2), Item 2 bitmap = {1, 3} (card 2).
-        //   threshold = 2.0, meanWeight = 1.0. F1 = {1, 2}.
-        //   CMAP-I: all false.
-        //   CMAP-S: (1, 2) is true (from S1); (1, 1), (2, 1), (2, 2) are false.
-        //
-        // Expanded DFS parents:
-        // 1) Parent <(1)>:
-        //    - Candidate <(1 2)> (I-ext): CMAP-I(1, 2) false -> CMAP_REJECTED (1).
-        //    - Candidate <(1)(1)> (S-ext): CMAP-S(1, 1) false -> CMAP_REJECTED (2).
-        //    - Candidate <(1)(2)> (S-ext):
-        //      CMAP-S(1, 2) is true!
-        //      Candidate bitmap: {1, 2} & {1, 3} = {1} (cardinality 1).
-        //      Upper bound: 1 * 1.0 = 1.0 < 2.0 -> BITMAP_REJECTED (1).
-        // 2) Parent <(2)>:
-        //    - I-ext: item > 2 -> none.
-        //    - Candidate <(2)(1)> (S-ext): CMAP-S(2, 1) false -> CMAP_REJECTED (3).
-        //    - Candidate <(2)(2)> (S-ext): CMAP-S(2, 2) false -> CMAP_REJECTED (4).
-        //
-        // Exact vector:
-        //   sequenceCount=4, f1Count=2, generatedExtensions=5, generatedIExtensions=1, generatedSExtensions=4,
-        //   cmapRejected=4, bitmapRejected=1, exactRejected=0, acceptedExtensions=0,
-        //   expandedNodes=2, patternCount=2, exactVerifications=0.
+    @DisplayName("10. weighted pair count preempts previous bitmap rejection")
+    void test10_pairCountPreemptsBitmapWitness() {
+        // Five candidates: I(1,2), S(1,1), S(1,2), S(2,1), S(2,2).
+        // Every pair has zero or insufficient weighted support; all reject at Tier 1.
         SequenceDatabase dbMock = db(
                 record(1, itemset(1), itemset(2)),
                 record(2, itemset(1)),
@@ -453,38 +431,14 @@ class BitPruneMiningStatisticsIntegrationTest {
                 tree, f1, bitmaps, verifications, cmapI, cmapS, occIndex, 1.0, minSup);
 
         assertExactStatistics(result.statistics(),
-                4L, 2L, 5L, 1L, 4L, 4L, 1L, 0L, 0L, 2L, 2L, 0L);
+                4L, 2L, 5L, 1L, 4L, 5L, 0L, 0L, 0L, 2L, 2L, 0L);
     }
 
     @Test
-    @DisplayName("11. EXACT_REJECTED witness exact oracle")
-    void test11_exactRejectedWitness() {
-        // Independent Candidate Lifecycle Derivation:
-        // Input: 2 sequences with inverted temporal order:
-        //   SID 1: (1), (2); SID 2: (2), (1)
-        // Item 1: count 2, Item 2: count 2, total len 4. Weights: w(1)=0.5, w(2)=0.5, MeanW=0.5.
-        // minSup = absolute(1.0). Threshold = 1.0. Both items in F1 (support 2 * 0.5 = 1.0 >= 1.0).
-        //
-        // Expanded DFS parents:
-        // 1) Parent <(1)>:
-        //    - Candidate <(1 2)> (I-ext): CMAP-I(1, 2) false -> CMAP_REJECTED (1).
-        //    - Candidate <(1)(1)> (S-ext): CMAP-S(1, 1) false -> CMAP_REJECTED (2).
-        //    - Candidate <(1)(2)> (S-ext):
-        //      CMAP-S(1, 2) true (from S1); bitmap {1, 2} & {1, 2} = {1, 2} (card 2 >= 2);
-        //      exact verification: only S1 has 1 before 2; S2 has 2 before 1 (invalid).
-        //      exactSupport = 1. 1 * 0.5 = 0.5 < 1.0 -> EXACT_REJECTED (1).
-        // 2) Parent <(2)>:
-        //    - I-ext: item > 2 -> none.
-        //    - Candidate <(2)(1)> (S-ext):
-        //      CMAP-S(2, 1) true (from S2); bitmap card 2 >= 2;
-        //      exact verification: only S2 has 2 before 1; S1 has 1 before 2 (invalid).
-        //      exactSupport = 1. 1 * 0.5 = 0.5 < 1.0 -> EXACT_REJECTED (2).
-        //    - Candidate <(2)(2)> (S-ext): CMAP-S(2, 2) false -> CMAP_REJECTED (3).
-        //
-        // Exact vector:
-        //   sequenceCount=2, f1Count=2, generatedExtensions=5, generatedIExtensions=1, generatedSExtensions=4,
-        //   cmapRejected=3, bitmapRejected=0, exactRejected=2, acceptedExtensions=0,
-        //   expandedNodes=2, patternCount=2, exactVerifications=2.
+    @DisplayName("11. directional pair count preempts previous exact rejection")
+    void test11_pairCountPreemptsExactWitness() {
+        // Five candidates: I(1,2), S(1,1), S(1,2), S(2,1), S(2,2).
+        // Every pair has zero or insufficient weighted support; all reject at Tier 1.
         SequenceDatabase database = db(
                 record(1, itemset(1), itemset(2)),
                 record(2, itemset(2), itemset(1)));
@@ -492,7 +446,7 @@ class BitPruneMiningStatisticsIntegrationTest {
         BitPruneMiningResult result = miner.mine(database, MinimumSupport.absolute(1.0));
 
         assertExactStatistics(result.statistics(),
-                2L, 2L, 5L, 1L, 4L, 3L, 0L, 2L, 0L, 2L, 2L, 2L);
+                2L, 2L, 5L, 1L, 4L, 5L, 0L, 0L, 0L, 2L, 2L, 0L);
     }
 
     @Test
@@ -519,92 +473,22 @@ class BitPruneMiningStatisticsIntegrationTest {
     @Test
     @DisplayName("13. Mixed four-outcome controlled run exact oracle")
     void test13_mixedFourOutcomeControlledRun() {
-        // Independent Candidate Lifecycle Derivation (C12.3-R1 Section 7.3 & 7.4):
-        // Input: 4 sequences, 3 items:
-        //   SID 1: (1), (2), (3)   [contains 1, 2, 3; len 3]
-        //   SID 2: (1), (2)        [contains 1, 2;    len 2]
-        //   SID 3: (2), (1)        [contains 1, 2;    len 2]
-        //   SID 4: (3)             [contains 3;       len 1]
-        // Total database length = 8.
-        // Item occurrences: item 1: 3, item 2: 3, item 3: 2.
-        // Weights: w(1) = 3/8, w(2) = 3/8, w(3) = 2/8.
-        // MaxW = 3/8, MinW = 2/8 -> MeanW = (3/8 + 2/8) / 2 = 5/16.
-        // minSup = absolute(10.0 / 16.0). Effective threshold = 10/16.
-        //
-        // F1 Membership:
-        //   Item 1: support 3, 3 * (5/16) = 15/16 >= 10/16 -> F1
-        //   Item 2: support 3, 3 * (5/16) = 15/16 >= 10/16 -> F1
-        //   Item 3: support 2, 2 * (5/16) = 10/16 >= 10/16 -> F1
-        //   All 3 items in F1 -> f1Count = 3 (sorted: 1, 2, 3).
-        //
-        // Relations:
-        //   CMAP-I: all false (no items co-occur in the same itemset).
-        //   CMAP-S: (1, 2) true (S1, S2); (1, 3) true (S1); (2, 1) true (S3); (2, 3) true (S1); all others false.
-        //   Bitmaps: item 1 = {1, 2, 3} (card 3); item 2 = {1, 2, 3} (card 3); item 3 = {1, 4} (card 2).
-        //   Bitmap filter threshold: card * (5/16) >= 10/16 <=> card >= 2.
-        //
-        // Complete DFS Candidate Lifecycle Trace:
-        //
-        // Parent 1: <(1)> (expanded):
-        //   1. Candidate <(1 2)> (I-ext): CMAP-I(1, 2) false -> CMAP_REJECTED (1).
-        //   2. Candidate <(1 3)> (I-ext): CMAP-I(1, 3) false -> CMAP_REJECTED (2).
-        //   3. Candidate <(1)(1)> (S-ext): CMAP-S(1, 1) false -> CMAP_REJECTED (3).
-        //   4. Candidate <(1)(2)> (S-ext):
-        //      CMAP-S(1, 2) true; bitmap {1, 2, 3} & {1, 2, 3} = {1, 2, 3} (card 3 >= 2);
-        //      exact verification in S1 (1 < 2), S2 (1 < 2) -> support = 2.
-        //      2 * (5/16) = 10/16 >= 10/16 -> ACCEPTED (1).
-        //   5. Candidate <(1)(3)> (S-ext):
-        //      CMAP-S(1, 3) true; bitmap {1, 2, 3} & {1, 4} = {1} (cardinality 1 < 2) -> BITMAP_REJECTED (1).
-        //
-        // Parent 2: <(1)(2)> (child recursion from accepted candidate 4, expanded):
-        //   6. Candidate <(1)(2 3)> (I-ext, 3 > 2): CMAP-I(2, 3) false -> CMAP_REJECTED (4).
-        //   7. Candidate <(1)(2)(1)> (S-ext):
-        //      CMAP-S(2, 1) true (from S3); bitmap {1, 2, 3} (card 3 >= 2);
-        //      exact verification: none of S1, S2, S3 contains (1) then (2) then (1) -> support = 0.
-        //      0 < 10/16 -> EXACT_REJECTED (1).
-        //   8. Candidate <(1)(2)(2)> (S-ext): CMAP-S(2, 2) false -> CMAP_REJECTED (5).
-        //   9. Candidate <(1)(2)(3)> (S-ext):
-        //      CMAP-S(2, 3) true (from S1); parent bitmap of <(1)(2)> is {1, 2};
-        //      candidate bitmap = {1, 2} & {1, 4} = {1} (cardinality 1 < 2) -> BITMAP_REJECTED (2).
-        //
-        // Parent 3: <(2)> (expanded):
-        //  10. Candidate <(2 3)> (I-ext, 3 > 2): CMAP-I(2, 3) false -> CMAP_REJECTED (6).
-        //  11. Candidate <(2)(1)> (S-ext):
-        //      CMAP-S(2, 1) true (from S3); bitmap {1, 2, 3} (card 3 >= 2);
-        //      exact verification: only S3 has 2 before 1 (S1 and S2 have 1 before 2) -> support = 1.
-        //      1 * (5/16) = 5/16 < 10/16 -> EXACT_REJECTED (2).
-        //  12. Candidate <(2)(2)> (S-ext): CMAP-S(2, 2) false -> CMAP_REJECTED (7).
-        //  13. Candidate <(2)(3)> (S-ext):
-        //      CMAP-S(2, 3) true (from S1); bitmap {1, 2, 3} & {1, 4} = {1} (cardinality 1 < 2) -> BITMAP_REJECTED (3).
-        //
-        // Parent 4: <(3)> (expanded):
-        //  14. Candidate <(3)(1)> (S-ext): CMAP-S(3, 1) false -> CMAP_REJECTED (8).
-        //  15. Candidate <(3)(2)> (S-ext): CMAP-S(3, 2) false -> CMAP_REJECTED (9).
-        //  16. Candidate <(3)(3)> (S-ext): CMAP-S(3, 3) false -> CMAP_REJECTED (10).
-        //
-        // Complete Summary Verification:
-        //   sequenceCount = 4
-        //   f1Count = 3 (<(1)>, <(2)>, <(3)>)
-        //   generatedExtensions = 16 (candidates 1 to 16)
-        //   generatedIExtensions = 4 (<(1 2)>, <(1 3)>, <(1)(2 3)>, <(2 3)>)
-        //   generatedSExtensions = 12 (16 - 4)
-        //   cmapRejected = 10 (candidates 1, 2, 3, 6, 8, 10, 12, 14, 15, 16)
-        //   bitmapRejected = 3 (candidates 5, 9, 13)
-        //   exactRejected = 2 (candidates 7, 11)
-        //   acceptedExtensions = 1 (candidate 4: <(1)(2)>)
-        //   expandedNodes = 4 (<(1)>, <(1)(2)>, <(2)>, <(3)>)
-        //   patternCount = 4 (3 F1 patterns + 1 accepted pattern)
-        //   exactVerifications = 3 (2 exact rejected + 1 accepted)
+        // Independent full-position enumeration (global MeanW=(5/11+2/11)/2):
+        // F1={1,2,3}; accepted extensions are <(1)(2)>, <(2)(1)>, <(2)(3)>.
+        // Expanded parents: these three plus the three singleton roots.
+        // I candidates per parent: 2+1+0+1+2+0=6; S candidates=6*3=18.
+        // Two exact rejections: <(1)(2)(1)>, <(2)(1)(2)>.
+        // One bitmap rejection: <(1)(2)(3)>, pair(2,3) support=2,
+        // but three-item bitmap cardinality=1. Remaining 18 candidates fail CMAP.
         SequenceDatabase database = db(
                 record(1, itemset(1), itemset(2), itemset(3)),
                 record(2, itemset(1), itemset(2)),
-                record(3, itemset(2), itemset(1)),
-                record(4, itemset(3)));
-
-        BitPruneMiningResult result = miner.mine(database, MinimumSupport.absolute(10.0 / 16.0));
-
+                record(3, itemset(2), itemset(3)),
+                record(4, itemset(2), itemset(1)),
+                record(5, itemset(2), itemset(1)));
+        BitPruneMiningResult result = miner.mine(database, MinimumSupport.absolute(0.5));
         assertExactStatistics(result.statistics(),
-                4L, 3L, 16L, 4L, 12L, 10L, 3L, 2L, 1L, 4L, 4L, 3L);
+                5L, 3L, 24L, 6L, 18L, 18L, 1L, 2L, 3L, 6L, 6L, 5L);
     }
 
     @Test

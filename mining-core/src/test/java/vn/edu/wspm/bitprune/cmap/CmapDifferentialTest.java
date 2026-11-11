@@ -75,6 +75,18 @@ public class CmapDifferentialTest {
         return false;
     }
 
+    // Independent count oracle: each record is evaluated once by direct position scans.
+    private static int directCount(SequenceDatabase db, Item a, Item b, boolean sameItemset) {
+        int count = 0;
+        for (var record : db.records()) {
+            var one = new SequenceDatabase(List.of(record));
+            if (sameItemset ? directIOracle(one, a, b) : directSOracle(one, a, b)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     // =========================================================================
     // 7.1 Deterministic Directional Catalogue
     // =========================================================================
@@ -416,6 +428,9 @@ public class CmapDifferentialTest {
 
                     boolean expected = directIOracle(db, a, b);
                     boolean actual = cmapI.contains(a, b);
+                    assertEquals(directCount(db, a, b, true), cmapI.supportCount(a, b),
+                            "distinct-SID I count trial=" + trial + ", seed=" + seed);
+                    assertEquals(cmapI.supportCount(a, b) > 0, actual);
 
                     if (actual != expected) {
                         if (actual) {
@@ -438,6 +453,9 @@ public class CmapDifferentialTest {
 
                     boolean expected = directSOracle(db, a, b);
                     boolean actual = cmapS.contains(a, b);
+                    assertEquals(directCount(db, a, b, false), cmapS.supportCount(a, b),
+                            "distinct-SID S count trial=" + trial + ", seed=" + seed);
+                    assertEquals(cmapS.supportCount(a, b) > 0, actual);
 
                     if (actual != expected) {
                         if (actual) {

@@ -655,6 +655,46 @@ class VerticalOccurrenceIndexTest {
     // Helper
     // =========================================================================
 
+    @Test
+    void transactionFastPathPreservesEverySidAndDefensivePositionArrays() {
+        var a = item(0);
+        var b = item(Integer.MAX_VALUE);
+        var database = db(rec(-5, seq(itemset(a, b))), rec(0, seq(itemset(b))),
+                rec(42, seq(itemset(a, b))));
+        var index = VerticalOccurrenceIndex.build(database, SidMapping.of(database));
+        for (var record : database.records()) {
+            for (var target : List.of(a, b, item(99))) {
+                assertArrayEquals(oraclePositions(database, record.sid(), target),
+                        index.positions(target, record.sid()));
+            }
+        }
+        var positions = index.positions(a, -5);
+        positions[0] = 99;
+        assertArrayEquals(new int[]{1}, index.positions(a, -5));
+        assertArrayEquals(new int[]{1}, index.positions(b, 42));
+        assertThrows(IllegalArgumentException.class, () -> index.positions(a, 123));
+        var wrongOrder = db(rec(42, seq(itemset(a, b))), rec(0, seq(itemset(b))),
+                rec(-5, seq(itemset(a, b))));
+        assertThrows(IllegalArgumentException.class,
+                () -> VerticalOccurrenceIndex.build(database, SidMapping.of(wrongOrder)));
+    }
+
+    @Test
+    void mixedSequencesKeepAllTemporalPositionsInsteadOfTakingTransactionFastPath() {
+        var a = item(1);
+        var b = item(2);
+        var database = db(rec(-5, seq(itemset(a, b))),
+                rec(42, seq(itemset(b), itemset(a), itemset(a, b))));
+        var index = VerticalOccurrenceIndex.build(database, SidMapping.of(database));
+        for (var record : database.records()) {
+            for (var target : List.of(a, b)) {
+                assertArrayEquals(oraclePositions(database, record.sid(), target),
+                        index.positions(target, record.sid()));
+            }
+        }
+        assertArrayEquals(new int[]{2, 3}, index.positions(a, 42));
+    }
+
     private static void assertStrictlyIncreasing(int[] array, String label) {
         for (int i = 1; i < array.length; i++) {
             assertTrue(array[i] > array[i - 1],

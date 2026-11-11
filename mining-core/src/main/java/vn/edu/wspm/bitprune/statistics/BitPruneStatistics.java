@@ -28,7 +28,7 @@ package vn.edu.wspm.bitprune.statistics;
  * @param generatedSExtensions portion of {@code generatedExtensions} produced
  *                             via S-Extension
  * @param cmapRejected         candidate extensions receiving terminal outcome
- *                             CMAP_REJECTED (Tier 1 filter)
+ *                             CMAP_REJECTED (Tier 1 weighted pair-support bound, including positive counts)
  * @param bitmapRejected       candidate extensions passing Tier 1 and receiving
  *                             terminal outcome
  *                             BITMAP_REJECTED (Tier 2 weighted upper-bound

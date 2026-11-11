@@ -24,7 +24,7 @@ public record BitPruneCandidateEvaluation(
      * Terminal outcome of evaluating a candidate extension.
      */
     public enum Outcome {
-        /** Rejected by CMAP co-occurrence necessary condition. */
+        /** Rejected by the weighted distinct-SID pair-support upper bound (including positive counts). */
         CMAP_REJECTED,
 
         /** Rejected by Bitmap cardinality upper-bound filter. */

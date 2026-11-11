@@ -159,6 +159,23 @@ public final class VerticalOccurrenceIndex {
 
         validateConsistency(database, mapping);
 
+        // Every occurrence in a transaction database has the sole position 1.
+        // Build the final representation directly without per-pair lists, stream
+        // conversion, or a second map of the same item/SID entries.
+        if (database.records().stream().allMatch(record -> record.sequence().itemsets().size() == 1)) {
+            Map<Item, Map<Integer, int[]>> direct = new HashMap<>();
+            HashSet<Integer> known = new HashSet<>();
+            for (SequenceRecord record : database.records()) {
+                Integer sid = record.sid();
+                known.add(sid);
+                for (Item item : record.sequence().itemsets().getFirst().items()) {
+                    direct.computeIfAbsent(item, ignored -> new HashMap<>()).put(sid, new int[]{1});
+                }
+            }
+            direct.replaceAll((item, positions) -> Collections.unmodifiableMap(positions));
+            return new VerticalOccurrenceIndex(Collections.unmodifiableMap(direct), known);
+        }
+
         // Mutable builder map: item -> (actualSid -> growing list of positions)
         // We use ArrayList<Integer> during construction, then convert to int[] for
         // immutability.

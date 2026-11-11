@@ -281,16 +281,17 @@ class BitPruneMeasurementIntegrationTest {
             BitPruneStatistics stats = result.statistics();
             assertEquals(7, stats.sequenceCount());
             assertEquals(3, stats.f1Count());
+            // Distinct-SID CMAP bound: 23 early rejections; 5 exact rejections + 6 accepted.
             assertEquals(34L, stats.generatedExtensions());
             assertEquals(7L, stats.generatedIExtensions());
             assertEquals(27L, stats.generatedSExtensions());
-            assertEquals(0L, stats.cmapRejected());
+            assertEquals(23L, stats.cmapRejected());
             assertEquals(0L, stats.bitmapRejected());
-            assertEquals(28L, stats.exactRejected());
+            assertEquals(5L, stats.exactRejected());
             assertEquals(6L, stats.acceptedExtensions());
             assertEquals(9L, stats.expandedNodes());
             assertEquals(9L, stats.patternCount());
-            assertEquals(34L, stats.exactVerifications());
+            assertEquals(11L, stats.exactVerifications());
             assertEquals(28L, stats.rejectedExtensions());
 
             BitPruneRunMetadata metadata = run.metadata();

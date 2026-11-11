@@ -281,13 +281,8 @@ class BitPruneCandidateEvaluatorTest {
     }
 
     @Test
-    @DisplayName("6. bitmap rejection after CMAP pass")
-    void test06_bitmapRejectionAfterCmapPass() {
-        // 4 sequences:
-        // S1: <(1)(2)> (has 1 and 2, so CMAP-S(1, 2) is true)
-        // S2: <(1)>    (only 1)
-        // S3: <(2)>    (only 2)
-        // S4: <(3)>    (neither)
+    @DisplayName("6. positive pair count rejected before bitmap")
+    void test06_pairCountRejectsBeforeBitmap() {
         var s1 = new Sequence(List.of(Itemset.of(item1), Itemset.of(item2)));
         var s2 = new Sequence(List.of(Itemset.of(item1)));
         var s3 = new Sequence(List.of(Itemset.of(item2)));
@@ -315,8 +310,6 @@ class BitPruneCandidateEvaluatorTest {
                 ExtensionType.S_EXTENSION,
                 item2);
 
-        // candidateBitmap = {1} (cardinality 1).
-        // minSup requires threshold 2.0. cardinality 1 * meanW 1.0 = 1.0 < 2.0 -> pruned!
         ResolvedMinimumSupport minSup = resolver.resolve(MinimumSupport.absolute(2.0), 4);
         double globalMeanWeight = 1.0;
 
@@ -324,18 +317,14 @@ class BitPruneCandidateEvaluatorTest {
                 parent, candidate, parentBitmap, extBitmap, parentVerif,
                 cmapI, cmapS, occIndex, globalMeanWeight, minSup);
 
-        assertEquals(Outcome.BITMAP_REJECTED, result.outcome());
-        assertTrue(result.candidateBitmap().isPresent());
-        assertEquals(1, result.candidateBitmap().get().cardinality());
+        assertEquals(Outcome.CMAP_REJECTED, result.outcome());
+        assertTrue(result.candidateBitmap().isEmpty());
         assertTrue(result.verificationResult().isEmpty());
     }
 
     @Test
-    @DisplayName("7. temporal false positive passes bitmap but is exact-rejected")
-    void test07_temporalFalsePositivePassesBitmapButIsExactRejected() {
-        // S1: <(1)(2)>, S2: <(2)(1)>
-        // Both sequences contain items 1 and 2, so candidateBitmap has cardinality 2.
-        // CMAP-S(1, 2) is true from S1.
+    @DisplayName("7. directional pair count rejects before exact verification")
+    void test07_directionalPairCountRejectsBeforeExact() {
         var s1 = new Sequence(List.of(Itemset.of(item1), Itemset.of(item2)));
         var s2 = new Sequence(List.of(Itemset.of(item2), Itemset.of(item1)));
         var db = createDb(new SequenceRecord(1, s1), new SequenceRecord(2, s2));
@@ -357,9 +346,6 @@ class BitPruneCandidateEvaluatorTest {
                 ExtensionType.S_EXTENSION,
                 item2);
 
-        // Threshold = 2.0. candidateBitmap cardinality = 2 -> upper bound 2.0 >= 2.0 (passes bitmap filter)
-        // Exact verification: only S1 has 1 before 2 -> exactSupport = 1.
-        // 1 * 1.0 < 2.0 -> EXACT_REJECTED.
         ResolvedMinimumSupport minSup = resolver.resolve(MinimumSupport.absolute(2.0), 2);
         double globalMeanWeight = 1.0;
 
@@ -367,11 +353,9 @@ class BitPruneCandidateEvaluatorTest {
                 parent, candidate, parentBitmap, extBitmap, parentVerif,
                 cmapI, cmapS, occIndex, globalMeanWeight, minSup);
 
-        assertEquals(Outcome.EXACT_REJECTED, result.outcome());
-        assertTrue(result.candidateBitmap().isPresent());
-        assertEquals(2, result.candidateBitmap().get().cardinality());
-        assertTrue(result.verificationResult().isPresent());
-        assertEquals(1, result.verificationResult().get().exactSupport());
+        assertEquals(Outcome.CMAP_REJECTED, result.outcome());
+        assertTrue(result.candidateBitmap().isEmpty());
+        assertTrue(result.verificationResult().isEmpty());
     }
 
     @Test
@@ -452,13 +436,8 @@ class BitPruneCandidateEvaluatorTest {
     }
 
     @Test
-    @DisplayName("10. exact support below threshold is exact-rejected")
-    void test10_exactSupportBelowThresholdIsExactRejected() {
-        // S1: <(1)(2)>, S2: <(2)(1)>, S3: <(3)>
-        // Candidate bitmap has SIDs {1, 2} (cardinality 2)
-        // Upper bound: 2 * 0.5 = 1.0 >= 1.0 -> passes bitmap filter!
-        // Exact verification: S1 matches, S2 fails temporal order -> exactSupport = 1.
-        // Final condition: 1 * 0.5 = 0.5 < 1.0 -> EXACT_REJECTED.
+    @DisplayName("10. weighted pair support below threshold is CMAP-rejected")
+    void test10_weightedPairSupportBelowThresholdIsCmapRejected() {
         var s1 = new Sequence(List.of(Itemset.of(item1), Itemset.of(item2)));
         var s2 = new Sequence(List.of(Itemset.of(item2), Itemset.of(item1)));
         var s3 = new Sequence(List.of(Itemset.of(item3)));
@@ -491,10 +470,9 @@ class BitPruneCandidateEvaluatorTest {
                 parent, candidate, parentBitmap, extBitmap, parentVerif,
                 cmapI, cmapS, occIndex, globalMeanWeight, minSup);
 
-        assertEquals(Outcome.EXACT_REJECTED, result.outcome());
-        assertTrue(result.candidateBitmap().isPresent());
-        assertTrue(result.verificationResult().isPresent());
-        assertEquals(1, result.verificationResult().get().exactSupport());
+        assertEquals(Outcome.CMAP_REJECTED, result.outcome());
+        assertTrue(result.candidateBitmap().isEmpty());
+        assertTrue(result.verificationResult().isEmpty());
     }
 
     @Test

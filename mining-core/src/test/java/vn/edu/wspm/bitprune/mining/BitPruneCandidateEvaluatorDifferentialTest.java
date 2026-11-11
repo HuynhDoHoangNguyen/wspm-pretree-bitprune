@@ -205,7 +205,7 @@ class BitPruneCandidateEvaluatorDifferentialTest {
             Set<Integer> candidateBitmapSids,
             Set<Integer> supportingSids,
             Map<Integer, int[]> endpointsMap,
-            boolean directCmap,
+            int directPairSupport,
             boolean isBitmapFalsePositive) {
     }
 
@@ -218,10 +218,25 @@ class BitPruneCandidateEvaluatorDifferentialTest {
             double effectiveThreshold) {
 
         Item parentLastItem = parent.lastItem().orElseThrow();
-        boolean directCmap = switch (candidate.extensionType()) {
-            case I_EXTENSION -> directCmapI(db, parentLastItem, candidate.extensionItem());
-            case S_EXTENSION -> directCmapS(db, parentLastItem, candidate.extensionItem());
-        };
+        int directPairSupport = 0;
+        for (var record : db.records()) {
+            var one = new SequenceDatabase(List.of(record));
+            boolean present = switch (candidate.extensionType()) {
+                case I_EXTENSION -> directCmapI(one, parentLastItem, candidate.extensionItem());
+                case S_EXTENSION -> directCmapS(one, parentLastItem, candidate.extensionItem());
+            };
+            if (present) directPairSupport++;
+        }
+
+        // Check the pair bound against a separate full-pattern position oracle,
+        // including candidates that will be rejected by CMAP before verification.
+        int directChildSupport = 0;
+        for (var record : db.records()) {
+            if (directParentFeasibleEndpoints(record.sequence(), candidate.pattern()).length > 0) {
+                directChildSupport++;
+            }
+        }
+        assertTrue(directChildSupport <= directPairSupport, "pair bound must include child support");
 
         Set<Integer> parentBmSids = directParentBitmapSids(db, parent);
         Set<Integer> extBmSids = directItemBitmapSids(db, candidate.extensionItem());
@@ -233,7 +248,7 @@ class BitPruneCandidateEvaluatorDifferentialTest {
         Set<Integer> supportingSids = new TreeSet<>();
         Map<Integer, int[]> endpointsMap = new HashMap<>();
 
-        if (effectiveThreshold > 0.0 && !directCmap) {
+        if (effectiveThreshold > 0.0 && !(directPairSupport * globalMeanWeight >= effectiveThreshold)) {
             outcome = Outcome.CMAP_REJECTED;
         } else if (effectiveThreshold > 0.0 && (cardinality * globalMeanWeight < effectiveThreshold)) {
             outcome = Outcome.BITMAP_REJECTED;
@@ -265,7 +280,7 @@ class BitPruneCandidateEvaluatorDifferentialTest {
         }
 
         return new DirectEvaluationResult(
-                outcome, candidateBmSids, supportingSids, endpointsMap, directCmap, isBitmapFalsePositive);
+                outcome, candidateBmSids, supportingSids, endpointsMap, directPairSupport, isBitmapFalsePositive);
     }
 
     // =========================================================================
@@ -378,7 +393,7 @@ class BitPruneCandidateEvaluatorDifferentialTest {
             sb.append("Configured Threshold: ").append(minSup.configuredValue())
                     .append(" (mode=").append(minSup.mode())
                     .append(", effective=").append(minSup.effectiveThreshold()).append(")\n");
-            sb.append("Direct CMAP: ").append(expected.directCmap()).append("\n");
+            sb.append("Direct CMAP distinct-SID count: ").append(expected.directPairSupport()).append("\n");
             sb.append("First Differing Field: ").append(mismatchField).append("\n");
             sb.append("Difference Details: ").append(mismatchDetails).append("\n");
             sb.append("Expected Outcome: ").append(expected.outcome())
@@ -568,8 +583,8 @@ class BitPruneCandidateEvaluatorDifferentialTest {
     }
 
     @Test
-    @DisplayName("CE-06: Bitmap bound rejection")
-    void testCE06_bitmapBoundRejection() {
+    @DisplayName("CE-06: Positive pair count rejected before bitmap bound")
+    void testCE06_positivePairCountPreemptsBitmapRejection() {
         var s1 = new Sequence(List.of(Itemset.of(item1), Itemset.of(item2)));
         var s2 = new Sequence(List.of(Itemset.of(item1)));
         var s3 = new Sequence(List.of(Itemset.of(item2)));
@@ -600,12 +615,12 @@ class BitPruneCandidateEvaluatorDifferentialTest {
         var expected = directEvaluate(db, parent, candidate, 1.0, 2.0);
         assertMatch("CE-06", "Bitmap bound rejection", db, parent,
                 parentVerif.endpointStates(), candidate, 1.0, minSup, expected, actual, Map.of());
-        assertEquals(Outcome.BITMAP_REJECTED, actual.outcome());
+        assertEquals(Outcome.CMAP_REJECTED, actual.outcome());
     }
 
     @Test
-    @DisplayName("CE-07: Bitmap temporal false positive followed by exact rejection")
-    void testCE07_bitmapTemporalFalsePositiveFollowedByExactRejection() {
+    @DisplayName("CE-07: Positive pair count rejected before temporal verification")
+    void testCE07_positivePairCountPreemptsExactRejection() {
         var s1 = new Sequence(List.of(Itemset.of(item1), Itemset.of(item2)));
         var s2 = new Sequence(List.of(Itemset.of(item2), Itemset.of(item1)));
         var db = new SequenceDatabase(List.of(new SequenceRecord(1, s1), new SequenceRecord(2, s2)));
@@ -632,7 +647,7 @@ class BitPruneCandidateEvaluatorDifferentialTest {
         var expected = directEvaluate(db, parent, candidate, 1.0, 2.0);
         assertMatch("CE-07", "Bitmap temporal false positive followed by exact rejection", db, parent,
                 parentVerif.endpointStates(), candidate, 1.0, minSup, expected, actual, Map.of());
-        assertEquals(Outcome.EXACT_REJECTED, actual.outcome());
+        assertEquals(Outcome.CMAP_REJECTED, actual.outcome());
     }
 
     @Test
@@ -1087,7 +1102,7 @@ class BitPruneCandidateEvaluatorDifferentialTest {
                                 if (actual.outcome() == Outcome.ACCEPTED && expected.supportingSids().size() * mw == effThresh) {
                                     counters.merge("EXACT_EQUALITY_ACCEPTED", 1, Integer::sum);
                                 }
-                                if (effThresh == 0.0 && !expected.directCmap()) {
+                                if (effThresh == 0.0 && expected.directPairSupport() == 0) {
                                     counters.merge("ZERO_THRESHOLD_FALSE_CMAP", 1, Integer::sum);
                                 }
                                 if (effThresh == 0.0 && card == 0) {
@@ -1160,7 +1175,7 @@ class BitPruneCandidateEvaluatorDifferentialTest {
                             if (actual.outcome() == Outcome.ACCEPTED && expected.supportingSids().size() * mw == effThresh) {
                                 counters.merge("EXACT_EQUALITY_ACCEPTED", 1, Integer::sum);
                             }
-                            if (effThresh == 0.0 && !expected.directCmap()) {
+                            if (effThresh == 0.0 && expected.directPairSupport() == 0) {
                                 counters.merge("ZERO_THRESHOLD_FALSE_CMAP", 1, Integer::sum);
                             }
                             if (effThresh == 0.0 && card == 0) {

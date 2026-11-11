@@ -25,16 +25,16 @@ import vn.edu.wspm.mining.WspmPreTreeMiner;
 /** Standalone source-configured runner for the WSPM_PreTree baseline. */
 public final class MainWspmPreTree {
 
-        private static final Path DATASET_PATH = Path.of("src/test/resources/datasets/wspm/table1.spmf");
+        private static final Path DATASET_PATH = Path.of("src/main/resources/datasets/SIGN.txt");
         private static final SequenceDatabaseFormat INPUT_FORMAT = SequenceDatabaseFormat.SPMF_SEQUENTIAL;
 
         // true: MIN_SUP is a relative fraction in [0, 1]; false: it is absolute.
         private static final boolean MIN_SUP_IS_RELATIVE = true;
-        private static final double MIN_SUP = 0.14;
+        private static final double MIN_SUP = 0.003;
 
         private static final ResultRetentionPolicy RESULT_RETENTION = ResultRetentionPolicy.SUPPORT_ONLY;
 
-        private static final boolean PRINT_PATTERNS = true;
+        private static final boolean PRINT_PATTERNS = false;
         private static final boolean PRINT_STATISTICS = true;
         private static final boolean EXPORT_PATTERNS = false;
         private static final Path OUTPUT_PATH = Path.of("output/wspm-pretree-patterns.txt");

@@ -236,15 +236,16 @@ class MainWspmBitPruneConsoleTest {
             // Concrete Table 1 verified oracle assertions
             assertEquals(7L, statistics.sequenceCount());
             assertEquals(3L, statistics.f1Count());
+            // Distinct-SID CMAP bound: 23 early rejections; 5 exact rejections + 6 accepted.
             assertEquals(34L, statistics.generatedExtensions());
             assertEquals(7L, statistics.generatedIExtensions());
             assertEquals(27L, statistics.generatedSExtensions());
             assertEquals(28L, statistics.rejectedExtensions());
-            assertEquals(0L, statistics.cmapRejected());
+            assertEquals(23L, statistics.cmapRejected());
             assertEquals(0L, statistics.bitmapRejected());
-            assertEquals(28L, statistics.exactRejected());
+            assertEquals(5L, statistics.exactRejected());
             assertEquals(6L, statistics.acceptedExtensions());
-            assertEquals(34L, statistics.exactVerifications());
+            assertEquals(11L, statistics.exactVerifications());
             assertEquals(9L, statistics.expandedNodes());
             assertEquals(9L, statistics.patternCount());
         }

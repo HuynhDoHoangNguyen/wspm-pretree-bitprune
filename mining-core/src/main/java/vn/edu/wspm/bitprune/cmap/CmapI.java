@@ -1,7 +1,7 @@
 package vn.edu.wspm.bitprune.cmap;
 
 import java.util.Collections;
-import java.util.HashSet;
+import java.util.Map;
 import java.util.NavigableSet;
 import java.util.Objects;
 import java.util.Set;
@@ -9,7 +9,11 @@ import java.util.TreeSet;
 import vn.edu.wspm.model.Item;
 
 /**
- * Immutable same-itemset co-occurrence relation for canonical I-extension pairs.
+ * Immutable distinct-SID pair support for canonical same-itemset I-extension pairs.
+ *
+ * <p>The distinct-SID count extension is specified in
+ * docs/research/wspm-bitprune-cmap-distinct-sid-contract.md. The historical
+ * boolean relation below is retained by contains as the count > 0 projection.
  *
  * <p><strong>C01/C02-ACCEPTED CONTRACT:</strong> {@code CmapI(a, b)} is true exactly when
  * at least one database itemset contains both {@code a} and {@code b}, with the canonical
@@ -23,14 +27,17 @@ import vn.edu.wspm.model.Item;
 public final class CmapI {
 
     private final NavigableSet<Item> f1Universe;
-    private final Set<Long> relations;
+    private final Map<Long, Integer> supportCounts;
 
-    CmapI(Set<Item> f1Universe, Set<Long> relations) {
+    CmapI(Set<Item> f1Universe, Map<Long, Integer> supportCounts) {
         Objects.requireNonNull(f1Universe, "F1 universe must not be null");
-        Objects.requireNonNull(relations, "relations must not be null");
+        Objects.requireNonNull(supportCounts, "support counts must not be null");
+        if (supportCounts.values().stream().anyMatch(count -> count == null || count <= 0)) {
+            throw new IllegalArgumentException("stored support counts must be positive");
+        }
 
         this.f1Universe = Collections.unmodifiableNavigableSet(new TreeSet<>(f1Universe));
-        this.relations = Collections.unmodifiableSet(new HashSet<>(relations));
+        this.supportCounts = Map.copyOf(supportCounts);
     }
 
     /**
@@ -43,6 +50,15 @@ public final class CmapI {
      * @throws IllegalArgumentException if an item is outside F1 or {@code left >= right}
      */
     public boolean contains(Item left, Item right) {
+        return supportCount(left, right) > 0;
+    }
+
+    /**
+     * Returns the number of distinct source SIDs supporting this pair, or zero.
+     * Uses the same universe and pair validation as {@link #contains(Item, Item)}.
+     * This is a pair-support upper bound, not exact support of a longer pattern.
+     */
+    public int supportCount(Item left, Item right) {
         Objects.requireNonNull(left, "left item must not be null");
         Objects.requireNonNull(right, "right item must not be null");
 
@@ -57,7 +73,7 @@ public final class CmapI {
                     "CMAP-I query must be canonical (left < right): " + left.id() + ", " + right.id());
         }
 
-        return relations.contains(pairKey(left, right));
+        return supportCounts.getOrDefault(pairKey(left, right), 0);
     }
 
     /** Collision-free encoding for two non-negative 32-bit item identifiers. */
