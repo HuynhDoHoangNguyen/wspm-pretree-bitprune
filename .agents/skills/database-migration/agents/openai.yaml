@@ -1,0 +1,3 @@
+interface:
+  display_name: "Database Migration"
+  short_description: "Review MySQL, Flyway, and JPA schema changes"

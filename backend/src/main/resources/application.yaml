@@ -1,0 +1,107 @@
+spring:
+  application:
+    name: backend
+
+  servlet:
+    multipart:
+      max-file-size: ${WDM_CSV_UPLOAD_MAX_FILE_BYTES:104857600}B
+      max-request-size: ${WDM_CSV_UPLOAD_MAX_REQUEST_BYTES:105906176}B
+      file-size-threshold: 0B
+      # Authorization must precede parsing, including malformed/oversized uploads.
+      resolve-lazily: true
+
+  config:
+    import:
+      - "optional:file:./.env[.properties]"
+      - "optional:file:../.env[.properties]"
+
+  datasource:
+    url: "jdbc:mysql://127.0.0.1:${MYSQL_PORT:3307}/${MYSQL_DATABASE:wspm_combo}"
+    username: "${MYSQL_USER:wspm_app}"
+    password: "${MYSQL_PASSWORD:123456}"
+
+  sql:
+    init:
+      mode: never
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    show-sql: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+server:
+  port: 8080
+
+catalog:
+  images:
+    root: ${PRODUCT_IMAGES_ROOT:${user.home}/.wspm/uploads/products}
+
+# .env is imported as properties above; map its explicit names to Auth's contract.
+auth:
+  jwt:
+    secret: ${AUTH_JWT_SECRET:}
+    issuer: ${AUTH_JWT_ISSUER:}
+    key-id: ${AUTH_JWT_KEY_ID:}
+  cookie-secure: ${AUTH_COOKIE_SECURE:true}
+  allowed-origins: ${AUTH_ALLOWED_ORIGINS:}
+
+# Hibernate duplicate-key diagnostics can contain username/email values. Auth
+# logs safe operation/context instead; never emit raw SQL errors or bound hashes.
+logging:
+  level:
+    org.hibernate.orm.jdbc.error: "OFF"
+    org.hibernate.orm.jdbc.bind: "OFF"
+
+wdm:
+  result-publication:
+    enabled: ${WDM_RESULT_PUBLICATION_ENABLED:false}
+  result-query:
+    max-export-bytes: ${WDM_RESULT_QUERY_MAX_EXPORT_BYTES:16777216}
+  execution:
+    enabled: ${WDM_EXECUTION_ENABLED:false}
+    parallelism: ${WDM_EXECUTION_PARALLELISM:1}
+    queue-capacity: ${WDM_EXECUTION_QUEUE_CAPACITY:1}
+    shutdown-grace-millis: ${WDM_EXECUTION_SHUTDOWN_GRACE_MILLIS:30000}
+    lease-millis: ${WDM_EXECUTION_LEASE_MILLIS:60000}
+    heartbeat-millis: ${WDM_EXECUTION_HEARTBEAT_MILLIS:10000}
+    recovery-batch: ${WDM_EXECUTION_RECOVERY_BATCH:100}
+  conversion:
+    max-artifact-bytes: ${WDM_CONVERSION_MAX_ARTIFACT_BYTES:67108864}
+  validation:
+    max-record-characters: ${WDM_VALIDATION_MAX_RECORD_CHARACTERS:16384}
+    max-rows: ${WDM_VALIDATION_MAX_ROWS:100000}
+    max-report-bytes: ${WDM_VALIDATION_MAX_REPORT_BYTES:8388608}
+    max-raw-bytes: ${WDM_VALIDATION_MAX_RAW_BYTES:16777216}
+    max-duration-millis: ${WDM_VALIDATION_MAX_DURATION_MILLIS:30000}
+    max-concurrent: ${WDM_VALIDATION_MAX_CONCURRENT:2}
+  snapshot-storage:
+    root: ${WDM_SNAPSHOT_STORAGE_ROOT:${user.home}/.wspm/snapshots}
+  order-export:
+    max-rows: ${WDM_ORDER_EXPORT_MAX_ROWS:100000}
+    max-bytes: ${WDM_ORDER_EXPORT_MAX_BYTES:104857600}
+
+tv2:
+  combo:
+    # Exact seeder categories approved by owner 2026-11-08. No substring classification.
+    laptop-category-ids: ${TV2_COMBO_LAPTOP_CATEGORY_IDS:e94fd8e6-4e01-54d7-9872-73b19997722f}
+    accessory-category-ids: ${TV2_COMBO_ACCESSORY_CATEGORY_IDS:8b877527-9862-571f-bf47-61cb515da304,56f90ed8-3291-5285-9e08-91b94aa88ecc,9a453e78-cdaa-50b9-adf3-d6293ce7d1b4,5bd6a957-c0d1-5c73-a237-4fe41d161727}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-components: always
+      show-details: never

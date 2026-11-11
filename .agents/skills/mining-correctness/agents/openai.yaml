@@ -1,0 +1,3 @@
+interface:
+  display_name: "Mining Correctness"
+  short_description: "Validate mining outputs and pruning safety"

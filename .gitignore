@@ -28,7 +28,77 @@ Thumbs.db
 
 # Large experimental datasets (keep small test datasets)
 data/raw/
+src/main/resources/datasets/*.txt
 
 # Generated experimental outputs
 results/*
 !results/.gitkeep
+
+# Keep reproducibility notes while excluding locally acquired source documents.
+docs/*
+!docs/demo/
+docs/demo/*
+!docs/demo/combo-demo/
+!docs/demo/combo-demo/**
+!docs/README.md
+!docs/auth/
+docs/auth/*
+!docs/auth/README.md
+!docs/auth/api-refactor-baseline.md
+!docs/auth/api-response-contract.md
+!docs/auth/api-refactor-result.md
+!docs/wdm/
+docs/wdm/*
+!docs/wdm/dataset-csv-contract.md
+!docs/wdm/mining-request-contract.md
+!docs/wdm/mining-engine-contract.md
+!docs/wdm/persistence-schema-audit.md
+!docs/wdm/client-combo-contract.md
+!docs/wdm/combo-three-items-guide.md
+!docs/archive/
+!docs/archive/roadmaps/
+!docs/archive/roadmaps/**
+!docs/database/
+docs/database/*
+!docs/database/laptop-combo-system-redesign.md
+!docs/database/laptop-combo-data-dictionary.md
+!docs/database/laptop-combo-seed-data-plan.md
+!docs/database/V2__complete_laptop_combo_schema.sql
+!docs/research/
+!docs/research/**
+
+
+# Dataset files after Maven Multi-Module migration
+mining-core/src/main/resources/datasets/*.txt
+
+# Generated module outputs
+**/target/
+
+
+# Docker / local environment
+/.env
+/.env.local
+/.env.*.local
+
+# Frontend artifacts and dependencies
+**/node_modules/
+**/build/
+frontend/.pnp
+frontend/.pnp.js
+frontend/coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local AI Agent workspace
+.agent-workspace/
+
+# Backend runtime uploads
+/backend/uploads/
+
+# E2E source is versioned; generated evidence and browser credentials are local.
+/frontend/test/e2e/test-results/
+/frontend/test/e2e/playwright-report/
+/frontend/test/e2e/downloads/
+/frontend/test/e2e/playwright/.auth/
+/frontend/test/e2e/.auth/

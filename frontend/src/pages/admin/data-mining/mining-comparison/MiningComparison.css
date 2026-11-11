@@ -1,0 +1,5 @@
+.mining-comparison .mining-comparison-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.mining-comparison .mining-comparison-kpis, .mining-comparison .mining-comparison-charts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.mining-comparison .mining-comparison-chart { height: 280px; width: 100%; min-width: 0; }
+@media (max-width: 1000px) { .mining-comparison .mining-comparison-kpis, .mining-comparison .mining-comparison-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 650px) { .mining-comparison .mining-comparison-pair, .mining-comparison .mining-comparison-kpis, .mining-comparison .mining-comparison-charts { grid-template-columns: 1fr; } }

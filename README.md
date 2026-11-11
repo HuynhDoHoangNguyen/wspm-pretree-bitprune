@@ -1,228 +1,416 @@
 # WSPM_PreTree & WSPM_BitPrune
 
-**Research on Improving the WSPM_PreTree Algorithm and Developing a Product Combo Recommendation System**
+Repository cho khóa luận tốt nghiệp: **“Nghiên cứu cải tiến thuật toán WSPM_PreTree và xây dựng hệ thống gợi ý combo sản phẩm.”** 
 
-Nghiên cứu cải tiến thuật toán WSPM_PreTree và xây dựng hệ thống gợi ý combo sản phẩm.
+Dự án gồm:
+- **`mining-core`**: Lõi thuật toán khai phá mẫu tuần tự có trọng số (WSPM_PreTree baseline và WSPM_BitPrune cải tiến).
+- **`backend`**: REST API viết bằng Spring Boot 4.x / Java 21, quản lý dữ liệu sản phẩm, đơn hàng, kích hoạt thuật toán và gợi ý combo.
+- **`frontend`**: Giao diện ứng dụng người dùng và quản trị viên viết bằng React 17, TypeScript và Mantine UI.
 
-## 1. Project Overview
+---
 
-Dự án tập trung nghiên cứu lĩnh vực **Weighted Sequential Pattern Mining (WSPM)** — khai phá mẫu tuần tự có trọng số từ cơ sở dữ liệu chuỗi.
+## 🚀 Hướng dẫn khởi chạy hệ thống (Dành cho thành viên mới)
 
-Mục tiêu của nghiên cứu là tìm hiểu, tái hiện và cải tiến thuật toán **WSPM_PreTree** thông qua phương pháp **WSPM_BitPrune**, kết hợp các cấu trúc dữ liệu và cơ chế cắt tỉa nhằm tối ưu hóa quá trình khai phá mẫu tuần tự có trọng số.
+> [!TIP]
+> Bạn chỉ cần làm theo **lần lượt 4 bước bên dưới** là có thể chạy được toàn bộ hệ thống từ Database, Migration, Backend tới Frontend.
 
-Nghiên cứu hướng đến việc nâng cao hiệu quả khai phá trên các tập dữ liệu có quy mô và đặc điểm khác nhau, đồng thời ứng dụng các mẫu tuần tự được phát hiện vào bài toán **gợi ý combo sản phẩm**, hỗ trợ phân tích hành vi mua sắm và đề xuất các nhóm sản phẩm có mối liên hệ trong lịch sử giao dịch.
+---
 
-## 2. Research Objectives
+### Yêu cầu phần mềm cài đặt sẵn (Prerequisites)
 
-Các mục tiêu chính của dự án:
+Trước khi bắt đầu, hãy đảm bảo máy tính đã cài đặt các công cụ sau:
 
-1. **Nghiên cứu WSPM_PreTree:** Phân tích cơ sở lý thuyết, cách biểu diễn dữ liệu, phương pháp tính trọng số, cấu trúc Prefix Tree, Prime-block Encoding và cơ chế khai phá mẫu tuần tự.
-2. **Tái hiện thuật toán gốc:** Xây dựng phiên bản WSPM_PreTree bằng Java, kiểm chứng kết quả với các ví dụ và dữ liệu thực nghiệm trong công trình nghiên cứu.
-3. **Nghiên cứu WSPM_BitPrune:** Xây dựng phương pháp cải tiến sử dụng Bitmap, CMAP, Vertical ID-list và Multi-tier Lazy Pruning.
-4. **Kiểm chứng tính đúng đắn:** Đối chiếu toàn bộ tập mẫu và support của từng mẫu giữa hai thuật toán trên cùng dữ liệu và ngưỡng khai phá.
-5. **Đánh giá hiệu năng:** Thực nghiệm về thời gian thực thi, bộ nhớ, số lượng ứng viên, khả năng cắt tỉa và khả năng mở rộng.
-6. **Ứng dụng gợi ý combo:** Khai thác các mẫu tuần tự có trọng số để hỗ trợ đề xuất các nhóm sản phẩm phù hợp dựa trên lịch sử mua sắm.
+1. **Git**: Để tải và đồng bộ mã nguồn.
+2. **Java JDK 21**: Kiểm tra bằng lệnh:
+   ```powershell
+   java -version
+   ```
+3. **Apache Maven 3.9+**: Kiểm tra bằng lệnh:
+   ```powershell
+   mvn -version
+   ```
+4. **Docker Desktop**: Cần mở ứng dụng Docker Desktop lên trước khi chạy lệnh. Kiểm tra bằng lệnh:
+   ```powershell
+   docker -v
+   ```
+5. **Node.js (v18 - v22) & npm**: Kiểm tra bằng lệnh:
+   ```powershell
+   node -v
+   npm -v
+   ```
 
-## 3. Algorithms
+---
 
-### 3.1. WSPM_PreTree — Baseline Algorithm
+### BƯỚC 1: Chuẩn bị file cấu hình môi trường (`.env`)
 
-WSPM_PreTree là thuật toán khai phá mẫu tuần tự có trọng số dựa trên cấu trúc cây tiền tố (Prefix Tree) và phương pháp mã hóa PRISM.
+Mở terminal (PowerShell trên Windows hoặc Bash trên Linux/macOS) tại **thư mục gốc của dự án** (`wspm-pretree-bitprune`), chạy lệnh:
 
-Các thành phần nghiên cứu bao gồm:
+- **Trên Windows (PowerShell):**
+  ```powershell
+  Copy-Item .env.example .env
+  ```
+- **Trên Linux / macOS:**
+  ```bash
+  cp .env.example .env
+  ```
 
-- Sequence Database Representation.
-- Item Weight Calculation.
-- MaxW, MinW and MeanW.
-- Frequent Pattern Initialization (F1).
-- Prefix Tree Construction.
-- I-Extension and S-Extension.
-- Depth-First Search (DFS).
-- PRISM Prime-block Encoding.
-- Sequential Pattern Support.
-- Weighted Sequential Pattern Evaluation.
-- Pattern Pruning.
+> [!NOTE]
+> File `.env` chứa các thông số mặc định kết nối MySQL cục bộ:
+> - Cổng: `3307`
+> - Tên Database: `wspm_combo`
+> - Tài khoản: `wspm_app` / Mật khẩu: `123456`
+> 
+> Với môi trường dev cá nhân, bạn **không cần thay đổi gì thêm** trong file `.env`.
 
-WSPM_PreTree được sử dụng làm thuật toán đối chứng để kiểm tra tính đúng đắn và đánh giá phương pháp cải tiến.
+---
 
-### 3.2. WSPM_BitPrune — Proposed Improvement
+### BƯỚC 2: Khởi động Cơ sở dữ liệu MySQL (Docker Compose)
 
-WSPM_BitPrune là hướng cải tiến được nghiên cứu nhằm tối ưu quá trình sinh ứng viên, kiểm tra điều kiện cắt tỉa và xác định support của mẫu tuần tự.
+Đảm bảo phần mềm **Docker Desktop** đang chạy (icon Docker chuyển sang màu xanh), sau đó gõ lệnh tại thư mục gốc:
 
-Các thành phần thiết kế chính:
+```powershell
+# 1. Bật container MySQL chạy nền
+docker compose up -d mysql
 
-**Bitmap Representation**
+# 2. Kiểm tra container đã hoạt động chưa
+docker compose ps
+```
+Nếu thấy cột `STATUS` hiển thị `Up` (ví dụ `Up 10 seconds`), MySQL đã sẵn sàng tại cổng `3307`.
 
-Sử dụng cấu trúc bitmap để biểu diễn thông tin xuất hiện của item hoặc pattern, hỗ trợ các phép toán bit nhằm kiểm tra điều kiện cần trước khi tính support chính xác.
+* **Khi muốn tạm dừng Database:**
+  ```powershell
+  docker compose down
+  ```
+  *(Dữ liệu database được lưu an toàn trong Docker volume `wspm_mysql_data`, không bị mất khi tắt).*
 
-**CMAP — Co-occurrence Map**
+---
 
-Lưu trữ thông tin đồng xuất hiện của các item, hỗ trợ loại bỏ sớm những phép mở rộng không thỏa mãn điều kiện cần về support.
+### BƯỚC 3: Build và Chạy Backend (Tự động chạy Migration)
 
-**Vertical ID-list**
+Auth dùng HS256 với một `AUTH_JWT_SECRET` (Base64 của ít nhất 32 byte ngẫu nhiên)
+trong `.env`, cùng issuer và key ID; cookie/Origin dùng `AUTH_COOKIE_SECURE` và
+`AUTH_ALLOWED_ORIGINS` trong cùng file.
+Thiếu/sai cấu hình sẽ làm backend startup thất bại. Xem
+[Shared Auth setup](docs/auth/README.md) trước khi chạy. Profile `local` chỉ cấu
+hình HTTP cookie/Origin, không tạo secret, role hoặc tài khoản mặc định. Không cần file key.
 
-Tổ chức thông tin vị trí xuất hiện của item trong các sequence nhằm hỗ trợ phép nối tuần tự và xác định support chính xác.
+WDM snapshot upload lưu file gốc trong `${user.home}/.wspm/snapshots` trên máy
+chạy backend. Có thể đặt `WDM_SNAPSHOT_STORAGE_ROOT=E:/wspm-data/snapshots` trong
+`.env`; dùng đường dẫn tuyệt đối nằm ngoài cây làm việc của ứng dụng. Tài khoản
+chạy backend cần quyền đọc/ghi riêng tại đó. Thư mục được tạo khi upload đầu tiên,
+không được public qua web. Giữ storage và metadata MySQL cùng nhau khi backup;
+đổi cấu hình không tự di chuyển artifact đã lưu. Chi tiết response, giới hạn
+upload và xử lý lỗi: [CSV/snapshot contract](docs/wdm/dataset-csv-contract.md).
 
-**Multi-tier Lazy Pruning**
+WDM-03.5 bổ sung service nội bộ lưu `sequences.spmf` và `mapping.json` dưới
+`<snapshotId>/conversions/<attemptId>/` trong cùng private storage root. Mỗi file
+bị giới hạn bởi `WDM_CONVERSION_MAX_ARTIFACT_BYTES` (mặc định 67.108.864 bytes).
+Backup phải giữ nguyên artifact cùng metadata/hash MySQL; không sửa/xóa file đã
+công bố. Claim `RUNNING` bị bỏ dở hoặc commit chưa xác định cần reconciliation,
+không tự chiếm lại/xóa thư mục. Endpoint conversion chưa nối service này; API
+tạo/xem/tải kết quả thuộc WDM-03.6.
 
-Tổ chức quá trình cắt tỉa theo nhiều lớp:
+WDM-03.6 đã nối API Admin: `POST /api/v1/admin/dataset-snapshots/{id}/conversion`
+chạy đồng bộ và trả 200 khi đã xác minh kết quả; `GET` cùng URL đọc trạng thái.
+Tải artifact qua `GET .../{id}/artifacts/sequence` hoặc `.../artifacts/mapping`,
+cùng shared ADMIN Bearer Auth. Không truyền body/query, token trong URL, `force`
+hoặc retry FAILED/RUNNING. GET/download chỉ đọc và xác minh integrity; file thiếu/
+bị sửa không tự sửa hoặc chuyển đổi lại. Giao diện conversion thuộc WDM-03.7.
 
-1. CMAP-based Pruning.
-2. Bitmap Upper-Bound Pruning.
-3. Exact Support Verification.
+WDM-05.3 bổ sung `POST /api/v1/admin/mining-runs` với đúng bốn trường cấu hình
+đã chốt. Backend xác minh publication, chuẩn bị input và weights bằng mining-core,
+và mặc định **trả 503, không tạo run** vì `WDM_EXECUTION_ENABLED=false`.
+WDM-05.4 thêm provider thật; có thể opt-in bằng `WDM_EXECUTION_ENABLED=true`.
+Mặc định `WDM_EXECUTION_PARALLELISM=1`, `WDM_EXECUTION_QUEUE_CAPACITY=1`,
+`WDM_EXECUTION_SHUTDOWN_GRACE_MILLIS=30000`. HTTP 202 chỉ sau durable commit và
+admission acknowledgement, không chờ mining; không tự retry POST.
 
-Các lớp cắt tỉa được thiết kế nhằm hạn chế các phép nối tốn kém trong khi bảo toàn các mẫu hợp lệ theo định nghĩa khai phá.
+Executor giữ complete result trong bộ nhớ chờ bàn giao. WDM-06.11 bổ sung consumer
+publication opt-in bằng `WDM_RESULT_PUBLICATION_ENABLED=true` cùng execution đã bật.
+Consumer lưu/kiểm chứng đầy đủ kết quả, commit manifest rồi mới acknowledge để trả slot.
+Reservation, queued/running job và outcome chưa acknowledge cùng dùng tối đa hai
+slot theo cấu hình mặc định. Hết slot trả 503 kể cả worker đã rảnh; chưa có consumer
+production hoạt động khi publication tắt (mặc định). Không có TTL/discard để nhận thêm job. WDM-05.5
+cập nhật DB bằng CAS QUEUED → RUNNING → SUCCEEDED/FAILED, có ownership/attempt
+fencing, heartbeat và recovery run hết lease. Mặc định lease 60 giây, heartbeat
+10 giây, recovery tối đa 100 run/lượt; lease không phải timeout mining.
+WDM-05.6 ghi counts, timing và sampled JVM heap cùng lần chuyển SUCCEEDED.
+Total đo worker refresh+engine, không gồm queue/claim/finalization DB; heap là
+sample trong thuật toán. Output I/O để null khi chưa có bước ghi patterns.
+SUCCEEDED chưa có nghĩa patterns đã được lưu xuống DB. Chỉ publication COMMITTED
+khớp manifest được hỗ trợ mới đủ điều kiện đọc published qua restart. Outcome chưa
+publication vẫn chỉ nằm trong bộ nhớ; không tự phục hồi mining sau khi mất tiến trình.
+Chi tiết/evidence: [Run creation and execution contract](docs/wdm/mining-request-contract.md).
 
-## 4. Technology Stack
+WDM-05.7 thêm `GET /api/v1/admin/mining-runs/{runId}` (shared ADMIN Bearer),
+không query/body. GET đọc status/config/timestamps/metrics trong DB, hoạt động
+cả khi execution tắt; counts/timing/bytes BIGINT trả chuỗi thập phân, chưa đo là
+null. GET không chạy engine hoặc acknowledge kết quả. SUCCEEDED chưa xác nhận
+patterns đã được lưu bền vững.
 
-| Technology | Purpose |
-|---|---|
-| Java JDK 21 | Algorithm implementation |
-| Apache Maven | Build and dependency management |
-| JUnit 5 | Unit testing and correctness verification |
-| Visual Studio Code | Development environment |
-| Git & GitHub | Version control and source management |
-| Java Core | Algorithm execution and data processing |
+WDM-06.7 bổ sung các GET Admin dưới `/api/v1/admin/mining-runs/{runId}`:
+`/results`, `/patterns`, `/patterns/{patternId}` và `/patterns/export` (JSON).
+`?view=staging` phục vụ kiểm tra dữ liệu chưa công bố; không đủ điều kiện bàn giao
+Combo. WDM-06.11 mở `view=published` (mặc định) sau khi kiểm chứng manifest V1.
+Export staging giữ V1; export published V2 có provenance, patterns và toàn bộ
+run-item statistics. UI run detail/Explorer cho tải JSON qua shared Auth. Metadata
+không cần query; page nhận `page`/`size` (1/20 mặc định, size tối đa 100).
+`WDM_RESULT_QUERY_MAX_EXPORT_BYTES` giới hạn byte export, mặc định 16 MiB,
+phạm vi 256..67108864. Chi tiết giới hạn và evidence nằm trong request contract.
 
-## 5. System Architecture
+`PublishedMiningResultProvider` cung cấp đầu vào Java bất biến cho bước sinh combo,
+giữ exact support và thứ tự/item lặp. Chưa sinh hoặc ghi combo bán hàng. Run có 0
+pattern được công bố/export nhưng không eligible cho combo. Publication lỗi giữ
+Outcome; lỗi tạm thời thử tối đa 5 lần với backoff 4/8/16/32 giây, lỗi nội dung
+dừng tự động xử lý. Không có endpoint sửa dữ liệu hay retry mining tự động.
 
-Hệ thống nghiên cứu thuật toán được tổ chức theo các thành phần chức năng:
+WDM-06.8 hoàn thiện tab **Lịch sử** tại `/admin/mining-runs?tab=history`:
+tìm Run ID, lọc trạng thái/thuật toán/Snapshot ID, phân trang và quay lại đúng bộ
+lọc từ chi tiết. Trang chi tiết hiển thị riêng trạng thái lưu/công bố và provenance
+lịch sử qua `/results`. Run hoàn tất hoặc có pattern count không đồng nghĩa đã
+công bố đầy đủ; UI không mở bàn giao Combo từ metadata chưa xác minh.
 
+> [!IMPORTANT]
+> **Bạn KHÔNG CẦN phải mở MySQL Workbench để chạy script tạo bảng thủ công!**
+> 
+> Hệ thống tích hợp sẵn **Flyway Migration** và quét `classpath:db/migration` khi
+> Backend khởi động. Nhánh hiện tại chứa `V1__initial_schema.sql` và
+> `V2__complete_laptop_combo_schema.sql`, `V3__mining_run_execution_ownership.sql`,
+> `V4__mining_run_metadata_provenance.sql` và `V5__native_combo_generation_evidence.sql`.
+> WDM-06.2 bổ sung `V4__mining_run_metadata_provenance.sql`: hai bảng
+> `RUN_PROVENANCE` và `RUN_RESULT_PUBLICATION`. Luồng tạo/chạy run mới cần V4;
+> Hibernate validate riêng không xác minh hai bảng native-SQL này. V4 được kiểm
+> thử trên MySQL riêng, chưa áp dụng vào DB owner trong task này. Flyway sẽ tự
+> xét V4 khi chạy bản backend mới; cần triển khai migration có chủ đích trước
+> khi dùng datasource owner. V5 bổ sung bằng chứng sinh/lưu Combo native;
+> các luồng Pattern/Combo hiện đã tích hợp với kết quả mining được công bố.
+> V3 bổ sung ba cột ownership/lease nullable cho MINING_RUN; đã kiểm thử upgrade
+> trên MySQL riêng, chưa áp dụng vào database của owner trong task WDM-05.5.
+> Trong WDM-05.7 (2026-11-07), đã xác minh database local `127.0.0.1:3307/wspm_combo`
+> có V3 SUCCESS, checksum `1697070581`. Flyway validate/migrate(target=3)/validate
+> PASS; migrate thực hiện 0 migration vì V3 đã tồn tại trước lượt kiểm tra này.
+> Backend cần schema V3 để Hibernate validate. V2 chuyển schema 12 bảng của V1 sang
+> schema đích 45 bảng. Kiểm tra read-only database local ngày 2026-11-03 xác nhận
+> V1 và V2 đều có `success = 1` trong `flyway_schema_history`; checksum V2
+> `727165286` khớp file runtime, đủ đúng 45 bảng và không còn bảng
+> `LEGACY_V1_*`. Trạng thái database khác vẫn phải kiểm tra riêng; không chạy lại
+> hoặc sửa file V2 đã áp dụng.
+
+Tại thư mục gốc của dự án, chạy 2 lệnh sau:
+
+#### 1. Biên dịch và đóng gói Backend:
+```powershell
+mvn -pl backend -am package -DskipTests
+```
+*(Lệnh này sẽ tự động biên dịch thuật toán `mining-core` và đóng gói ứng dụng `backend`).*
+
+#### 2. Khởi chạy Backend:
+```powershell
+java -jar backend/target/backend-1.0-SNAPSHOT.jar --spring.profiles.active=local
+```
+Khi thấy log xuất hiện dòng chữ:
 ```text
-Sequence Database
-        |
-        v
-  Data Loading
-        |
-        v
-  Preprocessing
-        |
-        +------------------------+
-        |                        |
-        v                        v
-  WSPM_PreTree              WSPM_BitPrune
-  - Prefix Tree             - Bitmap
-  - PRISM Encoding          - CMAP
-  - I/S Extension           - Vertical ID-list
-  - DFS Mining              - Lazy Pruning
-        |                        |
-        v                        v
-  Weighted Sequential Pattern Results
-        |
-        v
-  Correctness Verification
-        |
-        v
-  Experimental Evaluation
-        |
-        v
-  Product Combo Recommendation
+Started BackendApplication in X.XXX seconds
+```
+Backend đã khởi động thành công tại cổng `8080`. Lệnh trên dành cho HTTP local;
+cấu hình JWT được đọc từ `.env` ở repo root theo
+[hướng dẫn Auth và test tay](docs/auth/README.md#manual-test).
+
+#### 3. Kiểm tra Backend:
+Mở trình duyệt web và truy cập các liên kết sau:
+- Kiểm tra sức khỏe hệ thống: [http://localhost:8080/api/health](http://localhost:8080/api/health) (kết quả trả về `{"status":"UP", ...}`)
+- Danh sách ngành hàng: [http://localhost:8080/api/v1/categories](http://localhost:8080/api/v1/categories)
+- Danh sách sản phẩm: [http://localhost:8080/api/v1/products](http://localhost:8080/api/v1/products)
+
+---
+
+### BƯỚC 4: Khởi chạy Giao diện Frontend
+
+Mở **một cửa sổ Terminal mới** (để cửa sổ Backend ở Bước 3 tiếp tục chạy), sau đó thực hiện:
+
+#### 1. Di chuyển vào thư mục frontend:
+```powershell
+Set-Location frontend
+# hoặc: cd frontend
 ```
 
-Hai thuật toán sử dụng cùng mô hình dữ liệu và các quy tắc đánh giá mẫu để phục vụ việc so sánh kết quả và hiệu năng.
+#### 2. Cài đặt các thư viện phụ thuộc:
+```powershell
+npm ci
+```
+*(Nếu gặp lỗi xung đột phiên bản thư viện peer dependencies, dùng lệnh: `npm install --legacy-peer-deps`)*
 
-## 6. Project Structure
+#### 3. Chạy giao diện ở môi trường phát triển:
+```powershell
+npm start
+```
+Trình duyệt sẽ tự động mở trang web tại địa chỉ: **[http://localhost:3000](http://localhost:3000)**.
+Mọi request gọi API từ frontend sẽ tự động được chuyển tiếp (proxy) sang Backend tại cổng `8080`.
 
-```text
-wspm-pretree-bitprune/
-├── data/                 # Research datasets
-├── docs/                 # Research documentation
-├── results/              # Experimental results
-├── src/
-│   ├── main/
-│   │   ├── java/vn/edu/wspm/
-│   │   │   ├── config/     # Experiment configuration
-│   │   │   ├── data/       # Sequence database processing
-│   │   │   ├── model/      # Pattern and sequence models
-│   │   │   ├── baseline/   # WSPM_PreTree
-│   │   │   ├── improved/   # WSPM_BitPrune
-│   │   │   ├── metrics/    # Performance measurement
-│   │   │   └── output/     # Result export
-│   │   └── resources/
-│   └── test/
-│       └── java/          # Unit and correctness tests
-├── .gitignore
-├── LICENSE
-├── pom.xml
-└── README.md
+---
+
+## Ảnh sản phẩm và banner
+
+Ảnh sản phẩm nằm trong `backend/uploads/products`. Trong `.env` local, đặt
+`PRODUCT_IMAGES_ROOT` thành đường dẫn tuyệt đối tới thư mục này, ví dụ:
+
+```properties
+PRODUCT_IMAGES_ROOT=E:/University/HK1-2026-2027/Khoa-Luan/wspm-pretree-bitprune/backend/uploads/products
 ```
 
-## 7. Dataset
+Khởi động lại backend sau khi đổi cấu hình. Mẫu `.env.example` dùng đường dẫn
+tương đối `./backend/uploads/products` khi chạy backend từ repo root; đổi sang
+đường dẫn tuyệt đối nếu chạy từ thư mục khác. Backend phục vụ ảnh tại
+`/uploads/products/<tên-file>`; frontend dev chuyển request này qua proxy sang
+backend, cùng với API. Chỉ các file JPG/JPEG, PNG và GIF hợp lệ được phục vụ;
+ảnh sản phẩm không nằm trong `frontend/public`. URL trong database phải khớp tên
+file thực tế. Thư mục upload vẫn được Git ignore; khi chuyển máy cần chép ảnh
+cùng với database. Không chạy lại seeder chỉ để sửa đường dẫn ảnh.
 
-Dự án sử dụng cơ sở dữ liệu chuỗi (Sequence Database) phục vụ nghiên cứu và đánh giá thuật toán.
+Sáu banner `banner01.webp` đến `banner06.webp` nằm trong
+`frontend/public/images/banners`, được frontend phục vụ trực tiếp tại
+`/images/banners/<tên-file>`. Carousel trang chủ dùng các file này và giữ tỷ lệ
+ảnh trên desktop/mobile. Backend không cần đọc hoặc hỗ trợ WebP để hiển thị
+banner. Khi deploy, cần chuyển tiếp `/uploads/products/` tới backend và phục vụ
+banner từ bản build frontend.
 
-Các bộ dữ liệu thực nghiệm dự kiến bao gồm:
+## Luồng tích hợp TV3 — Customer & Monitoring
 
-- Snake
-- Sign
-- Pumsb
-- T40I10D100k
-- Synthetic Sequence Datasets
-- Sample Dataset from the WSPM_PreTree paper (2023)
+Để chạy mining và lưu kết quả, `.env` cần có `WDM_EXECUTION_ENABLED=true` và
+`WDM_RESULT_PUBLICATION_ENABLED=true`. Khởi động lại backend sau khi đổi cấu hình.
+Các thiết lập Auth và khóa context Combo vẫn theo cấu hình hiện hành; không có
+tài khoản, secret hay kết quả mining được tự tạo bởi giao diện TV3.
 
-Nguồn, phiên bản, đặc điểm và định dạng dữ liệu được kiểm tra trước khi sử dụng. Đặc biệt, dữ liệu giao dịch thông thường không được mặc nhiên xem là dữ liệu chuỗi có thứ tự thời gian.
+1. Admin upload, kiểm tra và chuyển đổi snapshot tại `/admin/datasets`.
+2. Tạo RUN tại `/admin/mining-runs`, đợi thực thi thành công và công bố kết quả
+   mining đầy đủ. Mở Pattern/Combo từ chi tiết RUN.
+3. Tại `/admin/combos`, sinh đề xuất, lưu DRAFT và duyệt các combo muốn đưa ra
+   khách hàng. Mở batch rồi bấm **Công bố batch cho khách hàng**.
+4. Công bố chỉ chuyển combo `APPROVED` thuộc ba loại được hỗ trợ sang
+   `PUBLISHED`; kiểm tra lại bằng chứng và dữ liệu sản phẩm trong giao dịch.
+   Batch cũ được `ARCHIVED`, batch mới thành `ACTIVE`. Batch đã kích hoạt không
+   tiếp tục duyệt; hãy duyệt xong trước khi công bố. Gửi lại yêu cầu cho batch
+   đang ACTIVE không tạo thêm lần công bố. Combo tuần tự giữ nguyên thứ tự từng
+   bước mua, không hiển thị thành mua cùng đơn.
+5. Khách mở `/products`, chọn sản phẩm và xem Top-K combo đã công bố; mở
+   `/combos/{comboId}` để xem chi tiết. Chưa có batch hợp lệ thì hiển thị trạng
+   thái rỗng, không dùng kết quả minh họa thay thế.
 
-Định dạng đầu vào cho dữ liệu chuỗi được chuẩn hóa theo quy ước SPMF:
+Client có bộ lọc tên/danh mục/khoảng giá, sắp xếp và phân trang tại `/products`;
+hai combo mới nhất nằm dưới bộ lọc. Trang chi tiết có thông tin catalog, card
+gợi ý có checkbox và sản phẩm liên quan cùng danh mục. Tổng giá đang chọn dùng
+giá hiện tại và số lượng, chưa áp dụng ưu đãi combo hay tạo đơn hàng.
 
-- `-1`: Kết thúc một itemset.
-- `-2`: Kết thúc một sequence.
+Combo không có dữ liệu sẽ ẩn cả khu vực. Trang chi tiết ưu tiên gợi ý cá nhân,
+loại trùng rồi hiển thị tối đa hai card nhỏ trong cột thông tin bên phải; dưới
+bộ lọc DSSP mỗi card mới nhất hiển thị từng sản phẩm thành phần. Hướng dẫn kiểm
+tra batch G502 → Bose và tạo ba ví dụ ba sản phẩm ở
+[hướng dẫn combo ba sản phẩm](docs/wdm/combo-three-items-guide.md).
 
-## 8. Experimental Evaluation
+Gợi ý theo lịch sử dùng `GET /api/v1/recommendations/combos/personalized` với
+Bearer của phiên hiện tại, không nhận userId. Backend đối chiếu các đơn COMPLETED
+với tiền tố mẫu và gợi ý bước tiếp theo chưa mua; xem
+[hợp đồng HISTORY_PREFIX_V1](docs/wdm/client-combo-contract.md). Khách chưa đăng
+nhập vẫn xem được gợi ý theo sản phẩm và
+`GET /api/v1/recommendations/combos/latest` (hai combo mới công bố).
 
-Quá trình thực nghiệm được xây dựng dựa trên cùng điều kiện đầu vào và môi trường thực thi nhằm đảm bảo tính công bằng và khả năng tái lập.
+Kiểm tra trên dữ liệu development hiện có: duyệt và công bố batch chứa combo
+G502 → Bose, đăng nhập `customer_006` bằng mật khẩu bạn đã cấp, rồi mở `/products`
+hoặc chi tiết G502. Chỉ khi lịch sử COMPLETED và các điều kiện hiệu lực còn phù
+hợp mới xuất hiện Bose ở phần **Gợi ý cho lần mua tiếp theo**. Không tạo lại seed,
+không đổi mật khẩu để kiểm tra; trạng thái dữ liệu này cần xác nhận tại lúc chạy.
 
-### 8.1. Correctness Verification
+Lịch sử, giám sát và biểu đồ tại `/admin/mining-run-history`,
+`/admin/mining-monitoring`, `/admin/mining-comparison`. API lịch sử TV3 dùng
+`GET /api/v1/admin/mining-run-history` (page/size/algorithm/status) và
+`GET /api/v1/admin/mining-run-history/{runId}`. API trạng thái WDM giữ nguyên
+`GET /api/v1/admin/mining-runs/{runId}`; hai API có DTO riêng.
+API công bố Combo là `POST /api/v1/admin/combos/batches/{batchId}/publication`,
+không nhận body/query, yêu cầu shared ADMIN Bearer Auth.
 
-- Kiểm thử dữ liệu mẫu từ bài báo gốc.
-- Kiểm tra phép tính trọng số và support.
-- Đối chiếu kết quả với phương pháp brute-force trên dữ liệu nhỏ.
-- So sánh toàn bộ tập pattern và support giữa WSPM_PreTree và WSPM_BitPrune.
-- Kiểm tra tính an toàn của các điều kiện cắt tỉa.
+Biểu đồ RUN thật hiển thị số liệu đã lưu theo đơn vị ms, JVM heap lấy mẫu theo
+bytes và số pattern khi cấu hình nguồn phù hợp. Không tự tính speedup hay kết
+luận cải thiện nếu chưa có bằng chứng đầy đủ về cấu hình, điều kiện đo và toàn bộ
+`pattern -> exact support`. Mining-core và các hợp đồng nghiên cứu giữ nguyên.
 
-### 8.2. Performance Metrics
+Kiểm thử xuyên suốt bằng dữ liệu tổng hợp và hai engine thật: build frontend,
+`mvn -pl backend -am package -DskipTests`, rồi chạy
+`$env:TV2_NATIVE_COMBO_GATE='1'; node frontend/test/e2e/engine-run.mjs`.
+Runner tạo MySQL/storage riêng và lưu bằng chứng trong `.agent-workspace/phase-wdm/`;
+không dùng database làm việc. Xem thêm `frontend/test/e2e/README.md`.
 
-| Metric | Description |
-|---|---|
-| Dataset I/O Time | Thời gian đọc dữ liệu |
-| Preprocessing Time | Thời gian tiền xử lý |
-| Mining Time | Thời gian khai phá mẫu |
-| Output I/O Time | Thời gian xuất kết quả |
-| Total Execution Time | Tổng thời gian thực thi |
-| Memory Usage | Dung lượng bộ nhớ sử dụng |
-| Generated Candidates | Số lượng ứng viên được sinh |
-| Pruned Candidates | Số lượng ứng viên bị cắt tỉa |
-| Weighted Sequential Patterns | Số lượng mẫu tuần tự có trọng số tìm được |
+## 🛠️ Các câu lệnh hữu ích khác
 
-Các kết quả thực nghiệm được phân tích dựa trên dữ liệu đo thực tế, không mặc định thuật toán cải tiến có hiệu năng tốt hơn trong mọi trường hợp.
+### Chạy kiểm thử tự động (Unit / Integration Tests)
+```powershell
+# Chạy toàn bộ test cả hệ thống
+mvn test -Dp1.schema.db.approved=true
 
-## 9. Product Combo Recommendation
+# Chỉ chạy test thuật toán khai phá mẫu (mining-core)
+mvn -pl mining-core test
 
-Các mẫu tuần tự có trọng số được sử dụng làm cơ sở nghiên cứu xây dựng hệ thống gợi ý combo sản phẩm.
+# Chỉ chạy test backend (controller, service, repository, entity validation)
+mvn -pl backend -am test -Dp1.schema.db.approved=true
+```
 
-Hướng ứng dụng tập trung vào:
+`p1.schema.db.approved=true` bật test schema/entity P1 bằng dữ liệu tổng hợp
+trên MySQL container riêng. Test này cố ý báo lỗi nếu không bật opt-in;
+không kết nối database làm việc. Docker Desktop phải đang chạy.
 
-- Phân tích lịch sử mua sắm của khách hàng.
-- Phát hiện các nhóm sản phẩm thường xuất hiện theo những chuỗi hành vi mua sắm.
-- Xây dựng các ứng viên combo dựa trên những mẫu tuần tự có trọng số.
-- Thiết kế cơ chế đánh giá và xếp hạng combo phù hợp.
-- Hỗ trợ đề xuất sản phẩm cho hoạt động thương mại điện tử.
+### Chạy trực tiếp thuật toán Mining mẫu trong terminal
+Hai runner dưới đây sử dụng tập dữ liệu chuẩn Table 1 từ bài báo gốc (`mining-core/src/test/resources/datasets/wspm/table1.spmf`):
 
-Việc chuyển đổi từ mẫu tuần tự sang combo sản phẩm cần có quy tắc đề xuất và đánh giá riêng để bảo đảm tính phù hợp với bài toán ứng dụng.
+- **Chạy WSPM_PreTree (Thuật toán gốc):**
+  ```powershell
+  Set-Location mining-core
+  mvn test-compile
+  java -cp target/classes vn.edu.wspm.experiments.MainWspmPreTree
+  ```
 
-## 10. Research References
+- **Chạy WSPM_BitPrune (Thuật toán cải tiến):**
+  ```powershell
+  Set-Location mining-core
+  mvn test-compile
+  java -cp target/classes vn.edu.wspm.bitprune.experiments.MainWspmBitPrune
+  ```
 
-**WSPM_PreTree (2023)**
+---
 
-Pham et al., *Mining Weighted Sequential Patterns Based on Prefix-Tree and Prism Encoding*, Vietnam Journal of Computer Science, 2023.
+## 📊 Kiến trúc và Công nghệ
 
-**WSPM_BitPrune (2026)**
+| Phân hệ | Công nghệ sử dụng | Vai trò |
+|---|---|---|
+| **Build System** | Java 21, Maven Multi-module | Quản lý vòng đời build đồng bộ cho cả dự án |
+| **Mining Core** | Java Core, JUnit Jupiter 5 | Hiện thực WSPM_PreTree và WSPM_BitPrune tối ưu |
+| **Backend** | Spring Boot 4.1.2, Spring Data JPA, Web MVC | Xử lý nghiệp vụ, quản lý Entity, ánh xạ DTO, REST API |
+| **Database & Migration**| MySQL 8.4 (Docker), Flyway | Lưu trữ dữ liệu quan hệ, tự động migrate schema 12 bảng |
+| **Frontend** | React 17, TypeScript 4.6, Create React App | Xây dựng giao diện Single-Page Application (SPA) |
+| **UI Components** | Mantine UI 4, Tabler Icons, React Query 3, Zustand | Hệ thống component UI, quản lý state và gọi API |
 
-*Tối ưu hóa thuật toán khai phá mẫu tuần tự có trọng số bằng cấu trúc Bitmap và cơ chế cắt tỉa trễ đa tầng* — Bản thảo nghiên cứu.
+---
 
-Các công trình liên quan đến PRISM, Sequential Pattern Mining và cấu trúc Bitmap sẽ được bổ sung trong tài liệu nghiên cứu.
+## 🔬 Nghiên cứu và Độ tin cậy thuật toán (Correctness)
 
-## 11. License
+- Dữ liệu tuần tự định dạng SPMF: `-1` kết thúc một itemset, `-2` kết thúc một chuỗi sequence.
+- Thuật toán cải tiến **WSPM_BitPrune** bắt buộc phải thỏa mãn tính đúng đắn tuyệt đối so với **WSPM_PreTree** trên cùng ngưỡng:
+  ```text
+  pattern identity + exact support + total pattern count
+  ```
+- Không chấp nhận việc chỉ so sánh số lượng pattern; bắt buộc kiểm tra đồng nhất toàn bộ tập mẫu và độ hỗ trợ chính xác `pattern -> exact support`.
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+---
 
-Third-party research publications, datasets, and external code remain subject to their respective licenses and usage conditions.
+## 📚 Tài liệu kỹ thuật chi tiết
+
+- [Bản đồ cấu trúc hệ thống (ARCHITECTURE.md)](ARCHITECTURE.md)
+- [Bản đồ tài liệu nghiên cứu (docs/README.md)](docs/README.md)
+- [Quy chuẩn thực thi và nguyên tắc nghiên cứu (AGENTS.md)](AGENTS.md)
+- [Đặc tả thuật toán WSPM_PreTree](docs/research/wspm-pretree-spec.md)
+- [Đặc tả mã hóa Prime-block PRISM](docs/research/prism-prime-block.md)
+- [Hợp đồng ngữ nghĩa WSPM_BitPrune](docs/research/wspm-bitprune-c01-1-semantic-contract.md)
+- [Báo cáo nghiệm thu Phase C WSPM_BitPrune](docs/research/wspm-bitprune-c16-final-acceptance-report.md)
+
+---
+
+## 📄 License
+Mã nguồn của repository sử dụng giấy phép MIT, xem [LICENSE](LICENSE). Các bài báo, dataset tham khảo và mã nguồn frontend kế thừa tuân thủ giấy phép gốc tương ứng.
