@@ -1,6 +1,7 @@
 package vn.edu.wspm.bitprune.cmap;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.NavigableSet;
 import java.util.Objects;
@@ -64,7 +65,9 @@ public final class CmapS {
         }
 
         this.f1Universe = Collections.unmodifiableNavigableSet(new TreeSet<>(f1Universe));
-        this.supportCounts = Map.copyOf(supportCounts);
+        // Packed pair keys can share Long hashes. HashMap handles these collisions
+        // without the linear probing used by Map.copyOf; retain a defensive snapshot.
+        this.supportCounts = Collections.unmodifiableMap(new HashMap<>(supportCounts));
     }
 
     /**
